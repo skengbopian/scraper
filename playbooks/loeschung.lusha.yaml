@@ -1,0 +1,40 @@
+# Art. 17 erasure + Art. 21(1) objection to Lusha Systems, Inc. (US enrichment broker).
+# docs/10 §7.7 target #1. Self-serve form (https://www.lusha.com/privacy-center/request-removal/) is the
+# cheapest rung; this is the LEGAL FALLBACK. Note: Lusha's Art. 27 EU representative is DP-Dock GmbH,
+# Hamburg — a German contact point (though not a main establishment; venue stays the user's Land DPA,
+# OQ-20). active:false pending counsel (OQ-17).
+slug: loeschung.lusha
+kind: RIGHTS_REQUEST
+controller: lusha
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
+channel:
+  primary: email
+  fallback: web_form
+recipient:
+  email: "privacy@lusha.com"                                       # TODO(counsel): verify
+  webForm: "https://www.lusha.com/privacy-center/request-removal/" # TODO(counsel): verify
+template: art17-datenhaendler.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  Art. 27 rep DP-Dock GmbH (Hamburg) may be addressed in parallel. Reappears after removal — demand the
+  suppression list and re-check.

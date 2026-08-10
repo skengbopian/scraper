@@ -1,0 +1,47 @@
+# Art. 17 erasure + Art. 21(1) objection — STENCIL for a B2B enrichment broker (docs/10 §7).
+# Distinct from loeschung.generic-adresshaendler: that one is Art. 21(2) DIRECT MARKETING; enrichment
+# brokers sell sales/recruiting intelligence, so the instrument is Art. 21(1) + Art. 17 (OQ-17). Clone
+# per controller and fill recipient (see loeschung.zoominfo … loeschung.rocketreach for instances).
+slug: loeschung.generic-datenhaendler
+kind: RIGHTS_REQUEST
+controller: "__PARAM__"                # set to the concrete Controller.slug when instantiating
+requestType: ERASURE_ART17
+version: 1
+active: false
+parameterised: true                   # stencil: carries __PARAM__ placeholders, so never active:true
+legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
+channel:
+  primary: email
+  fallback: web_form                  # the broker's self-serve removal form (→ human queue in Phase 0)
+recipient:
+  email: "__PARAM__"                  # per-controller DSAR intake
+  webForm: "__PARAM__"                # per-controller self-serve removal URL
+template: art17-datenhaendler.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: NONE              # US/UK broker: no German Einwurf-Einschreiben → no provable
+                                      # silence clock (OQ-21). Escalate on a refusal, which proves receipt.
+                                      # WORKER CONTRACT: registeredResendChannel(pb) is null for these, so
+                                      # on provisional-deadline expiry route to NO_PROVABLE_CLOCK — never
+                                      # planDispatch(forceRegistered), which throws. Locked by
+                                      # packages/core/test/enrichment-broker-clock.test.ts.
+  onRefusal: DRAFT_ART77
+notes: >
+  Cheapest-rung-first: prefer the self-serve removal form (SelfServeRoute) before sending this letter.
+  Instrument is Art. 17 (esp. 17(1)(d) unlawful collection, KASPR reasoning) + Art. 21(1) objection —
+  NOT Art. 21(2). These records reappear; demand the suppression list. Escalation venue is the user's
+  habitual-residence Land DPA (no one-stop-shop for a non-EU-established broker) — OQ-20.

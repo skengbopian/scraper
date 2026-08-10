@@ -1,0 +1,44 @@
+# Art. 17 erasure + Art. 21(1) objection to Cognism Limited (UK enrichment broker; owns the CNIL-fined
+# Kaspr). docs/10 §7.7 target #1. Self-serve form (https://cognism.privacy.saymine.io/cognism) is the
+# cheapest rung; this is the LEGAL FALLBACK. VENUE: the user always LODGES at their own habitual-
+# residence Land DPA (Art. 77(1)); the one-stop-shop only determines which SA becomes LEAD for
+# cross-border coordination — it never moves the filing venue. Cognism is a UK controller; its EU
+# subsidiaries (Cognism GmbH/DE, KASPR SAS/FR) do not automatically make an EU entity the "main
+# establishment", so counsel (OQ-20) must confirm the controller and whether OSS engages at all.
+# active:false pending counsel (OQ-17).
+slug: loeschung.cognism
+kind: RIGHTS_REQUEST
+controller: cognism
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
+channel:
+  primary: email
+  fallback: web_form
+recipient:
+  email: "privacy@cognism.com"                            # TODO(counsel): verify
+  webForm: "https://cognism.privacy.saymine.io/cognism"   # TODO(counsel): verify
+template: art17-datenhaendler.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  KASPR (Cognism-owned) is the CNIL €240k precedent — strong Art. 17(1)(d) material for this group.
+  An Art. 27 representative is not a "main establishment" and creates no lead SA; the filing venue is
+  always the user's own Land DPA (Art. 77(1)). Confirm the controller entity and OSS with counsel (OQ-20).

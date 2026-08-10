@@ -1,0 +1,17 @@
+{
+  "name": "@scraper/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain core: request state machine, guards, playbook engine, identity subject derivation, evidence chain, provenance ledger. No I/O, no framework.",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": { "yaml": "^2.6.0" },
+  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0", "@types/node": "^22.0.0" }
+}

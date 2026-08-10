@@ -1,0 +1,53 @@
+# Art. 15(1)(g) provenance request to infoscore Consumer Data GmbH (Experian Deutschland).
+# The strongest target: infoscore's own Art. 14 notice (V7, Aug 2026) NAMES AZ Direct as address source
+# and admits neighbourhood defaults enter the score — the identification-only defence is unavailable to it.
+# NOTE(counsel): Boniversum merged into infoscore Sep 2025 — route Boniversum requests here.
+slug: provenance.infoscore
+kind: RIGHTS_REQUEST
+controller: infoscore
+requestType: ACCESS_ART15_SOURCE
+version: 1
+active: false
+legalBasis: "DSGVO Art. 15 Abs. 1 lit. g"
+templateFlags:
+  isSchufa: false
+channel:
+  primary: postal
+  fallback: web_form                  # form exists but → human queue in Phase 0
+  registered:
+    primary: true                     # escalation-bound: the clock must start on a provable send
+    fallback: false                   # web_form cannot be registered
+recipient:
+  postal: "infoscore Consumer Data GmbH, Abteilung Datenschutz, Rheinstraße 99, 76532 Baden-Baden"  # TODO(counsel): verify
+  webForm: "https://www.experian.de/selbstauskunft/online-formular-selbstauskunft"                    # TODO(counsel): verify
+template: art15g-herkunft.de
+identityProof:
+  required: true                      # infoscore demands ID copy; redaction to name/address/DOB permitted
+  accepts: [redacted_id]
+subjectFields: [legalName, dateOfBirth, addresses]
+deadlineDays: 30
+provenance:
+  extractPerCategory: true
+  brokerWatchlist: [az-direct, acxiom, deutsche-post-direkt, schober, capaneo]
+  expectSource: az-direct             # their own Art. 14 already names it — use as consistency check
+  flagIf:
+    incompleteSourceList: true
+    contradictsArt14: true            # if they now DENY the AZ Direct source their notice admits
+validation:
+  compliedIf:
+    anyOf:
+      - structured.sourcesNamedPerCategory: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["keine Angaben zur Herkunft", "Geschäftsgeheimnis"]
+  humanReviewIfConfidenceBelow: 0.8
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+  onIncompleteSourceList: DRAFT_ART77
+seatDpa: LFDI_BW                       # LfDI Baden-Württemberg (Stuttgart) — same venue as CRIF
+notes: >
+  Highest-value provenance target. If the answer names AZ Direct (as their Art. 14 does), immediately
+  spawn ERASURE_ART17 here (Art. 17(1)(d), unlawful-origin chain per Austrian DSB) and OBJECTION_ART21 +
+  ERASURE_ART17 at az-direct. If the answer DENIES AZ Direct, that contradicts their own Art. 14 notice —
+  flag for a strong Art. 77 complaint. Do NOT auto-send.

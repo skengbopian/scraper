@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scraper.eu/schema/playbook.schema.json",
+  "title": "Scraper controller playbook",
+  "description": "The only executable guard between a malformed legal letter and a send path. Every constraint here exists because tools/spec-audit/negative.mjs proved its absence let something unsendable through. Invariants that JSON Schema cannot express (cross-field disjointness, template-variable binding, version monotonicity) live in tools/spec-audit/playbook-lint.mjs and are enforced by the same CI job — see that file before assuming an omission here is a hole.",
+  "type": "object",
+  "required": ["slug", "kind", "controller", "requestType", "version", "active", "channel", "recipient", "template", "subjectFields", "validation"],
+  "additionalProperties": false,
+  "properties": {
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" },
+    "kind": {
+      "enum": ["RIGHTS_REQUEST", "ENROLMENT"],
+      "description": "RIGHTS_REQUEST = a statutory instrument with an Art. 12(3) clock and an Art. 77 route. ENROLMENT = a non-statutory suppression enrolment or fraud marker: no clock, no escalation. Required (not defaulted) because JSON Schema defaults are annotation-only and are never applied by a validator."
+    },
+    "controller": { "type": "string", "minLength": 1 },
+    "requestType": { "enum": ["OBJECTION_ART21", "ACCESS_ART15", "ACCESS_ART15_SOURCE", "ERASURE_ART17", "EINMELDUNG_FRAUD", "ROBINSON"] },
+    "version": { "type": "integer", "minimum": 1 },
+    "active": {
+      "type": "boolean",
+      "description": "Required. A shipped playbook is active:false until counsel signs off against this version. Do not rely on a schema default here — validators do not apply defaults, so an omitted flag would read as unset, not false."
+    },
+    "parameterised": {
+      "type": "boolean",
+      "description": "True only for generic templates carrying __PARAM__ placeholders (e.g. loeschung.generic-adresshaendler). Placeholder-bearing values are rejected outright unless this is true, and a parameterised playbook may never be active:true. Clone it and fill the placeholders to make it sendable."
+    },
+    "legalBasis": { "type": "string", "minLength": 1 },
+    "channel": {
+      "type": "object",
+      "required": ["primary"],
+      "additionalProperties": false,
+      "properties": {
+        "primary": { "enum": ["email", "web_form", "postal"] },
+        "fallback": { "enum": ["email", "web_form", "postal"] },
+        "registered": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-channel Einwurf-Einschreiben. Postal-only: registered email is not a thing. A registered send is the ONLY thing that starts the Art. 12(3) clock (CLAUDE.md §6).",
+          "properties": {
+            "primary": { "type": "boolean" },
+            "fallback": { "type": "boolean" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["primary"], "properties": { "primary": { "enum": ["email", "web_form"] } } },
+          "then": { "properties": { "registered": { "properties": { "primary": { "const": false } } } } }
+        },
+        {
+          "if": { "required": ["fallback"], "properties": { "fallback": { "enum": ["email", "web_form"] } } },
+          "then": { "properties": { "registered": { "properties": { "fallback": { "const": false } } } } }
+        }
+      ]
+    },
+    "recipient": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "email": { "type": "string", "minLength": 1 },
+        "postal": { "type": "string", "minLength": 1 },
+        "webForm": { "type": "string", "minLength": 1 }
+      }
+    },
+    "template": { "type": "string", "minLength": 1 },
+    "templateFlags": { "type": "object", "additionalProperties": { "type": "boolean" } },
+    "seatDpa": {
+      "description": "Competent supervisory authority for an Art. 77 complaint. Closed enum: a free-text typo silently misroutes a complaint to an authority with no jurisdiction, and the user never learns why nothing happened.",
+      "enum": [
+        "BFDI",
+        "LFDI_BW", "BAYLDA", "BLNBDI", "LDA_BB", "LFDI_HB", "HMBBFDI", "HBDI",
+        "LFDI_MV", "LFD_NI", "LDI_NRW", "LFDI_RP", "SDS_SL", "SDTB_SN", "LFD_ST",
+        "ULD_SH", "TLFDI"
+      ]
+    },
+    "enrolment": {
+      "type": "object",
+      "required": ["programSlug", "producesEntity"],
+      "additionalProperties": false,
+      "description": "Only on kind: ENROLMENT. The non-statutory counterpart of deadlineDays+escalation.",
+      "properties": {
+        "programSlug": { "type": "string", "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" },
+        "renewalMonths": { "type": "integer", "minimum": 1 },
+        "producesEntity": { "enum": ["SUPPRESSION_ENROLMENT", "FRAUD_MARKER_FILING"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["extractPerCategory"],
+      "additionalProperties": false,
+      "properties": {
+        "extractPerCategory": { "type": "boolean" },
+        "brokerWatchlist": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" }, "minItems": 1 },
+        "expectSource": { "type": "string", "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" },
+        "flagIf": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "incompleteSourceList": { "type": "boolean" },
+            "contradictsArt14": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "identityProof": {
+      "type": "object",
+      "required": ["required", "accepts"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "accepts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["redacted_id", "full_id", "none"] },
+          "description": "The CEILING of what we will hand over, minimised. Not a wish list."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["required"], "properties": { "required": { "const": true } } },
+          "then": {
+            "properties": { "accepts": { "not": { "items": { "const": "none" } } } },
+            "description": "required:true with accepts:[none] demands proof the playbook refuses to supply — the request is unsendable by construction."
+          }
+        }
+      ]
+    },
+    "subjectFields": {
+      "type": "array",
+      "items": { "enum": ["legalName", "dateOfBirth", "addresses"] },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "WHICH verified-identity fields the template needs. Closed enum by design: this is not, and must never become, a place to express WHOSE data to request. See CLAUDE.md, the rule that outranks all others."
+    },
+    "deadlineDays": {
+      "type": "integer",
+      "minimum": 28,
+      "maximum": 90,
+      "description": "Art. 12(3) is one month (28 = shortest month). Up to 90 covers the Art. 12(3) two-month extension. A short deadline is not a shortcut: asserting a 1-day clock to a controller is legally meaningless and reads as bad faith."
+    },
+    "validation": {
+      "type": "object",
+      "required": ["compliedIf", "humanReviewIfConfidenceBelow"],
+      "additionalProperties": false,
+      "properties": {
+        "compliedIf": { "$ref": "#/$defs/condition" },
+        "refusedIf": { "$ref": "#/$defs/condition" },
+        "incompleteIf": { "$ref": "#/$defs/condition" },
+        "humanReviewIfConfidenceBelow": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1,
+          "description": "REQUIRED. This is the docs/06 C4 anti-prompt-injection control: below it, parser output may not decide COMPLIED/REFUSED/INCOMPLETE and the only allowed target is NEEDS_HUMAN. It was previously omissible AND settable to 0, either of which lets a hostile broker letter auto-decide its own outcome. Floor of 0.5 because below half confidence the parser is worse than a coin flip."
+        }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "required": ["onDeadlineExpiry", "onRefusal"],
+      "additionalProperties": false,
+      "description": "An empty escalation object used to be valid, which meant silent no-escalation on a playbook that looked escalatable. Both outcomes must be stated explicitly, including when the answer is NONE.",
+      "properties": {
+        "onDeadlineExpiry": { "enum": ["DRAFT_ART77", "NONE"] },
+        "onRefusal": { "enum": ["DRAFT_ART77", "NONE"] },
+        "onIncompleteSourceList": { "enum": ["DRAFT_ART77", "NONE"] }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "$comment": "kind: RIGHTS_REQUEST — statutory, so it carries a clock and an escalation route.",
+      "if": { "required": ["kind"], "properties": { "kind": { "const": "RIGHTS_REQUEST" } } },
+      "then": {
+        "required": ["deadlineDays", "escalation"],
+        "properties": {
+          "requestType": { "enum": ["OBJECTION_ART21", "ACCESS_ART15", "ACCESS_ART15_SOURCE", "ERASURE_ART17"] },
+          "enrolment": false
+        }
+      }
+    },
+    {
+      "$comment": "kind: ENROLMENT — non-statutory, so declaring a deadline or an Art. 77 route is a category error.",
+      "if": { "required": ["kind"], "properties": { "kind": { "const": "ENROLMENT" } } },
+      "then": {
+        "required": ["enrolment"],
+        "properties": {
+          "requestType": { "enum": ["ROBINSON", "EINMELDUNG_FRAUD"] },
+          "deadlineDays": false,
+          "escalation": false,
+          "seatDpa": false
+        }
+      }
+    },
+    {
+      "$comment": "The primary channel must have somewhere to send to.",
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["primary"], "properties": { "primary": { "const": "email" } } } } },
+      "then": { "properties": { "recipient": { "required": ["email"] } } }
+    },
+    {
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["primary"], "properties": { "primary": { "const": "postal" } } } } },
+      "then": { "properties": { "recipient": { "required": ["postal"] } } }
+    },
+    {
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["primary"], "properties": { "primary": { "const": "web_form" } } } } },
+      "then": { "properties": { "recipient": { "required": ["webForm"] } } }
+    },
+    {
+      "$comment": "...and so must the fallback, or the fallback is a lie.",
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["fallback"], "properties": { "fallback": { "const": "email" } } } } },
+      "then": { "properties": { "recipient": { "required": ["email"] } } }
+    },
+    {
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["fallback"], "properties": { "fallback": { "const": "postal" } } } } },
+      "then": { "properties": { "recipient": { "required": ["postal"] } } }
+    },
+    {
+      "if": { "required": ["channel"], "properties": { "channel": { "required": ["fallback"], "properties": { "fallback": { "const": "web_form" } } } } },
+      "then": { "properties": { "recipient": { "required": ["webForm"] } } }
+    },
+    {
+      "$comment": "C1: a playbook that escalates on SILENCE must be able to reach a provable send, or deadlineAt is never set and the silence path dead-ends. Requires postal+registered on the primary or the fallback.",
+      "if": {
+        "required": ["escalation"],
+        "properties": { "escalation": { "required": ["onDeadlineExpiry"], "properties": { "onDeadlineExpiry": { "const": "DRAFT_ART77" } } } }
+      },
+      "then": {
+        "properties": {
+          "channel": {
+            "anyOf": [
+              { "properties": { "primary": { "const": "postal" }, "registered": { "required": ["primary"], "properties": { "primary": { "const": true } } } }, "required": ["primary", "registered"] },
+              { "properties": { "fallback": { "const": "postal" }, "registered": { "required": ["fallback"], "properties": { "fallback": { "const": true } } } }, "required": ["fallback", "registered"] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "The flagship extracts nothing without a provenance block; onIncompleteSourceList is meaningless without one.",
+      "if": { "required": ["requestType"], "properties": { "requestType": { "const": "ACCESS_ART15_SOURCE" } } },
+      "then": { "required": ["provenance", "seatDpa"] }
+    },
+    {
+      "$comment": "onIncompleteSourceList only has meaning for a source request.",
+      "if": {
+        "required": ["escalation"],
+        "properties": { "escalation": { "required": ["onIncompleteSourceList"], "properties": { "onIncompleteSourceList": { "const": "DRAFT_ART77" } } } }
+      },
+      "then": { "properties": { "requestType": { "const": "ACCESS_ART15_SOURCE" } } }
+    },
+    {
+      "$comment": "docs/07: a full ID copy to action a bare Art. 21(2) marketing objection is over-collection. The template pushes back on the demand; it does not satisfy it.",
+      "if": { "required": ["requestType"], "properties": { "requestType": { "const": "OBJECTION_ART21" } } },
+      "then": { "properties": { "identityProof": { "properties": { "accepts": { "not": { "contains": { "const": "full_id" } } } } } } }
+    },
+    {
+      "$comment": "Unresolved __PARAM__ placeholders are rejected unless the playbook is explicitly parameterised.",
+      "if": { "not": { "required": ["parameterised"], "properties": { "parameterised": { "const": true } } } },
+      "then": {
+        "properties": {
+          "controller": { "$ref": "#/$defs/slugString" },
+          "template": { "$ref": "#/$defs/templateName" },
+          "recipient": {
+            "properties": {
+              "email": { "$ref": "#/$defs/emailAddress" },
+              "postal": { "type": "string", "minLength": 10, "not": { "pattern": "__PARAM__" } },
+              "webForm": { "$ref": "#/$defs/httpsUrl" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "A parameterised playbook is a stencil, never a sendable artefact.",
+      "if": { "required": ["parameterised"], "properties": { "parameterised": { "const": true } } },
+      "then": { "properties": { "active": { "const": false } } }
+    }
+  ],
+  "$defs": {
+    "slugString": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$"
+    },
+    "templateName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$",
+      "$comment": "Also blocks path traversal: '../../etc/passwd' cannot match."
+    },
+    "emailAddress": {
+      "type": "string",
+      "format": "email",
+      "pattern": "^[^@\\s\"'<>()\\[\\],;:\\\\]+@[^@\\s\"'<>()\\[\\],;:\\\\.]+(\\.[^@\\s\"'<>()\\[\\],;:\\\\.]+)+$",
+      "$comment": "Both format and pattern on purpose: `format` is annotation-only unless the consumer registers ajv-formats, so the pattern is the constraint that actually bites."
+    },
+    "httpsUrl": {
+      "type": "string",
+      "pattern": "^https://[^\\s]+$"
+    },
+    "matcher": {
+      "$comment": "The real grammar every shipped playbook already uses. This was `{\"type\": \"object\"}` — entirely unconstrained — so the matcher syntax the engine depends on was the one thing the schema never validated.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "propertyNames": { "pattern": "^(responseContains|structured\\.[A-Za-z][A-Za-z0-9_]*)$" },
+      "properties": {
+        "responseContains": { "$ref": "#/$defs/needleList" }
+      },
+      "patternProperties": {
+        "^structured\\.[A-Za-z][A-Za-z0-9_]*$": { "type": ["string", "number", "boolean"] }
+      }
+    },
+    "needleList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 3 },
+      "$comment": "minLength 3: a one- or two-character needle matches almost any German letter and would auto-decide outcomes on noise."
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "$comment": "Exactly one of anyOf / allOf / responseContains. An empty condition matched nothing while looking like a rule.",
+      "properties": {
+        "anyOf": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/matcher" } },
+        "allOf": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/matcher" } },
+        "responseContains": { "$ref": "#/$defs/needleList" }
+      }
+    }
+  }
+}

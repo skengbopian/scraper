@@ -1,0 +1,44 @@
+# Art. 15(1)(h) explanation + Art. 22(3) human review for HireVue (US AI hiring/screening tool).
+# docs/10 §7.7 target #3. The usable levers today are GDPR (Art. 15(1)(h)/22(3)), not the AI-Act
+# high-risk duties (deferred to 2 Dec 2027). onDeadlineExpiry: NONE (US vendor, no German provable-send
+# path); a refusal is escalatable and C-203/22 makes "trade secret" refusals strong Art. 77 material.
+# CONTROLLER: usually the EMPLOYER; the vendor may be a (joint) controller for its own scoring — OQ per
+# case. active:false pending counsel (OQ-17).
+slug: explanation.hirevue
+kind: RIGHTS_REQUEST
+controller: hirevue
+requestType: ACCESS_ART15
+version: 1
+active: false
+legalBasis: "DSGVO Art. 15 Abs. 1 lit. h i.V.m. Art. 22 Abs. 3"
+channel:
+  primary: email
+recipient:
+  email: "privacy@hirevue.com"          # TODO(counsel): verify DSAR intake / EU representative
+template: art15h-22-3.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  # Needles encode the OUTCOME, not the topic: a refusal ("eine menschliche Überprüfung findet nicht
+  # statt") must NOT read as compliance. Compliance leans on the sandbox's structured booleans; refusal
+  # on refusal-specific phrasing (incl. the "not solely automated" rubber-stamp rebuttal and an
+  # identity-verification refusal). TODO(sandbox): emit structured.explanationProvided /
+  # structured.humanReviewPerformed for this request type. Art. 22(3) as a distinct right: see OQ-22.
+  compliedIf:
+    anyOf:
+      - structured.humanReviewPerformed: true
+      - structured.explanationProvided: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["Geschäftsgeheimnis", "lehnen wir ab", "findet nicht statt", "nicht ausschließlich automatisiert", "Identität nicht"]
+  humanReviewIfConfidenceBelow: 0.8
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  A "Geschäftsgeheimnis" refusal is not a lawful blanket bar (C-203/22) — route it to an Art. 77 draft.
+  Where the decision was solely automated, the Art. 22(3) human re-review is the primary demand.

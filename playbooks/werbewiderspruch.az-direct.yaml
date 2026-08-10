@@ -1,0 +1,44 @@
+# Art. 21(2) DSGVO marketing objection (Werbewiderspruch) to AZ Direct.
+# Unconditional objection to direct-marketing processing — highest-win-rate action.
+# NOTE(counsel): verify the current Datenschutz contact/address before enabling `active: true`.
+slug: werbewiderspruch.az-direct
+kind: RIGHTS_REQUEST
+controller: az-direct
+requestType: OBJECTION_ART21
+version: 1
+active: false                         # flip true only after counsel + endpoint verification
+legalBasis: "DSGVO Art. 21 Abs. 2"
+channel:
+  primary: email
+  fallback: postal
+  registered:
+    primary: false                    # email can never be registered (Einwurf-Einschreiben is postal)
+    fallback: true                    # the registered re-send that starts the Art. 12(3) clock
+recipient:
+  email: "datenschutz@az-direct.de"           # TODO(counsel): verify
+  postal: "AZ Direct GmbH, Datenschutz, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh"  # TODO(counsel): verify
+template: art21-werbewiderspruch.de
+identityProof:
+  required: false
+  accepts: [none]                     # a bare Art. 21(2) objection needs no ID; demanding one is
+                                      # over-collection and the template pushes back rather than comply
+subjectFields:
+  - legalName
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["Werbewiderspruch", "aus dem Werbeverteiler", "keine werbliche Ansprache", "gesperrt"]
+      - structured.marketingStopped: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse überwiegt", "lehnen wir ab"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+notes: >
+  Art. 21(2) is unconditional — no balancing test for direct marketing. If the reply demands a full ID
+  copy merely to stop marketing, treat as over-collection: respond with a redacted ID only if strictly
+  required, and note the point for a possible Art. 77 complaint.

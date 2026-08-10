@@ -1,0 +1,20 @@
+{
+  "name": "@scraper/doc-sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated untrusted-document parser. NO database dependency by design.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@scraper/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  }
+}

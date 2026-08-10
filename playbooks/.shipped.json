@@ -1,0 +1,62 @@
+{
+  "datenkopie.schufa": {
+    "version": 1,
+    "sha256": "b77420d154b5f9813680c58b8d7d8f1e9100bddf26e67ddf592448cdc9f09dc7"
+  },
+  "explanation.hirevue": {
+    "version": 1,
+    "sha256": "aeeeb42d01acc3dd4a8da322472a753c2686bff57c37202b3c45c17529424c0b"
+  },
+  "explanation.retorio": {
+    "version": 1,
+    "sha256": "5bbc440947352eb2e7d775b502862d48bc6b4c63a2fa810535dcf921967a083e"
+  },
+  "loeschung.apollo": {
+    "version": 1,
+    "sha256": "3081cca5fd3cb7c32a53b5423256f0df045754ef79ac369fddacd4de301410ec"
+  },
+  "loeschung.cognism": {
+    "version": 1,
+    "sha256": "d8ee415a17aa39868eba61a97278e42893836f437b9c63c42a23b8bc0cc843bf"
+  },
+  "loeschung.generic-adresshaendler": {
+    "version": 1,
+    "sha256": "f9d1e817796b91a2e957550ab3c297ceaf976ab0260c30129dc9175d896c9b64"
+  },
+  "loeschung.generic-datenhaendler": {
+    "version": 1,
+    "sha256": "f0950d9c2d432d062d1f94ae3c5e3a7254662a5b9155cb664f9d96e9b13594d8"
+  },
+  "loeschung.hireright": {
+    "version": 1,
+    "sha256": "37e0f7a7fd79a97f62ad12beda3adef7b4ac119b67dd20032961e1bf9f64a85c"
+  },
+  "loeschung.lusha": {
+    "version": 1,
+    "sha256": "c5aa8029813461b8a4b97b7dadc312a2b94b7f81fa9eb8e2d4de2f313694e3f5"
+  },
+  "loeschung.peopledatalabs": {
+    "version": 1,
+    "sha256": "53f3f474bd4f1305f01abfb9fa94235deac4e7a3685cf624c29ddce945aa10d2"
+  },
+  "loeschung.rocketreach": {
+    "version": 1,
+    "sha256": "5682a4e27f9398a1266e66bd5ceb1df4460ee09e0242808038e3d6ede226beee"
+  },
+  "loeschung.zoominfo": {
+    "version": 1,
+    "sha256": "a3e443384f99b03e786424e8ba6e399f15e2eb451d750e7b4e52e5e1fc105761"
+  },
+  "provenance.infoscore": {
+    "version": 1,
+    "sha256": "495a8b702f13aead8a3cb626f65c50ffd61e1f7afef2201460998b09a4a1a47b"
+  },
+  "provenance.schufa": {
+    "version": 1,
+    "sha256": "190de2ba31a73136d637eab50db5b5afbb0b34b043c212836b8ef6099ca22f24"
+  },
+  "werbewiderspruch.az-direct": {
+    "version": 1,
+    "sha256": "35848c2b96f1bef9dbd7456c75f3ff85f0212474d8ad0902efb1cd38bdb57444"
+  }
+}

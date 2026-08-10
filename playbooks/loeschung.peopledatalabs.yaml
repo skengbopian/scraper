@@ -1,0 +1,39 @@
+# Art. 17 erasure + Art. 21(1) objection to People Data Labs, Inc. (US enrichment broker).
+# docs/10 §7.7 target #1. Self-serve form (https://privacy.peopledatalabs.com/) is the cheapest rung;
+# this is the LEGAL FALLBACK. See loeschung.zoominfo for the clock/venue rationale. active:false pending
+# counsel (OQ-17).
+slug: loeschung.peopledatalabs
+kind: RIGHTS_REQUEST
+controller: peopledatalabs
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
+channel:
+  primary: email
+  fallback: web_form
+recipient:
+  email: "privacy@peopledatalabs.com"              # TODO(counsel): verify
+  webForm: "https://privacy.peopledatalabs.com/"   # TODO(counsel): verify
+template: art17-datenhaendler.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  PDL is a pure data-supplier API — its data flows into many downstream products, so the Art. 19
+  recipient-notification demand matters here. Confirm-link window is ~72h; deletion ~14 days.

@@ -1,0 +1,41 @@
+# Art. 17 erasure + Art. 21(1) objection to ZoomInfo (US enrichment broker). docs/10 §7.7 target #1.
+# Cheapest rung is the self-serve form (SelfServeRoute: https://www.zoominfo.com/update/remove); this
+# is the LEGAL FALLBACK. Instrument is Art. 17 + Art. 21(1), NOT Art. 21(2) (this is not direct
+# marketing — verified 2026-08-09). onDeadlineExpiry: NONE because a US broker has no German
+# Einwurf-Einschreiben path to a provable silence clock (OQ-21); a refusal reply proves receipt and is
+# escalatable to the user's habitual-residence Land DPA (OQ-20). active:false pending counsel (OQ-17).
+slug: loeschung.zoominfo
+kind: RIGHTS_REQUEST
+controller: zoominfo
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
+channel:
+  primary: email
+  fallback: web_form
+recipient:
+  email: "privacy@zoominfo.com"                        # TODO(counsel): verify current DSAR intake
+  webForm: "https://www.zoominfo.com/update/remove"    # TODO(counsel): verify canonical removal URL
+template: art17-datenhaendler.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  Prefer the self-serve removal form first (cheapest-rung-first, docs/08). Reappears after removal
+  (re-scraping + customer re-uploads) — demand the suppression list and re-check in ~4 weeks.

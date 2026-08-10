@@ -1,0 +1,12 @@
+# pnpm workspace definition — AUTHORITATIVE.
+#
+# pnpm discovers workspace packages ONLY from this file; the npm-style "workspaces" array in
+# package.json is ignored by pnpm. Every root script is `pnpm -r <task>`, so without this file
+# `pnpm -r build` resolves zero packages. Keep this list and package.json#workspaces in sync.
+#
+# tools/spec-audit is deliberately NOT a workspace member: it is a standalone npm harness that must
+# run before (and independently of) the monorepo toolchain existing. It is wired into CI separately.
+packages:
+  - 'apps/*'
+  - 'services/*'
+  - 'packages/*'

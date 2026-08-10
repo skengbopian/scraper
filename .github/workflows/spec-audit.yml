@@ -1,0 +1,61 @@
+name: spec-audit
+
+# The spec harness gates every change. It is deliberately independent of the monorepo toolchain:
+# it must be able to run before apps/ and packages/ exist, and it must keep running if they break.
+# tools/spec-audit is therefore NOT a pnpm workspace member and installs with plain npm.
+#
+# What each job protects:
+#   audit        — every shipped playbook passes the full gate (schema + semantic lints); the three
+#                  normative files still agree that email is not proof of delivery (audit C1).
+#   negative     — the 28 must-never-be-sendable playbooks are still rejected, each for its own reason.
+#   statemachine — no dead ends, required journeys reachable, and the forbidden C1 escalation path and
+#                  the single human-gated inbound edge to ESCALATED are both absent/intact.
+#   versions     — no shipped playbook version was mutated in place (docs/04 authoring rule).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  spec-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/spec-audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install harness dependencies
+        run: npm install --no-audit --no-fund
+
+      # Run each harness separately so a failure names itself in the job list rather than
+      # hiding behind a single "npm run all" step.
+      - name: Playbook + document audit
+        run: npm run audit
+
+      - name: Negative tests (schema holes)
+        run: npm run negative
+
+      - name: State machine (structure + anti-journeys)
+        run: npm run statemachine
+
+      - name: Playbook version monotonicity
+        run: npm run versions
+
+  a11y-placeholder:
+    # docs/09 makes accessibility a launch gate and asks for an axe check in CI. There is no UI yet,
+    # so this job documents the requirement rather than pretending to enforce it. Replace the echo
+    # with the real axe run when the first screen lands — do not delete the job.
+    runs-on: ubuntu-latest
+    steps:
+      - name: axe accessibility check (not yet implementable — no UI)
+        run: |
+          echo "docs/09 usability gate: WCAG 2.2 AA + axe in CI is required before onboarding real users."
+          echo "No user-facing surface exists yet. This job is a placeholder and must be replaced,"
+          echo "not removed, when the first screen is built."

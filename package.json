@@ -1,0 +1,23 @@
+{
+  "name": "scraper",
+  "private": true,
+  "description": "Scraper (The Right to Be Forgotten) — Phase 0 monorepo. Germany-first consumer data-rights platform.",
+  "packageManager": "pnpm@9.15.9",
+  "engines": { "node": ">=20" },
+  "//workspaces": "Documentation only. pnpm reads workspace members from pnpm-workspace.yaml, NOT from this array. pnpm-workspace.yaml is authoritative — keep the two in sync.",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "//": "Scaffolding placeholder — Claude Code fills these in during M0. Do not add real deps until the layout is confirmed.",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "dev": "pnpm -r --parallel dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@scraper/spec-audit",
+  "private": true,
+  "type": "module",
+  "description": "Spec-conformance harness: validates playbooks against the schema, checks template bindings and doc integrity, and probes the schema and state machine for holes. Promote to CI.",
+  "scripts": {
+    "audit": "node audit.mjs",
+    "negative": "node negative.mjs",
+    "statemachine": "node statemachine.mjs",
+    "versions": "node version-check.mjs",
+    "seal": "node version-check.mjs --seal",
+    "all": "node audit.mjs && node negative.mjs && node statemachine.mjs && node version-check.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.6.0"
+  }
+}

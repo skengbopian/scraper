@@ -1,0 +1,44 @@
+# Art. 15 DSGVO access request (kostenlose Datenkopie) to SCHUFA.
+# Credit bureau: ACCESS only in Phase 0 (no erasure; correction/retention come later).
+# NOTE(counsel): SCHUFA offers a dedicated Datenkopie route; confirm current process/endpoint.
+slug: datenkopie.schufa
+kind: RIGHTS_REQUEST
+controller: schufa
+requestType: ACCESS_ART15
+version: 1
+active: false
+legalBasis: "DSGVO Art. 15 (Datenkopie nach Art. 15 Abs. 3)"
+channel:
+  primary: postal                     # SCHUFA typically verifies identity for the free data copy
+  fallback: web_form                  # web_form → human queue in Phase 0
+  registered:
+    primary: true                     # escalates on deadline expiry, so the send must be provable
+    fallback: false                   # web_form cannot be registered
+recipient:
+  postal: "SCHUFA Holding AG, Postfach 10 34 41, 50474 Köln"   # TODO(counsel): verify current address
+  webForm: "https://www.meineschufa.de/datenkopie"             # TODO(counsel): verify
+template: art15-datenkopie.de
+identityProof:
+  required: true                      # bureau will match to the verified identity
+  accepts: [redacted_id]
+subjectFields:
+  - legalName
+  - dateOfBirth
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - structured.responseType: "datenkopie"
+      - responseContains: ["Bonitätsauskunft", "Datenkopie", "gespeicherte Daten", "Score"]
+  refusedIf:
+    anyOf:
+      - responseContains: ["können wir Ihrem Antrag nicht", "Identität nicht"]
+  humanReviewIfConfidenceBelow: 0.8   # parsing a credit file → higher bar, likely human-reviewed
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+notes: >
+  Phase 0 does the Datenkopie request + normalised parse only. Do NOT auto-generate disputes,
+  retention arguments, or a score simulation — those are Score Studio (deferred). The parsed file feeds
+  the user's Data Radar; any downstream action is human-initiated for now.

@@ -1,0 +1,44 @@
+# Art. 17 DSGVO erasure (Löschung) — generic template for a marketing/address broker where the legal
+# basis for processing has fallen away (e.g. after an Art. 21(2) objection, retention no longer justified).
+# Parameterised: clone per controller and set recipient + validation strings.
+slug: loeschung.generic-adresshaendler
+kind: RIGHTS_REQUEST
+controller: "__PARAM__"               # set to the concrete Controller.slug when instantiating
+requestType: ERASURE_ART17
+version: 1
+active: false
+parameterised: true                   # stencil: carries __PARAM__ placeholders, so it may never be
+                                      # active:true. Clone and fill them to make it sendable.
+legalBasis: "DSGVO Art. 17 Abs. 1 (i.V.m. Art. 21 Abs. 2 Widerspruch)"
+channel:
+  primary: email
+  fallback: postal
+  registered:
+    primary: false                    # was `registered: true` on an email primary — not a thing (H2)
+    fallback: true                    # erasure is often disputed → the postal re-send is the provable one
+recipient:
+  email: "__PARAM__"                  # TODO(counsel): per-controller Datenschutz address
+  postal: "__PARAM__"
+template: art17-loeschung.de          # TODO(counsel): template exists but is DRAFT — needs sign-off
+identityProof:
+  required: false
+  accepts: [none]                     # required:false pairs with none; see docs/04
+subjectFields:
+  - legalName
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - responseContains: ["gelöscht", "Löschung", "entfernt"]
+      - structured.erased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["Aufbewahrungspflicht", "berechtigtes Interesse", "lehnen wir ab"]
+  humanReviewIfConfidenceBelow: 0.75
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+notes: >
+  Use erasure only where the basis is genuinely gone (prefer Art. 21(2) objection first for marketing
+  data). For credit bureaus, do NOT use this — use correction/retention arguments instead (deferred).

@@ -1,0 +1,10 @@
+{
+  "name": "@scraper/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Alpha consumer UI (docs/09 usability gate). Zero-dependency, self-contained; graduates to Next.js + shadcn/Radix.",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "start": "python3 -m http.server 8080"
+  }
+}

@@ -1,0 +1,524 @@
+// Prisma schema — docs/03-data-model.md is normative; this is its implementation.
+//
+// Several invariants here cannot be expressed in Prisma's DSL and are enforced by SQL in
+// migrations/0001_invariants.sql. They are NOT optional polish: each one is a case where application
+// code alone would let a legally wrong row exist. See the header of that file.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Vocabulary
+// ---------------------------------------------------------------------------------------------
+
+/// One shared vocabulary (docs/03 §ActionType). NOT all of these are rights requests:
+/// ROBINSON and EINMELDUNG_FRAUD have no Art. 12(3) clock and no Art. 77 remedy, so they
+/// materialise as SuppressionEnrolment / FraudMarkerFiling, never as a RightsRequest.
+enum ActionType {
+  OBJECTION_ART21
+  ACCESS_ART15
+  ACCESS_ART15_SOURCE
+  ERASURE_ART17
+  ROBINSON
+  EINMELDUNG_FRAUD
+}
+
+/// RightsRequest.requestType is constrained to these four by a CHECK constraint (see migration).
+enum StatutoryRequestType {
+  OBJECTION_ART21
+  ACCESS_ART15
+  ACCESS_ART15_SOURCE
+  ERASURE_ART17
+}
+
+enum RequestState {
+  DRAFT
+  BLOCKED_IDENTITY
+  READY
+  SENT
+  AWAITING_RESPONSE_PROVISIONAL
+  AWAITING_RESPONSE
+  AWAITING_REGISTERED_RESEND
+  RESPONSE_RECEIVED
+  NEEDS_HUMAN
+  COMPLIED
+  INCOMPLETE
+  REFUSED
+  ESCALATION_DRAFTED
+  ESCALATED
+  CLOSED_FAILED
+  WITHDRAWN
+}
+
+enum Outcome {
+  COMPLIED
+  INCOMPLETE
+  REFUSED
+  NO_RESPONSE
+  /// The user declined the registered re-send. EXCLUDED from controller compliance stats: no
+  /// provable clock ever ran, so the silence is not evidence of non-compliance (docs/05 §6).
+  NO_PROVABLE_CLOCK
+  WITHDRAWN
+  ABANDONED
+}
+
+enum RequestCause {
+  USER_INITIATED
+  PROVENANCE_CHAIN
+  FRAUD_REPAIR
+}
+
+enum IdentityStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  EXPIRED
+}
+
+enum IdentityMethod {
+  BANK_IDENT
+  EID
+}
+
+enum ControllerType {
+  CREDIT_BUREAU
+  ADDRESS_TRADER
+  DIRECTORY
+  ECOMMERCE
+  OTHER
+  /// docs/10 §7: B2B people-data / contact-enrichment brokers (ZoomInfo, Apollo, Lusha, Cognism,
+  /// People Data Labs, RocketReach) that scrape LinkedIn/Xing and sell professional profiles.
+  /// NOTE: these follow OTHER so the declared order matches the migration's ADD VALUE append order.
+  DATA_ENRICHMENT_BROKER
+  /// Applicant-tracking / HCM systems (Workday, SAP SuccessFactors, Personio…). Usually a PROCESSOR
+  /// for the employer — the removal route is a request to the employer, not to the vendor.
+  HR_TECH
+  /// AI hiring/screening tools (HireVue, Retorio, Pymetrics…) — Art. 22 automated-decision exposure.
+  AI_SCREENER
+  /// Background-screening firms (HireRight, Sterling, First Advantage…).
+  SCREENING
+}
+
+enum ControllerRole {
+  BUREAU
+  BROKER
+  DIRECTORY
+  /// docs/10 §7: a data-enrichment broker. Instrument is Art. 17 + Art. 21(1), NOT the Art. 21(2)
+  /// marketing objection — this processing is sales/recruiting intelligence, not direct marketing.
+  ENRICHMENT_BROKER
+  /// An HR-tech vendor acting as processor for an employer; the controller is the employer.
+  EMPLOYER_PROCESSOR
+}
+
+enum ChannelMode {
+  email
+  web_form
+  postal
+}
+
+enum Actor {
+  SYSTEM
+  USER
+  HUMAN_OPS
+}
+
+enum EvidenceKind {
+  OUTBOUND_COPY
+  SCREENSHOT
+  POSTAL_PROOF
+  RESPONSE_COPY
+}
+
+enum IdentityPacketKind {
+  REDACTED_ID_COPY
+  NONE
+}
+
+// ---------------------------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------------------------
+
+model User {
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  subscriptionStatus String   @default("none")
+  createdAt          DateTime @default(now())
+
+  identity              Identity?
+  mandates              Mandate[]
+  rightsRequests        RightsRequest[]
+  suppressionEnrolments SuppressionEnrolment[]
+  fraudMarkerFilings    FraudMarkerFiling[]
+  provenanceLedgers     ProvenanceLedger[]
+}
+
+/// THE SAFETY KEYSTONE. Every RightsRequest's subject identifiers are snapshotted from here and
+/// never free-typed. There is no column anywhere that holds a subject name typed by a user.
+model Identity {
+  id          String          @id @default(cuid())
+  userId      String          @unique
+  status      IdentityStatus  @default(UNVERIFIED)
+  method      IdentityMethod?
+  /// Encrypt at rest with a per-user envelope key (docs/03 retention section).
+  legalName   String?
+  dateOfBirth DateTime?
+  verifiedAt  DateTime?
+  providerRef String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses IdentityAddress[]
+  packet    IdentityPacket?
+}
+
+model IdentityAddress {
+  id         String   @id @default(cuid())
+  identityId String
+  street     String
+  postalCode String
+  city       String
+  country    String   @default("DE")
+  /// Exactly one current address per identity — enforced by a partial unique index in the migration.
+  /// Zero means an empty "Anschrift" line goes out in a legal letter; more than one means the
+  /// renderer picks arbitrarily.
+  current    Boolean  @default(false)
+  verifiedAt DateTime
+
+  identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+}
+
+/// The docs/08 Tier-2 "pre-verified identity packet" (audit C6). Three templates promise a redacted
+/// ID enclosure; without this entity nothing could produce one and the letters asserted an enclosure
+/// they did not carry.
+model IdentityPacket {
+  id                String             @id @default(cuid())
+  identityId        String             @unique
+  kind              IdentityPacketKind
+  redactionProfile  String
+  /// Segregated, envelope-encrypted store; key gated on step-up auth (docs/06 C2).
+  storageRef        String?
+  sha256            String
+  generatedAt       DateTime           @default(now())
+  expiresAt         DateTime?
+  sourceProviderRef String?
+  lastAttachedAt    DateTime?
+
+  identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+}
+
+model Mandate {
+  id              String                 @id @default(cuid())
+  userId          String
+  /// Which request types this authorisation covers.
+  scope           StatutoryRequestType[]
+  qesSignatureRef String
+  documentHash    String
+  signedAt        DateTime
+  revokedAt       DateTime?
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rightsRequests RightsRequest[]
+
+  @@index([userId])
+}
+
+/// The census — the moat.
+model Controller {
+  id                       String          @id @default(cuid())
+  slug                     String          @unique
+  legalName                String
+  type                     ControllerType
+  role                     ControllerRole?
+  country                  String          @default("DE")
+  /// Competent supervisory authority for an Art. 77 complaint. Mirrors the playbook seatDpa enum.
+  seatDpa                  String?
+  namesSourcesInArt14      Boolean         @default(false)
+  art15SourceRouteVerified Boolean         @default(false)
+  legalBasisNotes          String?
+  identityProofRequired    String?
+  responseNormDays         Int?
+
+  playbooks          Playbook[]
+  rightsRequests     RightsRequest[]
+  provenanceLedgers  ProvenanceLedger[]
+  fraudMarkerFilings FraudMarkerFiling[]
+}
+
+model Playbook {
+  id           String     @id @default(cuid())
+  controllerId String
+  slug         String
+  requestType  ActionType
+  version      Int
+  active       Boolean    @default(false)
+  /// The parsed YAML. schema/playbook.schema.json is normative and is validated on load.
+  document     Json
+  createdAt    DateTime   @default(now())
+
+  controller     Controller      @relation(fields: [controllerId], references: [id])
+  rightsRequests RightsRequest[]
+
+  /// Never mutate a shipped version (docs/04). The uniqueness is the audit key.
+  @@unique([slug, version])
+  @@index([controllerId])
+}
+
+// ---------------------------------------------------------------------------------------------
+// The ticket
+// ---------------------------------------------------------------------------------------------
+
+model RightsRequest {
+  id           String               @id @default(cuid())
+  userId       String
+  controllerId String
+  playbookId   String
+  mandateId    String?
+  requestType  StatutoryRequestType
+  state        RequestState         @default(DRAFT)
+  cause        RequestCause         @default(USER_INITIATED)
+
+  channel    ChannelMode
+  /// Was THIS dispatch a registered (Einwurf-Einschreiben) send?
+  registered Boolean     @default(false)
+
+  sentAt                  DateTime?
+  /// Operational scheduling hint from a non-provable send. NEVER a statutory deadline, never shown
+  /// to a controller or a DPA as one (CLAUDE.md §6). Separate column so no query can confuse them.
+  provisionalDeadlineAt   DateTime?
+  /// The Art. 12(3) clock. A CHECK constraint enforces: non-null ONLY if provableSendConfirmedAt is.
+  deadlineAt              DateTime?
+  provableSendConfirmedAt DateTime?
+  closedAt                DateTime?
+  outcome                 Outcome?
+
+  /// Idempotency (audit C3): sha256(userId|controllerId|requestType|cycleOrdinal), UNIQUE.
+  /// The cycle dimension is what permits the provenance follow-up chain, the resend path, and
+  /// lawful annual Art. 15 re-access — a bare unique triple would forbid all three.
+  cycleOrdinal   Int    @default(1)
+  idempotencyKey String @unique
+
+  supersedesRequestId String?
+  createdAt           DateTime @default(now())
+
+  user         User            @relation(fields: [userId], references: [id])
+  controller   Controller      @relation(fields: [controllerId], references: [id])
+  playbook     Playbook        @relation(fields: [playbookId], references: [id])
+  mandate      Mandate?        @relation(fields: [mandateId], references: [id])
+  supersedes   RightsRequest?  @relation("RequestChain", fields: [supersedesRequestId], references: [id])
+  supersededBy RightsRequest[] @relation("RequestChain")
+
+  events           RequestEvent[]
+  responses        ControllerResponse[]
+  evidence         EvidenceRecord[]
+  provenanceLedger ProvenanceLedger?
+
+  @@index([userId, controllerId, requestType])
+  @@index([state])
+  @@index([deadlineAt])
+}
+
+/// Append-only. No updates, no deletes — corrections are new rows (enforced by triggers).
+model RequestEvent {
+  id        String        @id @default(cuid())
+  requestId String
+  type      String
+  fromState RequestState?
+  toState   RequestState
+  actor     Actor
+  payload   Json?
+  createdAt DateTime      @default(now())
+
+  request RightsRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model ControllerResponse {
+  id              String      @id @default(cuid())
+  requestId       String
+  receivedAt      DateTime
+  channel         ChannelMode
+  /// Purged after the normalisation window (docs/03 retention).
+  rawDocumentRef  String?
+  /// Parser output. ADVISORY ONLY — may never drive an irreversible transition below the confidence
+  /// threshold or without human review (docs/06 C4).
+  structured      Json
+  parseConfidence Float
+  reviewedByHuman Boolean     @default(false)
+
+  request RightsRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+/// Tamper-evident. A hash chain proves integrity; only the QTSP anchor proves time.
+model EvidenceRecord {
+  id                    String       @id @default(cuid())
+  requestId             String
+  kind                  EvidenceKind
+  sha256                String
+  prevHash              String?
+  chainHash             String       @unique
+  qualifiedTimestampRef String?
+  storageRef            String
+  createdAt             DateTime     @default(now())
+
+  request RightsRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Provenance (the flagship) — docs/09
+// ---------------------------------------------------------------------------------------------
+
+model ProvenanceLedger {
+  id              String   @id @default(cuid())
+  userId          String
+  controllerId    String
+  rightsRequestId String   @unique
+  createdAt       DateTime @default(now())
+
+  user       User              @relation(fields: [userId], references: [id])
+  controller Controller        @relation(fields: [controllerId], references: [id])
+  request    RightsRequest     @relation(fields: [rightsRequestId], references: [id], onDelete: Cascade)
+  entries    ProvenanceEntry[]
+
+  @@index([userId, controllerId])
+}
+
+model ProvenanceEntry {
+  id                   String  @id @default(cuid())
+  ledgerId             String
+  dataCategory         String
+  statedSource         String?
+  statedLegalBasis     String?
+  isBroker             Boolean @default(false)
+  matchedWatchlistSlug String?
+  confidence           Float
+  evidenceRecordId     String?
+
+  ledger ProvenanceLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+
+  @@index([ledgerId])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Non-statutory actions (audit H3) — no Art. 12(3) clock, no Art. 77 route
+// ---------------------------------------------------------------------------------------------
+
+model SuppressionProgram {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  name          String
+  jurisdiction  String
+  channel       ChannelMode
+  renewalMonths Int?
+
+  enrolments SuppressionEnrolment[]
+}
+
+model SuppressionEnrolment {
+  id         String    @id @default(cuid())
+  userId     String
+  programId  String
+  state      String
+  enrolledAt DateTime  @default(now())
+  expiresAt  DateTime?
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program SuppressionProgram @relation(fields: [programId], references: [id])
+
+  @@unique([userId, programId])
+}
+
+/// The Schufa Identitätsbetrug-Einmeldung victim marker. A guided filing, not a demand.
+/// It does NOT affect the score — do not present it as if it does (docs/05 §3).
+model FraudMarkerFiling {
+  id               String    @id @default(cuid())
+  userId           String
+  controllerId     String
+  state            String
+  filedAt          DateTime?
+  identityPacketId String?
+  evidenceRecordId String?
+  confirmedAt      DateTime?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  controller Controller @relation(fields: [controllerId], references: [id])
+
+  @@index([userId])
+}
+
+/// Tier telemetry (docs/08). Every user-visible action writes exactly one row, including failures —
+/// under-reporting cost corrupts the only metric that steers spend.
+model LeverageAction {
+  id               String    @id @default(cuid())
+  userId           String
+  controllerId     String?
+  tier             String
+  mechanism        String
+  costCents        Int       @default(0)
+  outcome          String
+  verifiedAt       DateTime?
+  evidenceRecordId String?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tier, mechanism])
+}
+
+/// The docs/08 Tier-1 "self-serve route directory" (specced in docs/08 §2, built in docs/10 §7 for the
+/// enrichment-broker layer). The cheapest rung: use the company's own deletion / opt-out page rather
+/// than a legal letter — there is nothing for them to refuse. Cheapest-rung-first routing prefers a
+/// matching route over generating a RightsRequest (docs/08 guardrail 5).
+///
+/// GUARDRAIL (docs/08 guardrail 1, non-negotiable): this entity holds NO third-party credential. A route
+/// with `requiresLogin = true` stays a GUIDED HANDOFF — we deep-link the user into their own session and
+/// they act; we never store their password or log in for them. There is deliberately no password/token/
+/// cookie column here, and packages/core asserts that absence in a test.
+model SelfServeRoute {
+  id                 String             @id @default(cuid())
+  /// The controller this route belongs to (Controller.slug). Not an FK: a route may exist for a company
+  /// before it is imported into the census, and the census import reconciles by slug.
+  companySlug        String
+  routeType          SelfServeRouteType
+  /// The public opt-out / deletion / preference URL. Deep-linked in a guided handoff.
+  url                String
+  /// Ordered, human-readable steps the user follows (rendered as a checklist). Not executable code.
+  steps              String[]
+  /// True where the route requires signing into the company's account. Such routes stay GUIDED — never
+  /// automated, never credential-storing (docs/08 guardrail 1).
+  requiresLogin      Boolean            @default(false)
+  estMinutes         Int?
+  /// Staleness kills this asset — a broken link starts nothing. A re-check job updates this (docs/08 §2).
+  lastVerifiedAt     DateTime?
+  verificationMethod String?
+  /// Rolling success rate, for cheapest-rung routing and honest reporting.
+  successRate        Float?
+  createdAt          DateTime           @default(now())
+
+  @@index([companySlug])
+  @@index([companySlug, routeType])
+}
+
+/// The kinds of self-serve off-switch a company exposes (docs/08 §2). DSR_ERASURE is the enrichment-
+/// broker "remove me" form (e.g. ZoomInfo's removal page, Apollo's Privacy Center) — a genuine GDPR
+/// erasure route, distinct from a mere US-style DO_NOT_SELL suppression.
+enum SelfServeRouteType {
+  ACCOUNT_DELETION
+  MARKETING_PREFS
+  DO_NOT_SELL
+  AD_ID_RESET
+  CONSENT_WITHDRAWAL
+  DSR_ERASURE
+}

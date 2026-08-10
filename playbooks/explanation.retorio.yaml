@@ -1,0 +1,42 @@
+# Art. 15(1)(h) explanation + Art. 22(3) human review for Retorio (DE AI hiring/video-analysis tool).
+# docs/10 §7.7 target #3. Retorio is German-established, so a registered-post provable clock IS available
+# in principle — but its postal address is unverified, so this draft uses email + onDeadlineExpiry NONE.
+# TODO(counsel): before activation, verify Retorio GmbH's Impressum/Datenschutz postal address (Munich),
+# add a postal fallback with registered.fallback:true, set seatDpa: BAYLDA (Bavarian private-sector DPA),
+# and switch onDeadlineExpiry to DRAFT_ART77 so silence also escalates. Also note Art. 9 (biometric
+# voice/face analysis) exposure. active:false (OQ-17).
+slug: explanation.retorio
+kind: RIGHTS_REQUEST
+controller: retorio
+requestType: ACCESS_ART15
+version: 1
+active: false
+legalBasis: "DSGVO Art. 15 Abs. 1 lit. h i.V.m. Art. 22 Abs. 3"
+channel:
+  primary: email
+recipient:
+  email: "datenschutz@retorio.com"      # TODO(counsel): verify DSAR intake + postal address
+template: art15h-22-3.de
+identityProof:
+  required: false
+  accepts: [none]
+subjectFields:
+  - legalName
+deadlineDays: 30
+validation:
+  # Outcome-based needles (see explanation.hirevue). Compliance leans on structured booleans; refusal on
+  # refusal-specific phrasing. TODO(sandbox): emit structured.explanationProvided / humanReviewPerformed.
+  compliedIf:
+    anyOf:
+      - structured.humanReviewPerformed: true
+      - structured.explanationProvided: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["Geschäftsgeheimnis", "lehnen wir ab", "findet nicht statt", "nicht ausschließlich automatisiert", "Identität nicht"]
+  humanReviewIfConfidenceBelow: 0.8
+escalation:
+  onDeadlineExpiry: NONE
+  onRefusal: DRAFT_ART77
+notes: >
+  Video/voice analysis engages Art. 9 (biometric) — counsel may add an Art. 9-lawfulness challenge and,
+  for a German entity, upgrade the channel to registered post so silence also escalates.

@@ -1,0 +1,50 @@
+# Art. 15(1)(g) provenance request to SCHUFA — the Provenance flagship.
+# Names section 2.3 "Datenlieferanten" verbatim and demands source-by-category disclosure.
+# NOTE(counsel): verify current Datenkopie/Datenschutz route before enabling.
+slug: provenance.schufa
+kind: RIGHTS_REQUEST
+controller: schufa
+requestType: ACCESS_ART15_SOURCE
+version: 1
+active: false
+legalBasis: "DSGVO Art. 15 Abs. 1 lit. g"
+templateFlags:
+  isSchufa: true                      # switches on the Datenlieferanten paragraph in the template
+channel:
+  primary: postal                     # bureau verifies identity for the free data copy
+  fallback: web_form                  # → human queue in Phase 0
+  registered:
+    primary: true                     # provenance answers feed escalation → keep provable delivery
+    fallback: false                   # web_form cannot be registered
+recipient:
+  postal: "SCHUFA Holding AG, Postfach 10 34 41, 50474 Köln"   # TODO(counsel): verify
+  webForm: "https://www.meineschufa.de/datenkopie"             # TODO(counsel): verify
+template: art15g-herkunft.de
+identityProof:
+  required: true
+  accepts: [redacted_id]
+subjectFields: [legalName, dateOfBirth, addresses]
+deadlineDays: 30
+provenance:                           # parsed into the ProvenanceLedger by the doc sandbox
+  extractPerCategory: true
+  brokerWatchlist: [az-direct, acxiom, deutsche-post-direkt, schober, capaneo, regis24, postadress]
+  flagIf:
+    incompleteSourceList: true        # missing source for any stored category → escalation-worthy
+validation:
+  compliedIf:
+    anyOf:
+      - structured.sourcesNamedPerCategory: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["keine Angaben zur Herkunft", "Geschäftsgeheimnis", "nicht möglich"]
+  humanReviewIfConfidenceBelow: 0.8
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+  onIncompleteSourceList: DRAFT_ART77  # BayLDA precedent: incomplete Art. 15 answer = violation
+seatDpa: HBDI                          # Hessischer Beauftragter für Datenschutz (Wiesbaden)
+notes: >
+  Phase 0 goal: collect and parse provenance answers; where a broker on brokerWatchlist is named as the
+  source of a category, spawn ERASURE_ART17 at Schufa (Art. 17(1)(d)) and OBJECTION_ART21 + ERASURE_ART17
+  at the named broker. Do NOT auto-send Art. 77 — draft for human review. Also request historical/
+  Schattendatenbank data explicitly (template already does).

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+.turbo/
+.pnpm-store/
+.DS_Store
+# never commit user data, evidence, or scanned documents
+/data/
+/evidence/
+/inbound/
+*.pem
+*.key
+
+# build output
+*.tsbuildinfo
