@@ -102,17 +102,26 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
   async applyTransition(id: string, result: unknown): Promise<void> {
     const r = this.requests.get(id);
     if (!r) throw new Error(`applyTransition: unknown request ${id} — a missing request during a transition is an invariant violation`);
-    const p = (result as TransitionResult).patch;
+    const t = result as TransitionResult;
+    const p = t.patch;
     // Merge only the known RequestSnapshot fields (patch may also carry closedAt, which is not on the
     // snapshot); `!== undefined` preserves an explicit null in the patch.
     this.requests.set(id, {
       ...r,
-      state: (result as TransitionResult).to,
+      state: t.to,
       deadlineAt: p.deadlineAt !== undefined ? p.deadlineAt : r.deadlineAt,
       provisionalDeadlineAt: p.provisionalDeadlineAt !== undefined ? p.provisionalDeadlineAt : r.provisionalDeadlineAt,
       provableSendConfirmedAt: p.provableSendConfirmedAt !== undefined ? p.provableSendConfirmedAt : r.provableSendConfirmedAt,
       outcome: p.outcome !== undefined ? p.outcome : r.outcome,
+      // A controller reply proves receipt (invariant 3b reads this flag) — record it on the ingest
+      // edge itself so no caller can forget to set it.
+      hasControllerResponse: t.event === 'responseIngested' ? true : r.hasControllerResponse,
     });
+  }
+
+  /** All requests for one user, insertion-ordered. Backs GET /requests (the Vorgänge list). */
+  async listByUser(userId: string): Promise<readonly (RequestSnapshot & { userId: string })[]> {
+    return [...this.requests.values()].filter((r) => r.userId === userId);
   }
 
   // --- inspection, for demos and tests ---

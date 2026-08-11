@@ -37,6 +37,12 @@ export class RequestsController {
     });
   }
 
+  /** The user's Vorgänge — what the pipeline screen lists (docs/09 §3). */
+  @Get()
+  async list(@Req() req: AuthedRequest) {
+    return this.service.listForUser(req.userId);
+  }
+
   /** The user-facing pipeline view: Gesendet → Frist läuft → Antwort → Erledigt (docs/09 §3). */
   @Get(':id')
   async get(@Req() req: AuthedRequest, @Param('id') id: string) {
@@ -46,10 +52,11 @@ export class RequestsController {
   /**
    * The C1 chase step. The user authorises the registered re-send when a provisional deadline
    * expires — it is a paid action and the first step onto the escalation ladder, so it is theirs.
+   * The service re-runs the full guard set (invariant 1: every entry to READY is guarded).
    */
   @Post(':id/registered-resend')
   async confirmResend(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.service.confirmRegisteredResend(req.userId, id);
+    return this.service.confirmRegisteredResend(req.userId, req.identity, id);
   }
 
   @Post(':id/decline-resend')

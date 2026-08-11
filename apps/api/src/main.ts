@@ -3,13 +3,18 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 
 /**
- * Boot the API. Runs once `@nestjs/*` is installed (pnpm/corepack is broken in the current sandbox, so
- * this is not executed here — the wiring is exercised end to end by the in-memory engine: the
- * `engine-e2e` test and `tools/demo/run-engine.mjs`). The dev wiring uses an in-memory repository; a
- * Prisma adapter (EU-region Postgres) is the production swap. See requests.module.ts.
+ * Boot the API.
+ *
+ * CORS: the alpha web page runs from file:// (Origin "null") or a localhost static server on another
+ * port, so dev origins are allowed explicitly. This list is dev-shaped on purpose — the production
+ * origin set is a deployment decision, and file://-null must never be allowed there.
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  app.enableCors({
+    origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/, 'null'],
+    methods: ['GET', 'POST'],
+  });
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   new Logger('Bootstrap').log(`Scraper API listening on :${port}`);
