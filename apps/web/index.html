@@ -9,13 +9,15 @@
 <body>
 <style>
   :root {
-    --ground:#FAF9FE; --surface:#FFFFFF; --surface-2:#F5F3FB;
-    --ink:#18132A; --muted:#5C5570; --faint:#8D86A0;
-    --hair:#E5E1F0; --hair-strong:#CFC8E2;
-    --accent:#6D28D9; --accent-ink:#5B21B6; --accent-tint:#EEE7FC;
-    --good:#2E7D46; --good-tint:#DCEFE1;
-    --warn:#B26A00; --warn-tint:#F7E9CE;
-    --crit:#C0392B; --crit-tint:#F7DBD6;
+    /* Light tokens match the original Scraper web app (apps/web in the sibling Next.js repo):
+       bg #F7F5FC · ink #1B1633 · accent #6D28D9 · accent-strong #59189E · soft-bg #F1EAFE. */
+    --ground:#F7F5FC; --surface:#FFFFFF; --surface-2:#F1F0F7;
+    --ink:#1B1633; --muted:#575070; --faint:#6E6787;
+    --hair:#E1DCEF; --hair-strong:#CFC8E2;
+    --accent:#6D28D9; --accent-ink:#59189E; --accent-tint:#F1EAFE;
+    --good:#2E7D46; --good-ink:#16613A; --good-tint:#DCEFE1;
+    --warn:#B26A00; --warn-ink:#8A5410; --warn-tint:#F7E9CE;
+    --crit:#C0392B; --crit-ink:#A3201B; --crit-tint:#F7DBD6;
     --radius:16px; --radius-sm:11px;
     --shadow:0 1px 2px rgba(16,22,30,.06), 0 8px 24px rgba(16,22,30,.06);
     --tap:52px;
@@ -24,25 +26,25 @@
   @media (prefers-color-scheme:dark){
     :root{
       --ground:#120E1E; --surface:#1B1530; --surface-2:#241D3E;
-      --ink:#EAE6F4; --muted:#A79FBE; --faint:#7A7292;
+      --ink:#EAE6F4; --muted:#A79FBE; --faint:#8F87A8;
       --hair:#2C2447; --hair-strong:#3B3160;
       --accent:#A78BFA; --accent-ink:#C4B5FD; --accent-tint:#2B2054;
-      --good:#5FBE7C; --good-tint:#16301F;
-      --warn:#E0A040; --warn-tint:#332611;
-      --crit:#E27567; --crit-tint:#361B17;
+      --good:#5FBE7C; --good-ink:#5FBE7C; --good-tint:#16301F;
+      --warn:#E0A040; --warn-ink:#E0A040; --warn-tint:#332611;
+      --crit:#E27567; --crit-ink:#E27567; --crit-tint:#361B17;
       --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.35);
     }
   }
   :root[data-theme="light"]{
-    --ground:#FAF9FE; --surface:#FFFFFF; --surface-2:#F5F3FB; --ink:#18132A; --muted:#5C5570; --faint:#8D86A0;
-    --hair:#E5E1F0; --hair-strong:#CFC8E2; --accent:#6D28D9; --accent-ink:#5B21B6; --accent-tint:#EEE7FC;
-    --good:#2E7D46; --good-tint:#DCEFE1; --warn:#B26A00; --warn-tint:#F7E9CE; --crit:#C0392B; --crit-tint:#F7DBD6;
+    --ground:#F7F5FC; --surface:#FFFFFF; --surface-2:#F1F0F7; --ink:#1B1633; --muted:#575070; --faint:#6E6787;
+    --hair:#E1DCEF; --hair-strong:#CFC8E2; --accent:#6D28D9; --accent-ink:#59189E; --accent-tint:#F1EAFE;
+    --good:#2E7D46; --good-ink:#16613A; --good-tint:#DCEFE1; --warn:#B26A00; --warn-ink:#8A5410; --warn-tint:#F7E9CE; --crit:#C0392B; --crit-ink:#A3201B; --crit-tint:#F7DBD6;
     --shadow:0 1px 2px rgba(16,22,30,.06), 0 8px 24px rgba(16,22,30,.06);
   }
   :root[data-theme="dark"]{
-    --ground:#120E1E; --surface:#1B1530; --surface-2:#241D3E; --ink:#EAE6F4; --muted:#A79FBE; --faint:#7A7292;
+    --ground:#120E1E; --surface:#1B1530; --surface-2:#241D3E; --ink:#EAE6F4; --muted:#A79FBE; --faint:#8F87A8;
     --hair:#2C2447; --hair-strong:#3B3160; --accent:#A78BFA; --accent-ink:#C4B5FD; --accent-tint:#2B2054;
-    --good:#5FBE7C; --good-tint:#16301F; --warn:#E0A040; --warn-tint:#332611; --crit:#E27567; --crit-tint:#361B17;
+    --good:#5FBE7C; --good-ink:#5FBE7C; --good-tint:#16301F; --warn:#E0A040; --warn-ink:#E0A040; --warn-tint:#332611; --crit:#E27567; --crit-ink:#E27567; --crit-tint:#361B17;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.35);
   }
 
@@ -152,7 +154,7 @@
   .allclear .tagline{ display:block; margin-top:10px; font-size:12px; font-weight:700; letter-spacing:.05em;
     text-transform:uppercase; color:var(--good); }
   .tag{ font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; letter-spacing:.02em; white-space:nowrap; flex:0 0 auto; }
-  .tag.crit{ background:var(--crit-tint); color:var(--crit);} .tag.warn{ background:var(--warn-tint); color:var(--warn);} .tag.good{ background:var(--good-tint); color:var(--good);} .tag.mut{ background:var(--surface-2); color:var(--muted); border:1px solid var(--hair);}
+  .tag.crit{ background:var(--crit-tint); color:var(--crit-ink);} .tag.warn{ background:var(--warn-tint); color:var(--warn-ink);} .tag.good{ background:var(--good-tint); color:var(--good-ink);} .tag.mut{ background:var(--surface-2); color:var(--muted); border:1px solid var(--hair);}
   .firm .act{ flex:0 0 auto; }
 
   /* Buttons */
@@ -180,7 +182,7 @@
   .callout.legal{ background:var(--accent-tint); border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
   .callout.legal .badge{ background:var(--accent); color:#fff; }
   .callout.blocked{ background:var(--surface-2); }
-  .callout.blocked .badge{ background:var(--faint); color:#fff; }
+  .callout.blocked .badge{ background:var(--muted); color:var(--surface); }
   .callout p{ font-size:14.5px; color:var(--ink); margin-top:8px; }
   ol.steps{ list-style:none; counter-reset:s; display:flex; flex-direction:column; gap:11px; margin:14px 0 4px; }
   ol.steps li{ counter-increment:s; display:flex; gap:12px; font-size:14.5px; align-items:flex-start; }
@@ -201,13 +203,21 @@
   .step.done .bub{ background:var(--good); border-color:var(--good); color:#fff; }
   .step.active .bub{ background:var(--surface); border-color:var(--warn); color:var(--warn); box-shadow:0 0 0 4px var(--warn-tint); }
   .step small{ font-size:11.5px; font-weight:600; color:var(--muted); text-align:center; line-height:1.25; }
-  .step.active small{ color:var(--warn); font-weight:700; }
+  .step.active small{ color:var(--warn-ink); font-weight:700; }
   .step.done small{ color:var(--ink); }
   .countbox{ margin:22px auto 4px; text-align:center; background:var(--warn-tint); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); border-radius:var(--radius); padding:16px; }
-  .countbox .lab{ text-transform:uppercase; letter-spacing:.08em; font-size:11px; font-weight:700; color:var(--warn); }
+  .countbox .lab{ text-transform:uppercase; letter-spacing:.08em; font-size:11px; font-weight:700; color:var(--warn-ink); }
   .countbox .clock{ font-size:34px; font-weight:800; letter-spacing:-.01em; font-variant-numeric:tabular-nums; color:var(--ink); margin-top:4px; }
   .countbox .clock span{ font-size:14px; font-weight:600; color:var(--muted); }
   .countbox .note{ font-size:12.5px; color:var(--muted); margin-top:6px; }
+  /* The statutory clock is calm confidence (accent); the provisional clock keeps the amber warn look. */
+  .countbox.statutory{ background:var(--accent-tint); border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
+  .countbox.statutory .lab{ color:var(--accent); }
+  /* Alpha demo controls — visually a quiet drawer, clearly separated from the real actions. */
+  .simbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:14px; padding:10px 12px;
+    border:1px dashed var(--hair-strong); border-radius:var(--radius-sm); }
+  .simbar .simlab{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+  .simbar .btn.small{ min-height:36px; font-size:13px; }
 
   /* Datenfluss map */
   .flow{ display:flex; flex-direction:column; gap:0; margin-top:16px; }
@@ -263,11 +273,9 @@
     <!-- Scraper Zeichensystem: gefüllte Amts-Pictogramme, 24er-Raster.
          Flächen statt Linien; außen rund, innen eckig; eine Tint-Ebene (opacity),
          Signatur = der 45°-Schnitt (Marke). -->
-    <g id="i-mark">
-      <!-- der Spachtel: Griff, Zwinge, ausgestelltes Blatt (Schabkante unten) -->
-      <rect x="10.4" y="1.6" width="3.2" height="7" rx="1.4"/>
-      <rect x="9.4" y="8.2" width="5.2" height="2.6" rx="0.9"/>
-      <path d="M9.6 11.6H14.4L18.9 19.5A1.15 1.15 0 0 1 17.9 21.2H6.1A1.15 1.15 0 0 1 5.1 19.5Z"/>
+    <g id="i-mark" transform="scale(0.75)">
+      <!-- Die Original-Kelle aus der Scraper-Hauptanwendung (32er-Raster, auf 24 skaliert). -->
+      <path d="M28.2 9.09L24.86 12.43Q24.03 13.26 22.98 12.92Q22.08 12.71 21.45 13.33L18.6 16.19Q17.97 16.81 18.53 18.07Q20.06 21.41 18.32 23.15Q12.89 27.74 6.41 28.79Q4.12 29.69 3 29Q2.31 27.88 3.21 25.59Q4.26 19.11 8.85 13.68Q10.59 11.94 13.93 13.47Q15.19 14.03 15.81 13.4L18.67 10.55Q19.29 9.92 19.08 9.02Q18.74 7.97 19.57 7.14L22.91 3.8A3.74 3.74 0 0 1 28.2 9.09Z"/>
     </g>
     <path id="i-home" fill-rule="evenodd" d="M12 2.8 21 9.6V18.8A2.2 2.2 0 0 1 18.8 21H5.2A2.2 2.2 0 0 1 3 18.8V9.6ZM9.8 21V14.8A2.2 2.2 0 0 1 12 12.6 2.2 2.2 0 0 1 14.2 14.8V21Z"/>
     <path id="i-folder" fill-rule="evenodd" d="M3 7A2.2 2.2 0 0 1 5.2 4.8H9L11.3 7.6H18.8A2.2 2.2 0 0 1 21 9.8V17A2.2 2.2 0 0 1 18.8 19.2H5.2A2.2 2.2 0 0 1 3 17ZM7 12.4H14.4V14.2H7Z"/>
@@ -407,9 +415,9 @@
           <div class="step"><div class="bub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-check"/></svg></div><small>Erledigt</small></div>
         </div>
         <div class="countbox">
-          <div class="lab" data-de="Gesetzliche Frist – noch" data-ls="Noch Zeit">Gesetzliche Frist – noch</div>
+          <div class="lab" data-de="Vorläufige Frist (E-Mail) – noch" data-ls="Noch Zeit (vorläufig)">Vorläufige Frist (E-Mail) – noch</div>
           <div class="clock" id="clock">–</div>
-          <div class="note" data-de="Die Firma muss innerhalb eines Monats antworten (Art. 12 DS-GVO)." data-ls="Die Firma muss in 1 Monat antworten.">Die Firma muss innerhalb eines Monats antworten (Art. 12 DS-GVO).</div>
+          <div class="note" data-de="E-Mail ist kein Zustellnachweis. Die gesetzliche Monatsfrist (Art. 12 DS-GVO) beginnt erst mit dem Einschreiben." data-ls="E-Mail ist kein Nachweis. Die echte Frist startet mit dem Einschreiben.">E-Mail ist kein Zustellnachweis. Die gesetzliche Monatsfrist (Art. 12 DS-GVO) beginnt erst mit dem Einschreiben.</div>
         </div>
       </div>
       <div class="btnrow"><button class="btn ghost" onclick="toast('Sie werden benachrichtigt, sobald eine Antwort da ist.')">Bei Antwort benachrichtigen</button></div>
@@ -473,6 +481,75 @@
   ];
 
   var removed = {};
+
+  // ---- API mode (optional): drive the SAME screens from the real engine ----
+  // With the alpha API running (apps/api, SCRAPER_DEV_FIXTURES=1), this page switches from its
+  // built-in seed to live data: census from GET /controllers, requests via POST /requests, and the
+  // Vorgang pipeline from the real state machine (incl. the provisional-vs-statutory clock split).
+  // Without the API it behaves exactly as before — a self-contained demo. Override the base with
+  // #api=http://localhost:PORT
+  // Default :3900 — :3000 belongs to the main Next.js Scraper app on dev machines.
+  var API = (location.hash.match(/api=([^&\s]+)/) || [])[1] || "http://localhost:3900";
+  var apiMode = false, devSim = false;
+  var VORGAENGE = [];            // GET /requests cache
+  var selectedVorgang = null;    // id of the Vorgang whose pipeline is shown
+  var CTRL_BY_ID = {}, CTRL_BY_SLUG = {};
+  var LETTER_LABEL = {
+    OBJECTION_ART21: "Werbe-Widerspruch (Art. 21)",
+    ACCESS_ART15: "Datenkopie (Art. 15)",
+    ACCESS_ART15_SOURCE: "Herkunfts-Anfrage – wer hat die Daten geliefert? (Art. 15 Abs. 1 g)",
+    ERASURE_ART17: "Löschung (Art. 17)"
+  };
+  var TYPE_COLOR = { "Datenhändler": "#C0392B", "Adress-Broker": "#B26A00", "Auskunftei": "#6D28D9", "KI-Bewerbungstool": "#5A6570" };
+
+  function apiFetch(path, opts) {
+    return fetch(API + path, Object.assign({ headers: { "content-type": "application/json" } }, opts || {}));
+  }
+
+  async function refreshVorgaenge() {
+    try {
+      var res = await apiFetch("/requests");
+      if (res.ok) {
+        VORGAENGE = await res.json();
+        // A controller with any request (open or done) no longer counts against the gauge.
+        VORGAENGE.forEach(function (v) {
+          var c = CTRL_BY_ID[v.controllerId];
+          if (c) removed[c.slug] = true;
+        });
+      }
+    } catch (e) { /* offline again — keep the last cache */ }
+  }
+
+  async function initApi() {
+    try {
+      var h = await apiFetch("/health", { signal: AbortSignal.timeout(900) });
+      if (!h.ok) return;
+      var health = await h.json();
+      var res = await apiFetch("/controllers");
+      if (!res.ok) return;
+      var census = await res.json();
+      apiMode = true;
+      devSim = health.devFixtures === true;
+      FIRMS = census.filter(function (c) { return c.featured; }).map(function (c) {
+        return {
+          slug: c.slug, name: c.name, type: c.type, color: TYPE_COLOR[c.type] || "#5A6570",
+          risk: c.risk, riskLbl: c.riskLbl, holds: c.holds,
+          route: c.expectedOutcome, requestType: c.defaultRequestType,
+          url: c.selfServe ? c.selfServe.url : undefined,
+          steps: c.selfServe ? c.selfServe.steps : undefined,
+          letter: LETTER_LABEL[c.defaultRequestType]
+        };
+      });
+      census.forEach(function (c) { CTRL_BY_SLUG[c.slug] = c; CTRL_BY_ID[c.id] = c; });
+      await refreshVorgaenge();
+      // Re-render whatever the user is looking at with live data.
+      renderStart();
+      if (!$("#v-firmen").hidden) renderFirmen();
+      if (!$("#v-vorgang").hidden) renderVorgang();
+      localize();
+      toast("Live-Modus: verbunden mit der Scraper-Engine.");
+    } catch (e) { /* no API — the built-in demo keeps working */ }
+  }
 
   // ---- Modules (illo: Spot-Illustration im Markenstil, 64er-Kachel) ----
   var MODULES = [
@@ -661,13 +738,42 @@
   window.openHandoff=function(slug){
     var f=find(slug);
     openSheet("Nur noch ein Schritt", "Wir öffnen das Löschformular von "+f.name+" in einem neuen Tab. Sie geben dort Ihre E-Mail ein – wir speichern sie nie. Kommen Sie danach zurück und tippen „Erledigt“.",
-      [{label:"Formular jetzt öffnen", cls:"primary", fn:function(){ toast("Formular geöffnet – bestätigen Sie dort per E-Mail-Code."); }},
+      [{label:"Formular jetzt öffnen", cls:"primary", fn:function(){
+          // In live mode the tap records the Tier-1 LeverageAction in the engine's ledger.
+          if(apiMode) apiFetch("/requests",{method:"POST",body:JSON.stringify({controllerSlug:f.slug,requestType:f.requestType||"ERASURE_ART17"})}).catch(function(){});
+          if(f.url) window.open(f.url,"_blank","noopener");
+          toast("Formular geöffnet – bestätigen Sie dort per E-Mail-Code.");
+        }},
        {label:"Ich habe es erledigt", cls:"good", fn:function(){ markDone(slug); }}]);
   };
   window.prepLetter=function(slug){
-    markDone(slug, true);
-    toast("Anfrage vorbereitet. Sie finden sie unter „Vorgänge“.");
-    go("vorgang");
+    var f=find(slug);
+    if(!apiMode){
+      markDone(slug, true);
+      toast("Anfrage vorbereitet. Sie finden sie unter „Vorgänge“.");
+      go("vorgang");
+      return;
+    }
+    // Live mode: the REAL engine creates the request (guards, idempotency, routing), then the alpha
+    // simulates the e-mail dispatch — a provisional clock only, never a statutory one (CLAUDE.md §6).
+    apiFetch("/requests",{method:"POST",body:JSON.stringify({controllerSlug:f.slug,requestType:f.requestType})})
+      .then(function(res){ return res.json().then(function(body){ return {ok:res.ok, body:body}; }); })
+      .then(function(x){
+        if(x.ok && x.body.routed==="LEGAL"){
+          selectedVorgang=x.body.id;
+          var sim = devSim
+            ? apiFetch("/requests/"+x.body.id+"/simulate",{method:"POST",body:JSON.stringify({action:"dispatch",channel:"email"})})
+            : Promise.resolve();
+          return sim.then(refreshVorgaenge).then(function(){
+            removed[f.slug]=true; renderStart(); renderFirmen();
+            toast(devSim ? "Anfrage erstellt – Versand simuliert (E-Mail)." : "Anfrage vorbereitet.");
+            go("vorgang");
+          });
+        }
+        if(x.body && x.body.error==="GUARD_IDEMPOTENCY"){ toast("Für diese Firma läuft bereits ein Vorgang."); go("vorgang"); return; }
+        toast(x.body && x.body.message ? x.body.message : "Das hat nicht geklappt. Bitte erneut versuchen.");
+      })
+      .catch(function(){ toast("Keine Verbindung zur Engine – bitte erneut versuchen."); });
   };
   function markDone(slug, quiet){
     removed[slug]=true; closeSheet();
@@ -708,6 +814,137 @@
       el.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); t(); } });
     });
   }
+
+  // ---- Live Vorgänge (API mode): the pipeline rendered from the real state machine ----
+  var STATE_UI = {
+    READY:                        { fill:"2%",   done:-1, active:0, note:"Bereit zum Versand.", lsNote:"Bereit." },
+    SENT:                         { fill:"26%",  done:0,  active:1, note:null, lsNote:null },
+    AWAITING_RESPONSE_PROVISIONAL:{ fill:"26%",  done:0,  active:1, note:null, lsNote:null },
+    AWAITING_RESPONSE:            { fill:"26%",  done:0,  active:1, note:null, lsNote:null },
+    AWAITING_REGISTERED_RESEND:   { fill:"26%",  done:0,  active:1, note:"Keine Antwort in der vorläufigen Frist. Ein Einschreiben startet die gesetzliche Frist.", lsNote:"Keine Antwort. Jetzt per Einschreiben?" },
+    RESPONSE_RECEIVED:            { fill:"52%",  done:1,  active:2, note:"Antwort eingegangen – wird geprüft.", lsNote:"Antwort ist da." },
+    NEEDS_HUMAN:                  { fill:"52%",  done:1,  active:2, note:"Antwort unklar – ein Mensch prüft sie.", lsNote:"Ein Mensch prüft die Antwort." },
+    INCOMPLETE:                   { fill:"52%",  done:1,  active:2, note:"Die Antwort ist unvollständig.", lsNote:"Die Antwort ist nicht vollständig." },
+    REFUSED:                      { fill:"52%",  done:1,  active:2, note:"Die Firma lehnt ab.", lsNote:"Die Firma sagt Nein." },
+    ESCALATION_DRAFTED:           { fill:"78%",  done:2,  active:3, note:"Beschwerde-Entwurf liegt bereit. Versenden darf ihn nur ein Mensch.", lsNote:"Beschwerde ist vorbereitet." },
+    ESCALATED:                    { fill:"78%",  done:2,  active:3, note:"Beschwerde liegt bei der Datenschutz-Aufsicht.", lsNote:"Die Aufsicht prüft." },
+    COMPLIED:                     { fill:"100%", done:3,  active:-1, note:"Erledigt – die Firma hat gehandelt.", lsNote:"Fertig!" },
+    CLOSED_FAILED:                { fill:"2%",   done:-1, active:-1, note:"Abgeschlossen ohne Ergebnis.", lsNote:"Beendet, ohne Ergebnis." },
+    WITHDRAWN:                    { fill:"2%",   done:-1, active:-1, note:"Zurückgezogen.", lsNote:"Zurückgezogen." }
+  };
+  var STEP_DEFS = [ ["i-send","Gesendet"], ["i-frist","Frist läuft"], ["i-reply","Antwort"], ["i-check","Erledigt"] ];
+
+  function clockFor(v){
+    if (v.statutoryDeadlineAt) return { t:new Date(v.statutoryDeadlineAt).getTime(), warn:false,
+      lab:"Gesetzliche Frist – noch", ls:"Noch Zeit",
+      note:"Die Firma muss innerhalb eines Monats antworten (Art. 12 DS-GVO)." };
+    if (v.provisionalDeadlineAt) return { t:new Date(v.provisionalDeadlineAt).getTime(), warn:true,
+      lab:"Vorläufige Frist (E-Mail) – noch", ls:"Noch Zeit (vorläufig)",
+      note:"E-Mail ist kein Zustellnachweis. Die gesetzliche Frist beginnt erst mit dem Einschreiben." };
+    return null;
+  }
+
+  function simButtons(v){
+    if(!devSim) return "";
+    var b=[]; var id=v.id;
+    if(v.state==="READY") b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'dispatch\',channel:\'email\'})">Versand simulieren (E-Mail)</button>');
+    if(v.state==="AWAITING_RESPONSE_PROVISIONAL"||v.state==="AWAITING_RESPONSE"){
+      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'complied\'})">Antwort: erledigt</button>');
+      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'incomplete\'})">Antwort: unvollständig</button>');
+      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'refused\'})">Antwort: abgelehnt</button>');
+      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'expire\'})">Frist ablaufen lassen</button>');
+    }
+    if(v.state==="INCOMPLETE"||v.state==="REFUSED")
+      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'escalate\'})">Beschwerde entwerfen</button>');
+    if(!b.length) return "";
+    return '<div class="simbar" aria-label="Demo-Steuerung"><span class="simlab">Demo</span>'+b.join("")+'</div>';
+  }
+
+  function renderVorgang(){
+    if(!apiMode) return; // offline: the built-in static demo stays
+    var sec=$("#v-vorgang");
+    var ls=document.body.classList.contains("ls");
+    if(!VORGAENGE.length){
+      sec.innerHTML='<p class="eyebrow">Ihr Vorgang</p>'
+        +'<div class="allclear" style="background:var(--surface-2);border-color:var(--hair)"><b>Noch kein Vorgang.</b>'
+        +'<p>Starten Sie bei einer Firma mit „Anfrage vorbereiten“.</p></div>'
+        +'<div class="btnrow"><button class="btn primary" onclick="go(\'firmen\')">Zu den Firmen</button></div>';
+      return;
+    }
+    var v = VORGAENGE.filter(function(x){return x.id===selectedVorgang;})[0] || VORGAENGE[VORGAENGE.length-1];
+    selectedVorgang = v.id;
+    var c = CTRL_BY_ID[v.controllerId] || {};
+    var ui = STATE_UI[v.state] || { fill:"2%", done:-1, active:-1, note:v.state, lsNote:v.state };
+    var clock = clockFor(v);
+
+    var steps = STEP_DEFS.map(function(d,i){
+      var cls = i<=ui.done ? "step done" : i===ui.active ? "step active" : "step";
+      return '<div class="'+cls+'"><div class="bub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#'+d[0]+'"/></svg></div><small>'+d[1]+'</small></div>';
+    }).join("");
+
+    var h='<p class="eyebrow">Ihr Vorgang</p>';
+    h+='<div class="firmhead"><div class="logo" style="background:'+(TYPE_COLOR[c.type]||"#5A6570")+'" aria-hidden="true">'
+      +'<svg viewBox="0 0 24 24" fill="currentColor"><use href="#'+(CATGLYPH[c.type]||"i-folder")+'"/></svg></div>'
+      +'<div><b style="font-size:17px">'+(c.name||v.controllerId)+'</b><br><small class="sub">'+(LETTER_LABEL[v.requestType]||v.requestType)+'</small></div></div>';
+    h+='<div class="card" style="padding:18px 16px">'
+      +'<div class="pipe"><div class="track"></div><div class="fill" style="width:'+ui.fill+'"></div>'+steps+'</div>';
+    if(ui.note) h+='<p class="sub" style="text-align:center;margin-top:14px">'+(ls&&ui.lsNote?ui.lsNote:ui.note)+'</p>';
+    if(clock){
+      h+='<div class="countbox'+(clock.warn?'':' statutory')+'"><div class="lab">'+(ls?clock.ls:clock.lab)+'</div>'
+        +'<div class="clock" id="clock">–</div>'
+        +'<div class="note">'+clock.note+'</div></div>';
+    }
+    h+='</div>';
+    if(v.state==="AWAITING_REGISTERED_RESEND"){
+      h+='<div class="btnrow">'
+        +'<button class="btn primary" onclick="resendConfirm(\''+v.id+'\')">Einschreiben beauftragen</button>'
+        +'<button class="btn ghost" onclick="resendDecline(\''+v.id+'\')">Nicht weiterverfolgen</button></div>';
+    }
+    h+=simButtons(v);
+    if(VORGAENGE.length>1){
+      h+='<h2 class="sec">Alle Vorgänge <span class="count">('+VORGAENGE.length+')</span></h2><div class="list">';
+      VORGAENGE.forEach(function(x){
+        var xc=CTRL_BY_ID[x.controllerId]||{};
+        var xui=STATE_UI[x.state]||{};
+        var tag = x.state==="COMPLIED" ? '<span class="tag good">Erledigt</span>'
+          : x.state==="CLOSED_FAILED"||x.state==="WITHDRAWN" ? '<span class="tag mut">Beendet</span>'
+          : '<span class="tag warn">Läuft</span>';
+        h+='<div class="firm'+(x.id===v.id?' is-done':'')+'" role="button" tabindex="0" data-vid="'+x.id+'" aria-label="'+(xc.name||"Vorgang")+' anzeigen">'
+          +'<div class="logo" style="background:'+(TYPE_COLOR[xc.type]||"#5A6570")+'" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><use href="#'+(CATGLYPH[xc.type]||"i-folder")+'"/></svg></div>'
+          +'<div class="fn"><b><span class="nm">'+(xc.name||x.controllerId)+'</span> '+tag+'</b><small>'+(xui.note||x.state)+'</small></div>'
+          +'<div class="act"><span class="firm-go"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-chev"/></svg></span></div></div>';
+      });
+      h+='</div>';
+    }
+    h+='<div class="btnrow"><button class="btn ghost" onclick="toast(\'Sie werden benachrichtigt, sobald sich etwas ändert.\')">Bei Änderung benachrichtigen</button></div>';
+    sec.innerHTML=h;
+    Array.prototype.forEach.call(sec.querySelectorAll("[data-vid]"),function(el){
+      var pick=function(){ selectedVorgang=el.getAttribute("data-vid"); renderVorgang(); };
+      el.addEventListener("click",pick);
+      el.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick(); } });
+    });
+    tick();
+  }
+
+  window.simAct=function(id,payload){
+    apiFetch("/requests/"+id+"/simulate",{method:"POST",body:JSON.stringify(payload)})
+      .then(function(res){ if(!res.ok) return res.json().then(function(b){ toast(b.message||"Nicht möglich."); });
+        return refreshVorgaenge().then(function(){ renderVorgang(); renderStart(); }); })
+      .catch(function(){ toast("Keine Verbindung zur Engine."); });
+  };
+  window.resendConfirm=function(id){
+    apiFetch("/requests/"+id+"/registered-resend",{method:"POST"})
+      .then(function(res){ if(!res.ok) return res.json().then(function(b){ toast(b.message||"Nicht möglich."); });
+        // The registered send is what starts the statutory clock — simulated here.
+        var sim = devSim ? apiFetch("/requests/"+id+"/simulate",{method:"POST",body:JSON.stringify({action:"dispatch",channel:"postal_registered"})}) : Promise.resolve();
+        return sim.then(refreshVorgaenge).then(function(){ toast("Einschreiben simuliert – die gesetzliche Frist läuft."); renderVorgang(); }); })
+      .catch(function(){ toast("Keine Verbindung zur Engine."); });
+  };
+  window.resendDecline=function(id){
+    apiFetch("/requests/"+id+"/decline-resend",{method:"POST"})
+      .then(function(){ return refreshVorgaenge().then(function(){ renderVorgang(); }); })
+      .catch(function(){ toast("Keine Verbindung zur Engine."); });
+  };
 
   // ---- Modules sheet ----
   function openModule(k){
@@ -761,7 +998,14 @@
   // ---- Countdown (Demo-Frist: einmal fixiert, läuft dann wirklich ab) ----
   var DEADLINE = Date.now() + (19*24*3600 + 6*3600 + 12*60)*1000;
   function tick(){
-    var d=Math.max(0, DEADLINE-Date.now());
+    var target = DEADLINE;
+    if(apiMode){
+      var v=VORGAENGE.filter(function(x){return x.id===selectedVorgang;})[0];
+      var c=v?clockFor(v):null;
+      if(!c) return; // no clock on this Vorgang — no countdown rendered
+      target=c.t;
+    }
+    var d=Math.max(0, target-Date.now());
     var days=Math.floor(d/86400000), h=Math.floor(d/3600000)%24, m=Math.floor(d/60000)%60, s=Math.floor(d/1000)%60;
     var el=$("#clock"); if(el) el.innerHTML=days+'<span> Tage</span> '+String(h).padStart(2,"0")+':'+String(m).padStart(2,"0")+':'+String(s).padStart(2,"0");
     var f=$("#pfill"); if(f) f.style.width="26%";
@@ -780,6 +1024,7 @@
     if(name==="start") renderStart();
     if(name==="firmen") renderFirmen();
     if(name==="flow") renderFlow();
+    if(name==="vorgang") renderVorgang();
     document.getElementById("main").scrollTop=0; window.scrollTo(0,0);
     localize();
   };
@@ -790,6 +1035,7 @@
   renderStart(); localize(); bindTerms(document); tick(); setInterval(tick,1000);
   if(hv && hv[1]==="firma" && hf){ var ff=find(hf[1]); if(ff) openFirma(ff); }
   else if(hv && VIEWS[hv[1]]) go(hv[1]);
+  initApi(); // async; switches to live mode when the engine answers, else the demo stands alone
 })();
 </script>
 

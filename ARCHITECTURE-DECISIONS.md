@@ -441,6 +441,59 @@ request; Art. 22(3)/15(1)(h)); the Self-Exposure Scan module (OQ-18); email as a
   production-migration stack above stands, minus lucide (the custom SVG set ports as-is). See
   `apps/web/README.md` §Design system; the report-§13 name user-test still applies.
 
+### ADR-028 · The testing alpha: API boots with dev fixtures, simulated lifecycle, CC0 census import, live web wiring
+**Status:** ACCEPTED · **Decided:** 2026-08-11 · **Source:** product-owner directive (working alpha for
+effective testing); repo audit + OSS research (12 structured passes, journals in the session archive).
+
+- **The API serves HTTP for the first time.** The blocker was environmental (broken pnpm/corepack,
+  ADR-026) plus one missing dependency (`@nestjs/platform-express`). Both fixed. Default port **3900**
+  (`:3000` belongs to the main Next.js Scraper web app on dev machines — discovered running during this
+  work; its `apps/web` is the brand source of truth: accent `#6D28D9`, trowel mark, both now mirrored
+  in this repo's alpha page).
+- **Dev fixtures behind `SCRAPER_DEV_FIXTURES=1`** (`apps/api/src/common/dev-fixtures.ts`): ONE fixture
+  identity (VERIFIED, Erika Mustermann) attached by middleware — no header/body can vary the subject, so
+  the anti-stalker rule holds in dev exactly as in production; a live fixture mandate; DEMO playbook
+  markers for az-direct/schufa/infoscore/regis24 (the in-memory seed's documented demo mechanism —
+  playbooks/ stay `active:false`). The flag **refuses to activate under NODE_ENV=production**. With
+  fixtures off, every guarded route fail-closes 403 and the simulate surface 404s (asserted by tests).
+- **Simulated lifecycle instead of real sends** (`POST /requests/:id/simulate`, DevOnlyGuard): drives
+  the REAL `apply()` — email dispatch ⇒ provisional clock only; simulated registered dispatch ⇒
+  statutory clock (evidence id is an unmistakable `ev_sim_*` artefact); respond/expire/escalate.
+  Invariant 1 gap closed: the registered-resend endpoint now re-runs the full guard set before
+  re-entering READY. Prior art for the simulated-counterparty shape: Consumer Reports' OSIRAA
+  (Apache-2.0), pattern only.
+- **Census import (docs/10 §3 P0 item)**: `tools/census-import` ingests **datenanfragen/data (CC0-1.0,
+  verified)** for the 15-controller census → generated, committed snapshot with per-record
+  quality/sources retained. Import ≠ activation; hand-curated fields always win; counsel re-verifies
+  channels before any real send. `GET /controllers` exposes census + honest `expectedOutcome` +
+  community contact data; `GET /requests` lists the user's Vorgänge.
+- **Web alpha wired live with graceful fallback**: `apps/web/index.html` probes `/health`; in live mode
+  census/requests/pipeline come from the engine (provisional clock amber + "E-Mail ist kein
+  Zustellnachweis", statutory clock accent-calm — the docs/10 P4 "visually distinct clocks"
+  requirement), with a Demo drawer for the simulate actions; offline it remains the self-contained
+  demo (the published Artifact keeps working).
+- **Quality gates added**: `apps/api/test` (11 HTTP e2e incl. fail-closed posture),
+  `services/doc-sandbox/test` (6 envelope tests: injection ⇒ confidence 0), `tools/a11y` (axe/WCAG-2.2-AA
+  scan over every view × theme × Leichte Sprache — the docs/09 CI gate item; honest scope note: axe
+  covers ~⅓ of WCAG), CI workflow `.github/workflows/alpha-ci.yml`. Core suite unchanged at 164 + additive in-memory-repo
+  methods (`listByUser`; `hasControllerResponse` set on the `responseIngested` edge).
+- **OSS adoption decisions from the research pass** (licenses verified against the actual repos):
+  ADOPTED now — datenanfragen/data (CC0-1.0), Playwright (Apache-2.0) + axe-core/@axe-core/playwright
+  (MPL-2.0, dev-only), OSIRAA *pattern*. DECIDED for next phase, not yet wired — **pg-boss** (MIT,
+  Postgres-native) as the interim WorkflowEngine over BullMQ (Redis ≥7.4 licensing noise + delayed-job
+  durability risk for statutory timers; use Valkey if BullMQ is ever chosen), Temporal (MIT) stays the
+  production target (OQ-12 input); **pdfjs-dist** (Apache-2.0) for born-digital PDFs + **OCRmyPDF**
+  (MPL-2.0, Ghostscript-free build only — Artifex AGPL trap documented) for the P1.5 ingest;
+  **wKovacs64/hibp** (MIT) SDK behind `BreachMonitor` (HIBP data CC-BY-4.0, Art. 44 gate OQ-16;
+  XposedOrNot MIT fallback); Mozilla Monitor's removal-status model (pattern only, MPL — their
+  OneRep-vendor exit validates our guided-self-serve approach); DRP v1.0 (Apache-2.0) as a future
+  status-projection vocabulary, never the internal machine. REJECTED — BADBOOL (CC BY-NC-SA:
+  non-commercial), your-digital-rights/data-brokers (GPL-on-data + stale), pa11y-ci (LGPL + non-axe
+  engine), unstructured (open-core/US-cloud pull), SimpleLogin/addy.io for the alpha (AGPL isolation +
+  mail-ops weight — post-alpha, self-hosted unmodified only).
+- **Not changed:** playbook activation (counsel), real providers (postal/QTSP/ident/model), Prisma
+  adapter + auth (P0 items still open), the three-normative-files clock rule.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)

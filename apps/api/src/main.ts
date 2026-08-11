@@ -15,7 +15,8 @@ async function bootstrap(): Promise<void> {
     origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/, 'null'],
     methods: ['GET', 'POST'],
   });
-  const port = Number(process.env.PORT ?? 3000);
+  // Default :3900 — :3000 is the main Next.js Scraper web app on dev machines.
+  const port = Number(process.env.PORT ?? 3900);
   await app.listen(port);
   new Logger('Bootstrap').log(`Scraper API listening on :${port}`);
 }

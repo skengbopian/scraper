@@ -1,0 +1,42 @@
+name: alpha-ci
+
+# The testing-alpha gates (ADR-028), alongside spec-audit.yml:
+#   build-test — every workspace builds; core (164), api (11 HTTP e2e), doc-sandbox (6) suites green.
+#   a11y       — the docs/09 gate item: axe (WCAG 2.2 AA tags) over every view × theme × Leichte
+#                Sprache of apps/web. Honest scope: axe automates ~⅓ of WCAG; screen-reader,
+#                one-handed and mid-range-Android checks remain a manual pre-launch gate.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm -r test
+
+  a11y:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/a11y
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check

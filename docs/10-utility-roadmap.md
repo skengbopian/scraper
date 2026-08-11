@@ -552,3 +552,13 @@ drafts, `active: false` playbooks, full spec-audit + 101/101 core tests green. W
   production HTTP path (typechecks; runs once `@nestjs/*` is installed and a Prisma/Postgres adapter
   replaces the dev in-memory repo — pnpm/corepack is broken and the schema is Postgres-only in this
   sandbox, so the in-memory engine is the runnable proof). Core suite: 163 tests.
+
+## 7.9 Status: the testing alpha serves HTTP (2026-08-11, ADR-028)
+
+The §1 baseline ("nothing serves HTTP") is closed at alpha grade: apps/api boots (platform driver +
+dev-fixture identity behind `SCRAPER_DEV_FIXTURES=1`, refusing production), exposes census
+(datenanfragen CC0 import with provenance), Vorgänge, and a dev-only simulate surface that drives the
+REAL state machine (provisional vs statutory clocks preserved); apps/web runs against it live with an
+offline fallback; quality gates: core 164 + api 11 + doc-sandbox 6 tests, spec-audit, and the docs/09
+axe gate (tools/a11y, CI). Still open toward P0/P1: real auth, Prisma adapter + 0000_init, providers,
+workflow runner (pg-boss per OQ-12), BYO ingest (P1.5). See AUDIT-2026-08-11-ALPHA.md.

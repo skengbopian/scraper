@@ -15,14 +15,14 @@ import { ENRICHMENT_BROKER_ROUTES } from '@scraper/core';
 export class CensusController {
   @Get()
   list() {
-    const selfServeSlugs = new Set(ENRICHMENT_BROKER_ROUTES.map((r) => r.companySlug));
     const demoPairs = devFixturesEnabled() ? DEV_DEMO_PLAYBOOK_PAIRS : [];
     return CENSUS.map((c) => {
-      const selfServe = selfServeSlugs.has(c.slug);
+      const route = ENRICHMENT_BROKER_ROUTES.find((r) => r.companySlug === c.slug);
       const legalDemo = demoPairs.some((p) => p.controllerSlug === c.slug && p.requestType === c.defaultRequestType);
       const community = datenanfragenRecord(c.slug);
       return {
         slug: c.slug,
+        id: c.id,
         name: c.name,
         type: c.type,
         risk: c.risk,
@@ -30,7 +30,10 @@ export class CensusController {
         holds: c.holds,
         defaultRequestType: c.defaultRequestType,
         featured: c.featured,
-        expectedOutcome: selfServe ? ('SELF_SERVE' as const) : legalDemo ? ('LEGAL' as const) : ('NONE' as const),
+        expectedOutcome: route ? ('SELF_SERVE' as const) : legalDemo ? ('LEGAL' as const) : ('NONE' as const),
+        // The Tier-1 route's guided steps, so the decision screen renders them WITHOUT creating a
+        // request. The POST happens only when the user acts (it records the LeverageAction).
+        selfServe: route ? { url: route.url, steps: route.steps, requiresLogin: route.requiresLogin === true } : null,
         // CC0 community record (datenanfragen.de) — provenance retained, counsel re-verifies before
         // any real send; surfaced so the UI can show sourced contact channels.
         community: community
