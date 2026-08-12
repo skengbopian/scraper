@@ -399,6 +399,16 @@
       <div class="flow" id="flow"></div>
     </section>
 
+    <!-- AKTE (BYO-Datenkopie: Upload + Befunde) -->
+    <section class="view" id="v-akte" hidden>
+      <button class="back" onclick="go('start')"><svg viewBox="0 0 24 24" fill="currentColor" style="transform:rotate(180deg)" aria-hidden="true"><use href="#i-chev"/></svg>Übersicht</button>
+      <p class="eyebrow" data-de="File Fixer" data-ls="Ihre Akte">File Fixer</p>
+      <h1 class="greet" style="font-size:23px" data-de="Ihre Auskunftei-Akte" data-ls="Ihre Akte">Ihre Auskunftei-Akte</h1>
+      <p class="sub" data-de="Datenkopie hochladen – wir finden Einträge, die weg können oder falsch sind." data-ls="Laden Sie Ihre Datenkopie hoch. Wir prüfen sie.">Datenkopie hochladen – wir finden Einträge, die weg können oder falsch sind.</p>
+      <div id="akteBody" style="margin-top:16px"></div>
+      <input type="file" id="akteFile" accept="application/pdf" class="sr" aria-label="Datenkopie als PDF auswählen">
+    </section>
+
     <!-- VORGANG -->
     <section class="view vorgang" id="v-vorgang" hidden>
       <p class="eyebrow">Ihr Vorgang</p>
@@ -546,6 +556,7 @@
       renderStart();
       if (!$("#v-firmen").hidden) renderFirmen();
       if (!$("#v-vorgang").hidden) renderVorgang();
+      if (!$("#v-akte").hidden) renderAkte();
       localize();
       toast("Live-Modus: verbunden mit der Scraper-Engine.");
     } catch (e) { /* no API — the built-in demo keeps working */ }
@@ -946,8 +957,86 @@
       .catch(function(){ toast("Keine Verbindung zur Engine."); });
   };
 
+  // ---- Akte (BYO-Datenkopie: upload + findings) ----
+  var SEV = {
+    OVERDUE:  { tag:"crit", lbl:"Überfällig",  ls:"Zu spät" },
+    UPCOMING: { tag:"warn", lbl:"Bald fällig", ls:"Bald" },
+    INFO:     { tag:"mut",  lbl:"Hinweis",     ls:"Info" }
+  };
+  var ACTION_LBL = {
+    REQUEST_DELETION: "Löschung verlangen",
+    DISPUTE_ART16: "Berichtigung verlangen (Art. 16)",
+    REVIEW: "Abwägen und entscheiden",
+    NONE: ""
+  };
+  var RULE_LBL = {
+    COC_IV1B_SETTLED_3Y: "Erledigte Forderung – Löschfrist",
+    COC_IV1B_FAST_SETTLE_18M: "Schnell beglichen – verkürzte Frist",
+    COC_IV2B_RSB_6M: "Restschuldbefreiung",
+    COC_IV3A_CONTRACT_ON_REQUEST: "Beendeter Vertrag",
+    COC_IV6_INQUIRY_12M: "Alte Anfrage",
+    INQUIRY_RECODE_CHECK: "Anfrage-Art prüfen",
+    SETTLED_WITHOUT_ERLEDIGT: "Bezahlt, aber nicht erledigt?"
+  };
+
+  function renderAkte(){
+    var el=$("#akteBody");
+    if(!apiMode){
+      el.innerHTML='<div class="callout blocked"><div class="kh"><span class="badge">Offline</span> Nur im Live-Modus</div>'
+        +'<p>Der Akten-Check braucht die Scraper-Engine. Starten Sie die API und laden Sie die Seite neu.</p></div>';
+      return;
+    }
+    apiFetch("/credit-file/findings").then(function(res){ return res.json(); }).then(function(d){
+      var h="";
+      if(d.ruleSet && d.ruleSet.preliminary){
+        h+='<div class="callout blocked" style="margin:0 0 14px"><div class="kh"><span class="badge">Vorläufig</span> Regelwerk '+d.ruleSet.version+'</div>'
+          +'<p data-de="Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung." data-ls="Ein Anwalt prüft die Regeln noch. Das hier ist eine erste Einschätzung.">Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung.</p></div>';
+      }
+      if(!d.snapshotId){
+        h+='<div class="allclear" style="background:var(--accent-tint);border-color:color-mix(in srgb,var(--accent) 25%,transparent)">'
+          +'<b data-de="Noch keine Datenkopie hochgeladen." data-ls="Noch keine Datei da.">Noch keine Datenkopie hochgeladen.</b>'
+          +'<p data-de="Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert." data-ls="Laden Sie die PDF hoch. Wir prüfen sie sofort.">Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert.</p></div>'
+          +'<div class="btnrow"><button class="btn primary" onclick="document.getElementById(\'akteFile\').click()">Datenkopie hochladen (PDF)</button></div>';
+      } else {
+        var counts={OVERDUE:0,UPCOMING:0,INFO:0};
+        (d.findings||[]).forEach(function(f){ counts[f.severity]=(counts[f.severity]||0)+1; });
+        h+='<h2 class="sec" style="margin-top:4px">Befunde <span class="count">('+(d.findings||[]).length+')</span></h2>';
+        h+='<div class="list">';
+        (d.findings||[]).forEach(function(f){
+          var sev=SEV[f.severity]||SEV.INFO;
+          var due=f.computedDeadlineAt? new Date(f.computedDeadlineAt).toLocaleDateString("de-DE") : null;
+          h+='<div class="card" style="padding:13px 14px">'
+            +'<b style="font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(RULE_LBL[f.ruleId]||f.ruleId)
+            +' <span class="tag '+sev.tag+'">'+sev.lbl+'</span>'
+            +(f.scoreNegativeWarning?' <span class="tag warn">Score-Achtung</span>':'')+'</b>'
+            +'<p class="sub" style="font-size:13.5px;margin-top:6px">'+f.explanation+'</p>'
+            +(due?'<p class="sub" style="font-size:12.5px;margin-top:6px"><b>Frist: '+due+'</b></p>':'')
+            +(ACTION_LBL[f.recommendedAction]?'<p style="font-size:13px;margin-top:6px;color:var(--accent);font-weight:700">→ '+ACTION_LBL[f.recommendedAction]+'</p>':'')
+            +'</div>';
+        });
+        h+='</div>';
+        if(!(d.findings||[]).length) h+='<div class="allclear"><b>Keine Auffälligkeiten gefunden.</b><p>Nach heutigem Regelwerk ist nichts fällig oder falsch.</p></div>';
+        h+='<div class="btnrow"><button class="btn ghost" onclick="document.getElementById(\'akteFile\').click()">Neue Datenkopie hochladen</button></div>';
+      }
+      el.innerHTML=h; localize(el);
+    }).catch(function(){ el.innerHTML='<div class="callout blocked"><p>Keine Verbindung zur Engine.</p></div>'; });
+  }
+
+  function uploadAkte(file){
+    if(!file) return;
+    toast("Wird geprüft …");
+    fetch(API+"/credit-file/upload",{method:"POST",headers:{"content-type":"application/pdf"},body:file})
+      .then(function(res){ return res.json().then(function(b){ return {ok:res.ok, body:b}; }); })
+      .then(function(x){
+        if(x.ok){ toast("Datenkopie geprüft – "+(x.body.findings||[]).length+" Befund(e)."); renderAkte(); return; }
+        toast(x.body && x.body.message ? x.body.message : "Das hat nicht geklappt.");
+      })
+      .catch(function(){ toast("Keine Verbindung zur Engine."); });
+  }
+
   // ---- Modules sheet ----
   function openModule(k){
+    if(k==="akte" && apiMode){ go("akte"); return; } // live mode: the real BYO-Datenkopie flow
     var m=MODULES.filter(function(x){return x.key===k;})[0];
     var txt = k==="herkunft" ? "Auskunfteien wie infoscore kaufen Adressdaten von Händlern zu. Wir fragen: „Woher haben Sie meine Daten?“ – und lassen die zugekaufte Schicht löschen."
       : k==="betrug" ? "Gestohlene Daten werden zu echten Negativ-Einträgen in Ihrer Akte. Wir richten den Opfer-Schutz ein und überwachen Datenlecks."
@@ -1015,7 +1104,7 @@
   var toastT; window.toast=function(msg){ var t=$("#toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove("on"); },2600); };
 
   // ---- Router ----
-  var VIEWS={start:"v-start",firmen:"v-firmen",firma:"v-firma",flow:"v-flow",vorgang:"v-vorgang"};
+  var VIEWS={start:"v-start",firmen:"v-firmen",firma:"v-firma",flow:"v-flow",vorgang:"v-vorgang",akte:"v-akte"};
   window.go=function(name){
     Object.keys(VIEWS).forEach(function(k){ $("#"+VIEWS[k]).hidden = (k!==name); });
     Array.prototype.forEach.call(document.querySelectorAll("nav.tabs button"),function(b){
@@ -1025,9 +1114,12 @@
     if(name==="firmen") renderFirmen();
     if(name==="flow") renderFlow();
     if(name==="vorgang") renderVorgang();
+    if(name==="akte") renderAkte();
     document.getElementById("main").scrollTop=0; window.scrollTo(0,0);
     localize();
   };
+
+  $("#akteFile").addEventListener("change",function(){ uploadAkte(this.files && this.files[0]); this.value=""; });
 
   // init (+ Deep-Link für QA/Screenshots: #v=<view>&t=<light|dark>&f=<firm-slug>)
   var hv=location.hash.match(/v=([a-z]+)/), ht=location.hash.match(/t=(light|dark)/), hf=location.hash.match(/f=([a-z0-9-]+)/);

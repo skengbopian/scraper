@@ -10,6 +10,7 @@ import {
   type VerifiedIdentity,
 } from '@scraper/core';
 import { createHash } from 'node:crypto';
+import type { WorkflowEngine } from '@scraper/core';
 
 export type StatutoryType = RequestTypeStatutory;
 
@@ -48,7 +49,12 @@ export type SimulateAction =
 
 @Injectable()
 export class RequestsService {
-  constructor(private readonly repo: RequestsRepository) {}
+  constructor(
+    private readonly repo: RequestsRepository,
+    /** Durable deadline timers (pg-boss in DB mode); null in the in-memory alpha, where the
+     *  dev-only "Frist ablaufen lassen" button plays the timer's role. */
+    private readonly scheduler: WorkflowEngine | null = null,
+  ) {}
 
   /**
    * Create a rights request. The whole orchestration (cheapest-rung-first routing, identity binding, the
@@ -173,6 +179,7 @@ export class RequestsService {
         } else {
           await step(sent, 'sendAccepted:nonProvable', { deadlineDays: 30 });
         }
+        await this.scheduleDeadline(id);
         break;
       }
       case 'expire': {
@@ -203,6 +210,23 @@ export class RequestsService {
     }
     const after = await this.mustLoad(id);
     return { ...this.view(after), simulated: true as const };
+  }
+
+  /** Durable Frist timer (docs/10 P0: deadline expiry fires from timers, not demo buttons). */
+  private async scheduleDeadline(id: string): Promise<void> {
+    if (!this.scheduler) return;
+    const r = await this.mustLoad(id);
+    if (r.state === 'AWAITING_RESPONSE_PROVISIONAL' && r.provisionalDeadlineAt) {
+      await this.scheduler.schedule(`deadline:${id}:provisional`, r.provisionalDeadlineAt, {
+        name: 'deadline-expiry',
+        payload: { requestId: id, kind: 'provisional' },
+      });
+    } else if (r.state === 'AWAITING_RESPONSE' && r.deadlineAt) {
+      await this.scheduler.schedule(`deadline:${id}:statutory`, r.deadlineAt, {
+        name: 'deadline-expiry',
+        payload: { requestId: id, kind: 'statutory' },
+      });
+    }
   }
 
   private async mustLoad(id: string): Promise<RequestSnapshot & { userId: string }> {

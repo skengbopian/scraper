@@ -9,9 +9,15 @@ import { PrismaRequestsRepository } from './prisma-requests.repository.js';
 import { RequestsController } from './requests.controller.js';
 import { RequestsService, type RequestsRepository } from './requests.service.js';
 import { SimulateController } from './simulate.controller.js';
+import { PgBossEngine } from '../scheduler/pg-boss-engine.js';
 
 /** DI token for the repository port (an interface has no runtime token of its own). */
 export const REQUESTS_REPOSITORY = Symbol('RequestsRepository');
+export const SCHEDULER = Symbol('WorkflowEngine');
+
+function schedulerEnabled(): boolean {
+  return isPrismaMode() && process.env.SCRAPER_SCHEDULER === 'pgboss';
+}
 
 /**
  * DEV wiring: an in-memory repository seeded from the census + self-serve routes, so the app BOOTS and
@@ -49,7 +55,20 @@ function devRepository(): RequestsRepository {
     // The useFactory is LOAD-BEARING: RequestsService's repo param is the interface RequestsRepository,
     // which has no runtime DI token, so Nest cannot resolve it via a bare class/useClass provider. Do not
     // simplify to `RequestsService` (shorthand) without adding @Inject(REQUESTS_REPOSITORY) to the ctor.
-    { provide: RequestsService, useFactory: (repo: RequestsRepository) => new RequestsService(repo), inject: [REQUESTS_REPOSITORY] },
+    {
+      provide: SCHEDULER,
+      useFactory: () => {
+        if (!schedulerEnabled()) return null;
+        const url = process.env.DATABASE_URL;
+        if (!url) throw new Error('SCRAPER_SCHEDULER=pgboss requires DATABASE_URL');
+        return new PgBossEngine(url);
+      },
+    },
+    {
+      provide: RequestsService,
+      useFactory: (repo: RequestsRepository, scheduler: PgBossEngine | null) => new RequestsService(repo, scheduler),
+      inject: [REQUESTS_REPOSITORY, SCHEDULER],
+    },
   ],
 })
 export class RequestsModule {}

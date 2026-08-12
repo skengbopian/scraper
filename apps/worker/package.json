@@ -4,7 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Durable workflows behind the WorkflowEngine interface",
-  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run --passWithNoTests", "lint": "tsc -p tsconfig.json --noEmit" },
-  "dependencies": { "@scraper/core": "workspace:*" },
-  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0", "@types/node": "^22.0.0" }
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@scraper/core": "workspace:*",
+    "pg-boss": "^10.3.2",
+    "@prisma/client": "^5.20.0",
+    "@scraper/api": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  }
 }
