@@ -42,7 +42,7 @@ contradiction ADR-012 exists to remove.
 | Wave | Contents | Class | Status |
 |---|---|---|---|
 | 1 | envelope crypto + sealed TOTP secret; DPIA, consumer-UX, pre-send checklist; convergence ADRs | REFIT (S–M) | **done** — `dc7dc9f`, `4535f23` |
-| 1b | A's extra Prisma **invariants** as forward-only `0005+` (playbook freeze, one-active-playbook, evidence hardening) — *not* A's schema | REFIT (M) | next |
+| 1b | A's extra Prisma **invariants** as forward-only `0005` (6 of them) + the first DB gate in `tools/spec-audit` | REFIT (M) | **done** — `0005_harden_existing` |
 | 2 | `lib/strings.ts` + locale (de/en, parity-tested) → extend to a 3-register model (de / de-leicht / en); then the Next.js shell page-by-page against B's two-clock contract | REFIT (XL) | |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |

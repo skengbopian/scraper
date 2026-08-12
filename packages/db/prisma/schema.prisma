@@ -357,8 +357,11 @@ model ControllerResponse {
   requestId       String
   receivedAt      DateTime
   channel         ChannelMode
-  /// Purged after the normalisation window (docs/03 retention).
+  /// Purged after the normalisation window (docs/03 retention, CLAUDE.md §4). A raw reference
+  /// without a scheduled purge is a retention violation waiting to happen, so 0005 enforces
+  /// `rawDocumentRef IS NULL OR purgeRawAt IS NOT NULL` at the database.
   rawDocumentRef  String?
+  purgeRawAt      DateTime?
   /// Parser output. ADVISORY ONLY — may never drive an irreversible transition below the confidence
   /// threshold or without human review (docs/06 C4).
   structured      Json

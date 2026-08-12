@@ -11,6 +11,8 @@ name: spec-audit
 #   statemachine — no dead ends, required journeys reachable, and the forbidden C1 escalation path and
 #                  the single human-gated inbound edge to ESCALATED are both absent/intact.
 #   versions     — no shipped playbook version was mutated in place (docs/04 authoring rule).
+#   db-invariants— the migration chain still declares every constraint/trigger the safety spec
+#                  relies on. Until port wave 1b nothing gated the database at all.
 
 on:
   push:
@@ -47,6 +49,9 @@ jobs:
 
       - name: Playbook version monotonicity
         run: npm run versions
+
+      - name: Database invariants (migration chain)
+        run: npm run db-invariants
 
   a11y-placeholder:
     # docs/09 makes accessibility a launch gate and asks for an axe check in CI. There is no UI yet,
