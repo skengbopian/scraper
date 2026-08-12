@@ -563,6 +563,9 @@ having; it is simply built on a foundation that cannot express the corrected clo
   work); B is tagged `port-baseline-2026-08-11`. Everything after that tag is the port.
 - **Non-goal:** feature parity as a milestone. A capability arrives when its wave arrives; nothing is
   ported merely because it exists.
+- **Wave detail lives in `docs/port-plan-from-A.md`** — the evidence-based ordering, the five hazards
+  that make every domain a refit rather than a copy, the refuse list, and the two files that must be
+  ported only with a fix. That plan supersedes the sketch in this ADR where they differ.
 - **Expected side effect:** `tools/spec-audit` now emits `[WARN DOC-REF]` for every file these ADRs
   name that has not landed yet (`docs/11-dpia.md`, `PRE-SEND-CHECKLIST.md`, `engine/factory.ts`, …).
   Those warnings are the port's own checklist and clear themselves wave by wave — do **not** silence
