@@ -2,9 +2,10 @@
   "name": "scraper-a11y-check",
   "private": true,
   "type": "module",
-  "description": "docs/09 gate: automated axe (WCAG 2.2 AA) scan of the alpha UI. Standalone on purpose — keeps Playwright/axe out of the zero-dependency web package and out of the workspace lockfile.",
+  "description": "docs/09 gate: automated axe (WCAG 2.2 AA) scan of the alpha UI. Standalone on purpose \u2014 keeps Playwright/axe out of the zero-dependency web package and out of the workspace lockfile.",
   "scripts": {
-    "check": "node check.mjs"
+    "check": "node check.mjs",
+    "check:next": "node check-next.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",

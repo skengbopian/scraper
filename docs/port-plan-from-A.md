@@ -44,7 +44,8 @@ contradiction ADR-012 exists to remove.
 | 1 | envelope crypto + sealed TOTP secret; DPIA, consumer-UX, pre-send checklist; convergence ADRs | REFIT (S–M) | **done** — `dc7dc9f`, `4535f23` |
 | 1b | A's extra Prisma **invariants** as forward-only `0005` (6 of them) + the first DB gate in `tools/spec-audit` | REFIT (M) | **done** — `0005_harden_existing` |
 | 2a | `packages/i18n`: 3-register dictionary (de / de-leicht overlay / en) + the inherited copy tests + a new two-clock copy test; wired into the API's user-facing messages | REFIT (M) | **done** — ADR-034 |
-| 2b | the Next.js shell page-by-page against B's two-clock contract (hazard 3), consuming `@scraper/i18n` | REFIT (XL) | next |
+| 2b | the Next.js shell (`apps/web-next`): shell + start/firmen/firmen[slug]/vorgaenge/vorgaenge[id] on the two-clock contract; served-app axe gate | REFIT (XL) | **partly done** — core loop live |
+| 2c | A's remaining screens: auth, konto, ops queue, herkunft, schutz, schufa, wissen, report | REFIT (L) | next |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
@@ -61,7 +62,20 @@ tests inherited (key parity, non-empty, forbidden-phrase/UWG) plus a two-clock c
 needs. The API's user-facing messages now resolve through it, so `Accept-Language` and
 `X-Scraper-Reading-Level: leicht` are proven on the wire (`apps/api/test/api.e2e.test.ts`).
 
-**2b — porting the screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
+**2b status.** The shell and the core product loop are live in `apps/web-next` against the real API:
+company list → the three engine outcomes → a tracked Vorgang → the chase step → the statutory clock.
+Hazard 3 is answered structurally rather than by review: `src/lib/clock.ts` exposes a **discriminated
+union** (`none | provisional | statutory`), `resolveDeadline()` **throws** if the API ever sends a
+statutory deadline without `clockIsProvable`, and `DeadlineCard` is the only component permitted to
+turn a deadline into words. A test forbids any page from calling `clockCopy` or touching
+`statutoryDeadlineAt` itself.
+
+Two further rules landed as tests after the served-app gate caught the mistakes: no page may render a
+raw state or requestType (docs/09 §3 — the plain-language labels in `@scraper/i18n` exist for this),
+and the register switches are plain `<form>` posts rather than click handlers, so they work before
+hydration and with JS disabled.
+
+**2c — porting the remaining screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
 transplanted: it describes pages this line does not have, and its clock strings are written against
 the single-`deadlineAt` model (hazard 3). Port a screen's copy WITH the screen, and when doing so,
 map A's one deadline onto this line's two — never alias `statutoryDeadlineAt` into a `deadlineAt`

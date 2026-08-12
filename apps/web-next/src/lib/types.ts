@@ -1,0 +1,86 @@
+/**
+ * Wire-shape mirrors of this API's responses (dates arrive as ISO strings over JSON).
+ *
+ * Sources of truth:
+ *   apps/api/src/requests/requests.service.ts  (the request view + nextAction map)
+ *   apps/api/src/census/census.controller.ts   (the census view)
+ *   packages/core/src/state-machine/states.ts  (the state union)
+ *
+ * NOTE what is NOT here: a single `deadlineAt`. The pre-audit line had one, and porting it is the
+ * defect this file exists to avoid — see `clock.ts`.
+ */
+
+/** All 16 states (packages/core/src/state-machine/states.ts). The pre-audit line had 13. */
+export const REQUEST_STATES = [
+  'DRAFT',
+  'BLOCKED_IDENTITY',
+  'READY',
+  'SENT',
+  'AWAITING_RESPONSE_PROVISIONAL',
+  'AWAITING_REGISTERED_RESEND',
+  'AWAITING_RESPONSE',
+  'RESPONSE_RECEIVED',
+  'NEEDS_HUMAN',
+  'COMPLIED',
+  'INCOMPLETE',
+  'REFUSED',
+  'ESCALATION_DRAFTED',
+  'ESCALATED',
+  'CLOSED_FAILED',
+  'WITHDRAWN',
+] as const;
+export type RequestState = (typeof REQUEST_STATES)[number];
+
+export const REQUEST_TYPES = ['OBJECTION_ART21', 'ACCESS_ART15', 'ACCESS_ART15_SOURCE', 'ERASURE_ART17'] as const;
+export type RequestType = (typeof REQUEST_TYPES)[number];
+
+/** The three real engine outcomes (planRequestCreation, ADR-025). */
+export type EngineOutcome = 'SELF_SERVE' | 'LEGAL' | 'NONE';
+
+export interface RequestView {
+  readonly id: string;
+  readonly controllerId: string;
+  readonly requestType: RequestType;
+  readonly state: RequestState;
+  /** The Art. 12(3) clock. Non-null ONLY after a provable send. */
+  readonly statutoryDeadlineAt: string | null;
+  /** An internal scheduling hint from a non-provable send. Never a legal deadline. */
+  readonly provisionalDeadlineAt: string | null;
+  readonly clockIsProvable: boolean;
+  readonly outcome: string | null;
+  readonly nextAction: string;
+}
+
+export interface SelfServeView {
+  readonly url: string;
+  readonly steps: readonly string[];
+  readonly requiresLogin: boolean;
+}
+
+export interface CommunityRecord {
+  readonly email: string | null;
+  readonly fax: string | null;
+  readonly quality: string | null;
+  readonly sources: readonly string[];
+}
+
+export interface CensusController {
+  readonly slug: string;
+  readonly id: string;
+  readonly name: string;
+  readonly type: string;
+  readonly risk: 'crit' | 'warn' | 'mut';
+  readonly riskLbl: string;
+  readonly holds: string;
+  readonly defaultRequestType: RequestType;
+  readonly featured: boolean;
+  /** A UI hint only — the authoritative decision is always POST /requests. */
+  readonly expectedOutcome: EngineOutcome;
+  readonly selfServe: SelfServeView | null;
+  readonly community: CommunityRecord | null;
+}
+
+export type CreateRequestResult =
+  | { readonly routed: 'SELF_SERVE'; readonly nextAction: string; readonly route: SelfServeView; readonly reason: string }
+  | { readonly routed: 'NONE'; readonly nextAction: string; readonly reason: string }
+  | { readonly routed: 'LEGAL'; readonly id: string; readonly state: 'READY'; readonly nextAction: string };

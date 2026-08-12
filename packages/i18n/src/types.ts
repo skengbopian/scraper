@@ -147,6 +147,19 @@ export interface AppStrings {
     duplicate: string;
     generic: string;
   };
+  /**
+   * Plain-language names for the engine's vocabulary. docs/09 §3 is explicit: "No raw status
+   * codes." A user must never meet `AWAITING_RESPONSE_PROVISIONAL` — these maps are what stands
+   * between the state machine's names and the screen.
+   */
+  stateLabel: Record<
+    | 'DRAFT' | 'BLOCKED_IDENTITY' | 'READY' | 'SENT'
+    | 'AWAITING_RESPONSE_PROVISIONAL' | 'AWAITING_REGISTERED_RESEND' | 'AWAITING_RESPONSE'
+    | 'RESPONSE_RECEIVED' | 'NEEDS_HUMAN' | 'COMPLIED' | 'INCOMPLETE' | 'REFUSED'
+    | 'ESCALATION_DRAFTED' | 'ESCALATED' | 'CLOSED_FAILED' | 'WITHDRAWN',
+    string
+  >;
+  requestTypeLabel: Record<'OBJECTION_ART21' | 'ACCESS_ART15' | 'ACCESS_ART15_SOURCE' | 'ERASURE_ART17', string>;
 }
 
 /** The Leichte-Sprache register is an OVERLAY, not a full translation — see `index.ts`. */

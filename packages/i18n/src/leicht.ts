@@ -58,4 +58,12 @@ export const LEICHT: DeepPartial<AppStrings> = {
     offline: 'Keine Verbindung. Bitte noch einmal versuchen.',
     generic: 'Das hat nicht geklappt. Bitte noch einmal versuchen.',
   },
+  stateLabel: {
+    AWAITING_RESPONSE_PROVISIONAL: 'Wir warten auf Antwort',
+    AWAITING_REGISTERED_RESEND: 'Keine Antwort. Jetzt per Einschreiben?',
+    AWAITING_RESPONSE: 'Wir warten auf Antwort',
+    NEEDS_HUMAN: 'Ein Mensch schaut sich das an',
+    ESCALATION_DRAFTED: 'Beschwerde ist fertig',
+    ESCALATED: 'Die Aufsicht prüft',
+  },
 };
