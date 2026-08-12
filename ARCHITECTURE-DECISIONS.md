@@ -494,6 +494,39 @@ effective testing); repo audit + OSS research (12 structured passes, journals in
 - **Not changed:** playbook activation (counsel), real providers (postal/QTSP/ident/model), Prisma
   adapter + auth (P0 items still open), the three-normative-files clock rule.
 
+### ADR-029 · P0/P1.5 build-out: real auth, Prisma persistence, BYO-Datenkopie ingest, durable Frist timers
+**Status:** ACCEPTED · **Decided:** 2026-08-11 · **Source:** product-owner directive ("work on: real auth + Prisma adapter, BYO-Datenkopie ingest, real providers, pg-boss timer runner, counsel sign-offs, manual accessibility passes").
+
+- **Persistence is real:** `0000_init` baseline generated (drift-check clean), 0002 defanged to a
+  documented no-op, `0003_filefixer_invariants` added — a credit-file snapshot bound to another
+  user's identity, an unverified identity, or rebound later is **unrepresentable at the storage
+  layer** (trigger-enforced, integration-tested). Chain deploys from empty; `PrismaRequestsRepository`
+  implements the port with DB-closed idempotency (UNIQUE key) and transactional insert+audit-event.
+- **Auth is real and separate from the identity gate:** email+password (scrypt) + TOTP (RFC-vectored),
+  hashed bearer sessions; registration creates an UNVERIFIED identity; `/identity/verify-stub`
+  (dev-only) stands in for the ident-provider callback. A caller presenting ANY bearer never falls
+  back to the dev fixture (fail-closed, tested).
+- **BYO-Datenkopie ingest (P1.5 flagship) ships:** hardened pdfjs extraction + Datenkopie parser v1
+  inside the unchanged sandbox envelope; conservative name+DOB match gate (OQ-15) rejects-and-purges
+  third-party documents (403, nothing stored — the one rule, HTTP-tested); CoC rules engine v1
+  (versioned, effective-dated, `counselSignedOff:false` → every consumer renders findings as
+  VORLÄUFIG per OQ-13) with the 12-criteria score table as data and the IV.3a score-negative warning
+  guardrail; raw uploads never persisted (sha256 only). Web "Akte" view renders findings live.
+- **Durable timers (OQ-12 interim decision):** WorkflowEngine on **pg-boss**; state-guarded
+  `deadline-expiry` handler (stale/duplicate ⇒ no-op) — provisional expiry → chase step, statutory
+  expiry → ESCALATION_DRAFTED; schedule→fire→transition integration-tested. Temporal remains the
+  production target.
+- **Real providers:** the Datenkopie parser is the delivered real provider. LetterXpress / InfoCert-
+  Openapi QTSP / POSTIDENT SCR ship as typed, credential-gated adapters (CREDENTIALS_MISSING without
+  env keys), NOT live-verified and wired into nothing — contracts are §4 human checklist items;
+  OQ-11 still governs what `provableSendConfirmed` keys on.
+- **Human-gated workstreams packaged, not performed:** `docs/counsel-review-packet.md` (every
+  TODO(counsel), OQ-7..22, template/playbook sign-off matrices, path to first send) and
+  `docs/manual-a11y-protocol.md` (~90-min SR/keyboard/one-handed/LS/zoom protocol with severity
+  rubric; includes concrete watch items found in the markup).
+- Suites after this ADR: core 189 · api 23 · doc-sandbox 11 · worker 1 (integration) · spec-audit
+  46 checks / 28 negatives · axe gate 13 scans — all green.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)
