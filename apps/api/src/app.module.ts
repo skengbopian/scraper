@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module.js';
 import { SessionMiddleware } from './auth/session.middleware.js';
 import { CensusController } from './census/census.controller.js';
+import { CreditFileModule } from './credit-file/credit-file.module.js';
 import { DbModule, isPrismaMode } from './db/db.module.js';
 import { DevIdentityMiddleware } from './common/dev-identity.middleware.js';
 import { HealthController } from './health.controller.js';
@@ -34,7 +35,7 @@ class SessionModule implements NestModule {
  *                      sessions resolve to the caller's own identity.
  */
 @Module({
-  imports: [...(isPrismaMode() ? [DbModule, SessionModule, AuthModule] : []), RequestsModule],
+  imports: [...(isPrismaMode() ? [DbModule, SessionModule, AuthModule] : []), RequestsModule, CreditFileModule],
   controllers: [HealthController, CensusController],
 })
 export class AppModule implements NestModule {

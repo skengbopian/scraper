@@ -10,11 +10,14 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@scraper/core": "workspace:*"
+    "@scraper/core": "workspace:*",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "@types/node": "^22.0.0"
-  }
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
 }

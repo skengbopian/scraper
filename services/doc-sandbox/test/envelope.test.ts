@@ -7,7 +7,7 @@ import type { RawDocument, SandboxParseResult } from '@scraper/core';
  * controller documents are hostile input. These tests pin the envelope's contract.
  */
 
-const DOC: RawDocument = { id: 'doc_1', mimeType: 'application/pdf', bytes: new Uint8Array(0) };
+const DOC: RawDocument = { id: 'doc_1', mimeType: 'application/pdf', bytes: new Uint8Array(0), receivedAt: new Date() };
 
 function stub(result: SandboxParseResult) {
   return createStubSandbox(new Map([[DOC.id, result]]));

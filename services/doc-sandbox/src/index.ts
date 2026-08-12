@@ -119,3 +119,6 @@ export const PROVENANCE_OUTPUT_SCHEMA = Object.freeze({
     },
   },
 });
+
+export * from './datenkopie-parser.js';
+export * from './pdf-text.js';

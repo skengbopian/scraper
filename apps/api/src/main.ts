@@ -11,6 +11,9 @@ import { AppModule } from './app.module.js';
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  // The Datenkopie upload is a raw PDF body (8 MB cap enforced again in the service).
+  const express = await import('express');
+  app.use('/credit-file/upload', express.default.raw({ type: 'application/pdf', limit: '8mb' }));
   app.enableCors({
     origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/, 'null'],
     methods: ['GET', 'POST'],
