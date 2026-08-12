@@ -189,6 +189,27 @@ describe('alpha API with dev fixtures OFF (production posture)', () => {
     expect(r.status).toBe(404);
   });
 
+  it('serves the identity refusal in the caller\'s register (wave 2 i18n)', async () => {
+    const ask = (headers: Record<string, string>) =>
+      fetch(`${base}/requests`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ controllerSlug: 'zoominfo', requestType: 'ERASURE_ART17' }),
+      });
+
+    const de = (await json(await ask({}))) as { message: string; nextAction: string };
+    expect(de.message).toContain('Identität');
+    expect(de.nextAction).toBe('START_IDENTITY_VERIFICATION');
+
+    const en = (await json(await ask({ 'accept-language': 'en-GB,en;q=0.9' }))) as { message: string };
+    expect(en.message).toBe('Your identity is not confirmed yet. Please complete the identity check first.');
+
+    // Leichte Sprache is a READING LEVEL, not a language tag — it has its own header, and it
+    // resolves to German regardless of Accept-Language (there is no en-leicht).
+    const leicht = (await json(await ask({ 'accept-language': 'en', 'x-scraper-reading-level': 'leicht' }))) as { message: string };
+    expect(leicht.message).toContain('Identität');
+  });
+
   it('the census stays public (product data, not user data)', async () => {
     const r = await fetch(`${base}/controllers`);
     expect(r.status).toBe(200);

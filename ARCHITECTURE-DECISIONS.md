@@ -639,6 +639,36 @@ this file would have produced a document where two contradictory clock decisions
      deliberately closed `subjectFields` enum. It must not port until OQ-19 is decided by counsel +
      safety — porting it would resolve an open safety question as a side effect of a merge.
 
+### ADR-034 · Three copy registers; Leichte Sprache is a reading level, not a language tag
+**Status:** ACCEPTED · **Decided:** 2026-08-11 · **Port wave 2** (ADR-030) · **Source:** the pre-audit
+line's `AppStrings` + its copy tests; docs/09 §4.
+
+- **Three registers, in one typed dictionary** (`packages/i18n`): `de` (primary, ≈B1), `en`, and
+  `de-leicht`. `Record<'de' | 'en', AppStrings>` makes a missing translation a COMPILE error, which
+  is the property worth inheriting — the pre-audit line had nine of nineteen pages half-translated
+  before it added exactly this.
+- **`de-leicht` is a partial OVERLAY on `de`, not a third dictionary.** Leichte Sprache simplifies
+  where simplification helps; demanding a distinct value for every key would force either duplicated
+  strings that drift apart or deliberately worse copy to fill a row. A key present in the overlay has
+  been consciously simplified; an absent key falls through to German. A test enforces that the
+  overlay may only simplify keys that exist — it may never introduce one.
+- **There is no `en-leicht`.** Leichte Sprache is a German institution with published rules;
+  inventing an English analogue would claim a standard we do not follow.
+- **The wire contract separates the two axes**, because they answer different questions:
+  `Accept-Language` picks the LANGUAGE (de | en); `X-Scraper-Reading-Level: leicht` picks the READING
+  LEVEL. Encoding the reading level as a language tag (`de-x-leicht`) would make every cache and
+  browser treat it as a dialect of German, which it is not. German is the default for an absent or
+  unparseable header — the users are German consumers, so the server's locale must not decide.
+- **Copy is now testable safety, not just wording.** The inherited forbidden-phrase test (docs/05 §3,
+  UWG risk — never promise an outcome of our service) now runs over API copy too, and a new test this
+  line needs and the pre-audit line could not have had asserts the **two clocks never borrow each
+  other's words**: the provisional label may not call itself statutory, the provisional note must say
+  email is not proof of delivery, and the silence path must point at the Einschreiben rather than at a
+  complaint. A copy edit that misstates the legal position now fails CI.
+- **Deliberately tiny formatter.** `fill()` does `{placeholder}` substitution and nothing else; a
+  full ICU library invites plurals/dates/selects — logic — into a layer that counsel reviews and the
+  copy tests treat as leaves.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)

@@ -43,7 +43,8 @@ contradiction ADR-012 exists to remove.
 |---|---|---|---|
 | 1 | envelope crypto + sealed TOTP secret; DPIA, consumer-UX, pre-send checklist; convergence ADRs | REFIT (S–M) | **done** — `dc7dc9f`, `4535f23` |
 | 1b | A's extra Prisma **invariants** as forward-only `0005` (6 of them) + the first DB gate in `tools/spec-audit` | REFIT (M) | **done** — `0005_harden_existing` |
-| 2 | `lib/strings.ts` + locale (de/en, parity-tested) → extend to a 3-register model (de / de-leicht / en); then the Next.js shell page-by-page against B's two-clock contract | REFIT (XL) | |
+| 2a | `packages/i18n`: 3-register dictionary (de / de-leicht overlay / en) + the inherited copy tests + a new two-clock copy test; wired into the API's user-facing messages | REFIT (M) | **done** — ADR-034 |
+| 2b | the Next.js shell page-by-page against B's two-clock contract (hazard 3), consuming `@scraper/i18n` | REFIT (XL) | next |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
@@ -55,9 +56,17 @@ second cycle after `COMPLIED`, breaking ADR-013 and the provenance follow-up cha
 *invariants* re-expressed against B's baseline; leave its request tables behind.
 
 ### Wave-2 detail — the single most valuable thing A has for the UI
-`apps/web/src/lib/strings.ts` (1,363 lines; de 440 / en 902) with parity tests. B's `data-de`/`data-ls`
-is German-only. Target shape is **three registers — de / de-leicht / en** — so extend `AppStrings`
-with the Leichte-Sprache column rather than bolting LS onto a two-locale table afterwards.
+**2a is done** (ADR-034): `packages/i18n` carries the three registers with the pre-audit line's copy
+tests inherited (key parity, non-empty, forbidden-phrase/UWG) plus a two-clock copy test this line
+needs. The API's user-facing messages now resolve through it, so `Accept-Language` and
+`X-Scraper-Reading-Level: leicht` are proven on the wire (`apps/api/test/api.e2e.test.ts`).
+
+**2b — porting the screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
+transplanted: it describes pages this line does not have, and its clock strings are written against
+the single-`deadlineAt` model (hazard 3). Port a screen's copy WITH the screen, and when doing so,
+map A's one deadline onto this line's two — never alias `statutoryDeadlineAt` into a `deadlineAt`
+field to make a ported page compile. That is the specific move that turns a silent "—" into a
+mislabelled legal deadline.
 
 ### Wave-4 detail — start where B currently dead-ends
 `packages/core/src/provenance/ledger.ts:107-145` already proposes an Art. 17(1)(d) partial erasure at
