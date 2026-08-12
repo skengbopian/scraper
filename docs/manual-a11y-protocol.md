@@ -56,7 +56,7 @@ cd apps/web && python3 -m http.server 8080
 ### 0.4 Live mode (needed only for §1.6b, §2.5b — resend decision + Demo drawer)
 
 ```bash
-SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js    # engine on :3900
+NODE_ENV=development SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js    # engine on :3900
 ```
 
 On a **phone**, `localhost` is the phone itself — point the page at the machine running the engine:

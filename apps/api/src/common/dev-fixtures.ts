@@ -17,12 +17,21 @@ import type { MandateSnapshot } from '@scraper/core';
  *      header or body field that lets a caller choose a different subject — the anti-stalker rule
  *      (CLAUDE.md) holds in dev exactly as in production.
  */
+const FIXTURE_SAFE_ENVIRONMENTS: readonly string[] = ['development', 'test'];
+
 export function devFixturesEnabled(): boolean {
   if (process.env.SCRAPER_DEV_FIXTURES !== '1') return false;
-  if (process.env.NODE_ENV === 'production') {
+  const env = process.env.NODE_ENV;
+  // ALLOW-LIST, not a deny-list. Refusing only NODE_ENV=production leaves the fixture identity
+  // serving whenever NODE_ENV is unset, "staging", "prod", or misspelled — i.e. exactly the
+  // deployments most likely to get it wrong. The pre-audit line learned this the same way (its
+  // decision log, D29); ported as a lesson rather than as code in wave 1 (ADR-030).
+  if (env === undefined || !FIXTURE_SAFE_ENVIRONMENTS.includes(env)) {
     throw new Error(
-      'SCRAPER_DEV_FIXTURES=1 with NODE_ENV=production — dev fixtures serve a fake VERIFIED identity ' +
-        'and simulated transitions, which must never run in production. Unset one of the two.',
+      `SCRAPER_DEV_FIXTURES=1 requires NODE_ENV to be one of ${FIXTURE_SAFE_ENVIRONMENTS.join(' | ')} ` +
+        `(got ${env === undefined ? 'unset' : `"${env}"`}). Dev fixtures serve a fake VERIFIED identity ` +
+        'and a simulated send lifecycle; an unrecognised environment must fail closed, not silently ' +
+        'behave like development. Set NODE_ENV=development locally, or unset SCRAPER_DEV_FIXTURES.',
     );
   }
   return true;

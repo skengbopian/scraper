@@ -606,6 +606,36 @@ A and B both have a `docs/10`, with different content: A's chapter 10 is its con
 - Un-numbered docs in this line (`docs/counsel-review-packet.md`, `docs/manual-a11y-protocol.md`,
   `docs/decision-reconciliation-A.md`) stay un-numbered — they are working artefacts, not spec chapters.
 
+### ADR-033 · A's decision log is reconciled row-by-row, not merged; 35 decisions are inherited with their code
+**Status:** ACCEPTED · **Decided:** 2026-08-11 · **Companion file:** `docs/decision-reconciliation-A.md`.
+
+The two lines kept decision logs in different formats — A's is prose (`## D1`…`## D39` plus an
+unnumbered post-review block, 1,646 lines), B's is this numbered ADR series. Merging the prose into
+this file would have produced a document where two contradictory clock decisions sit side by side.
+
+- **Method:** every A decision gets exactly one bucket in the companion file — `COVERED` (B already
+  decided the same), `SUPERSEDED` (B's foundation makes A's version wrong), `ADOPT` (a real decision
+  B lacks and inherits with the ported code). Nothing is summarised away; the table is the audit
+  trail that the port did not drop a decision.
+- **Result:** 52 rows — **13 COVERED, 4 SUPERSEDED, 35 ADOPT**, and **31 flagged safety-relevant**.
+  The four superseded are the ones the C1 audit already resolved here: A's D2 (workflow engine) by
+  ADR-031, D3 (state machine) by ADR-012/014/015/022, D5 (idempotency) by ADR-013, and D34 — whose
+  conclusion that this line is a disposable archive is exactly inverted by ADR-030.
+- **The ADOPT set is assigned to port waves**, so a decision arrives with the code it governs rather
+  than as an orphan note. Wave 1 inherits D4 (composite ownership FKs), D6 (credit-file segregation),
+  **D7 (envelope crypto — landed in this commit)**, D8 (the audit log carries no personal data),
+  D21 (readiness + its two-track split), D23 (DPIA scoping); waves 2–5 carry the rest.
+- **Two findings acted on immediately, before any further porting:**
+  1. **A live defect in this line, found by the reconciliation and fixed here.**
+     `devFixturesEnabled()` refused only `NODE_ENV=production`, so an **unset**, `staging` or `prod`
+     environment still served the fixture VERIFIED identity — a deny-list where the failure mode is
+     silence. It is now an **allow-list** (`development | test`; anything else throws), which is the
+     lesson A's D29 had already paid for. Documented run commands now carry `NODE_ENV=development`.
+  2. **A hold placed on one ADOPT item.** A's `VerifiedContactIdentifier` (D19.13) is a partial
+     answer to this line's still-open **OQ-19** (email as a subject identifier) and touches ADR-009's
+     deliberately closed `subjectFields` enum. It must not port until OQ-19 is decided by counsel +
+     safety — porting it would resolve an open safety question as a side effect of a merge.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)

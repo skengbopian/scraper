@@ -109,7 +109,7 @@ cd apps/web && python3 -m http.server 8080
 clocks); offline it stays the self-contained demo, so the published Artifact keeps working.
 
 ```bash
-SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js   # :3900; override the page's target via #api=
+NODE_ENV=development SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js   # :3900; override the page's target via #api=
 ```
 
 In live mode the Vorgang screen gains a dashed **Demo** drawer (simulate response / expiry) and the

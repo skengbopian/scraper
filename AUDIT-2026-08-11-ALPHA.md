@@ -27,7 +27,7 @@ narrative summary and the remaining-gap list.
 | Item | Where | Proof |
 |---|---|---|
 | API boots; census + Vorgänge + simulate endpoints | `apps/api` | 11 HTTP e2e tests; manual curl journey |
-| Dev-fixture identity/mandate, hard-gated | `apps/api/src/common/dev-fixtures.ts` | refuses `NODE_ENV=production`; fixtures-off suite asserts 403/404 |
+| Dev-fixture identity/mandate, hard-gated | `apps/api/src/common/dev-fixtures.ts` | activates ONLY under NODE_ENV development/test (allow-list, hardened 2026-08-11); fixtures-off suite asserts 403/404 |
 | Simulated lifecycle on the REAL machine (email ⇒ provisional clock; registered ⇒ statutory; respond/expire/escalate; drafts never send) | `simulate.controller.ts` | e2e asserts clock semantics + 409 on illegal jumps |
 | Invariant-1 fix: resend re-runs guards | `requests.service.ts` | e2e chase-path test |
 | CC0 census import (datenanfragen.de), provenance retained | `tools/census-import` → generated snapshot | 12/15 records, quality tiers kept; import ≠ activation |
@@ -72,7 +72,7 @@ isolation + mail-ops; post-alpha, self-hosted unmodified only). Details + reason
 
 ```bash
 npx pnpm@9.15.9 install && npx pnpm@9.15.9 -r build
-SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js   # API on :3900
+NODE_ENV=development SCRAPER_DEV_FIXTURES=1 node apps/api/dist/main.js   # API on :3900
 open apps/web/index.html                             # auto-connects; offline = standalone demo
 ```
 

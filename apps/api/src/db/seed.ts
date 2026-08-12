@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, SOURCE_HARDENING_ROUTES } from '@scraper/core';
 import { CENSUS } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_IDENTITY, DEV_MANDATE, DEV_USER_ID, devFixturesEnabled } from '../common/dev-fixtures.js';
+import { AesGcmEnvelopeCrypto, DevKekResolver, EnvelopeSecretCipher, type UserKeyResolver } from '@scraper/core';
 import { hashPassword, generateTotpSecret, totpProvisioningUri } from '../auth/crypto.js';
 
 /**
@@ -53,11 +54,22 @@ export async function seed(db: PrismaClient): Promise<void> {
 
   if (!devFixturesEnabled()) return;
 
+  // Envelope key material first: the 0004 trigger refuses a credential without it. Provisioning is
+  // idempotent AND repairs a row that predates 0004 — an existing user whose key is still null would
+  // otherwise fail at encrypt() with no way back (re-running the seed must fix it, not repeat it).
+  const envelope = new AesGcmEnvelopeCrypto(new DevKekResolver());
+  const { wrappedDek } = await envelope.generateWrappedDek('user');
   await db.user.upsert({
     where: { id: DEV_USER_ID },
-    create: { id: DEV_USER_ID, email: 'erika@example.com' },
+    create: { id: DEV_USER_ID, email: 'erika@example.com', wrappedDek, kekRef: 'user' },
     update: {},
   });
+  const devUser = await db.user.findUniqueOrThrow({ where: { id: DEV_USER_ID }, select: { wrappedDek: true, kekRef: true } });
+  if (!devUser.wrappedDek || !devUser.kekRef) {
+    // Rotating the DEK invalidates anything sealed under the previous (absent) one, so the
+    // credential is rewritten below in the same run.
+    await db.user.update({ where: { id: DEV_USER_ID }, data: { wrappedDek, kekRef: 'user' } });
+  }
   await db.identity.upsert({
     where: { id: DEV_IDENTITY.id },
     create: {
@@ -93,10 +105,20 @@ export async function seed(db: PrismaClient): Promise<void> {
   });
   // Dev login credential — fixture password, printed TOTP provisioning for authenticator apps.
   const totpSecret = generateTotpSecret('dev-fixture-stable');
+  const keys: UserKeyResolver = {
+    getUserKey: async (userId) => {
+      const u = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { wrappedDek: true, kekRef: true } });
+      if (!u.wrappedDek || !u.kekRef) throw new Error('dev fixture user has no envelope key');
+      return { wrappedDek: Buffer.from(u.wrappedDek), kekRef: u.kekRef };
+    },
+  };
+  const totpSecretEnc = await new EnvelopeSecretCipher(envelope, keys).encrypt(DEV_USER_ID, Buffer.from(totpSecret, 'utf8'));
   await db.authCredential.upsert({
     where: { userId: DEV_USER_ID },
-    create: { userId: DEV_USER_ID, passwordHash: await hashPassword('erika-demo-2026'), totpSecret },
-    update: {},
+    create: { userId: DEV_USER_ID, passwordHash: await hashPassword('erika-demo-2026'), totpSecretEnc },
+    // Re-seal on every run: the secret is deterministic for the fixture, but the DEK may have just
+    // been provisioned, and a secret sealed under an older key would be undecryptable.
+    update: { totpSecretEnc },
   });
   // eslint-disable-next-line no-console
   console.log(`dev login: erika@example.com / erika-demo-2026 · TOTP: ${totpProvisioningUri('erika@example.com', totpSecret)}`);

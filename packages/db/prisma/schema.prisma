@@ -150,6 +150,11 @@ model User {
   subscriptionStatus String   @default("none")
   createdAt          DateTime @default(now())
 
+  /// Per-user envelope key material (CLAUDE.md §4). The DEK is sealed under a KEK the app does not
+  /// store beside the data; `kekRef` names which KEK, so keys can rotate without re-reading rows.
+  wrappedDek            Bytes?
+  kekRef                String?
+
   identity              Identity?
   mandates              Mandate[]
   rightsRequests        RightsRequest[]
@@ -538,8 +543,10 @@ model AuthCredential {
   userId       String   @id
   /// scrypt, self-describing format: scrypt$N$r$p$saltB64$hashB64
   passwordHash String
-  /// RFC 6238 TOTP secret, base32. Provisioned at registration, verified on every login.
-  totpSecret   String
+  /// RFC 6238 TOTP secret, base32, SEALED under the user's DEK (CLAUDE.md §4 — see
+  /// packages/core/src/crypto/envelope.ts). Never stored in plaintext: a database dump must not
+  /// hand an attacker the second factor. Ported in wave 1 from the pre-audit line's ADR D20.
+  totpSecretEnc Bytes
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

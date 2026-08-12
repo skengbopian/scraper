@@ -19,3 +19,4 @@ export * from './request/in-memory-repository.js';
 export * from './filefixer/score-criteria.js';
 export * from './filefixer/rules.js';
 export * from './filefixer/identity-match.js';
+export * from './crypto/envelope.js';
