@@ -527,6 +527,85 @@ effective testing); repo audit + OSS research (12 structured passes, journals in
 - Suites after this ADR: core 189 · api 23 · doc-sandbox 11 · worker 1 (integration) · spec-audit
   46 checks / 28 negatives · axe gate 13 scans — all green.
 
+### ADR-030 · Convergence: this line is canonical; the pre-audit line's features port onto it in waves
+**Status:** ACCEPTED · **Decided:** 2026-08-11 by the product owner · **Supersedes:** the open
+repo-unification question raised in `AUDIT-2026-08-11-ALPHA.md` §4.7.
+
+Two divergent lines of the same product existed: **A** = `~/Downloads/scraper` (feature-rich,
+pre-audit) and **B** = `~/Downloads/scraper 3` (this repo — the upgraded line). B is canonical.
+
+The deciding evidence is structural, not preference. A's `RequestState` enum has **13** values; B's has
+**16**. A lacks `AWAITING_RESPONSE_PROVISIONAL`, `AWAITING_REGISTERED_RESEND` and `INCOMPLETE`, so in A
+an email send goes `SENT → AWAITING_RESPONSE` and **email starts the statutory clock** — the C1
+contradiction this line resolved in ADR-012 — and A cannot represent an incomplete source list, which
+is the flagship provenance play (ADR-014). A also has no `tools/spec-audit` harness and no ADR series.
+A's feature mass (~36.4k LOC vs B's ~8.2k, 45 playbooks vs 15, 70 test files vs 22) is real and worth
+having; it is simply built on a foundation that cannot express the corrected clock.
+
+- **Direction:** A's capabilities move onto B's foundation. The reverse (transplanting B's core into A)
+  was rejected: A's schema, worker, dsr and ops all encode the 13-state model, so "replace only the
+  wall" is load-bearing everywhere.
+- **Method — staged port ordered by clock-coupling**, lowest first, so each wave lands
+  invariant-clean and B's suites + spec-audit stay green throughout:
+  1. zero-coupling assets — `packages/providers` (envelope + subject/secret ciphers: the CLAUDE.md §4
+     encryption B lacks entirely), A's extra Prisma models, `docs/11-dpia.md` (a launch gate B has no
+     version of), `PRE-SEND-CHECKLIST.md` + `scripts/readiness.mjs`, docker-compose + dev scripts;
+  2. the web app — 72 real sources behind a single `@/lib/api` seam, plus its glossary/locale/strings
+     layer, retargeted at B's API and folded together with what B's alpha proved (Leichte Sprache,
+     the Ampel gauge, two visually-distinct clocks, the Akte findings view);
+  3. auth + identity — adopt A's step-up guard, recovery codes and MFA throttle over ADR-029's
+     simpler build; refit to B's branded `RequestSubject`;
+  4. leverage + playbooks — A's 45 playbooks run through B's validator; **the failures are the review
+     list**, since many will fail precisely because they assume the old clock;
+  5. ops, worker, dispatch — highest coupling, largely **re-derived** against B's transition table
+     rather than copied.
+- **Provenance:** A is committed at `cc9dcb4` (a 166-file rescue commit of a week of uncommitted
+  work); B is tagged `port-baseline-2026-08-11`. Everything after that tag is the port.
+- **Non-goal:** feature parity as a milestone. A capability arrives when its wave arrives; nothing is
+  ported merely because it exists.
+- **Expected side effect:** `tools/spec-audit` now emits `[WARN DOC-REF]` for every file these ADRs
+  name that has not landed yet (`docs/11-dpia.md`, `PRE-SEND-CHECKLIST.md`, `engine/factory.ts`, …).
+  Those warnings are the port's own checklist and clear themselves wave by wave — do **not** silence
+  them by deleting the references. Failures (not warnings) remain the CI gate.
+
+### ADR-031 · Workflow engine: keep A's interface+factory, default to pg-boss, Temporal stays the target
+**Status:** ACCEPTED · **Decided:** 2026-08-11 · **Supersedes:** A's `D2 — Workflow engine: BullMQ
+first, Temporal target` (its default only, not its structure) · **Closes:** OQ-12.
+
+The merge collides two answers: A ships `WorkflowEngine` with an engine **factory** and both a
+`bullmq-engine.ts` and a `temporal-engine.ts`; B ships a single pg-boss implementation (ADR-029)
+proven against the corrected 16-state machine with a state-guarded handler and an integration test.
+
+- **Adopt A's shape:** the interface plus `engine/factory.ts` selecting an adapter from config is
+  better than B's single hard-wired engine, and it is what makes the Temporal migration a config
+  change. Port it in wave 5 with the worker.
+- **Change A's default to pg-boss** for the interim. Reasons, in order: a statutory 30+ day timer
+  living in a Redis-protocol store is durability-sensitive (a misconfigured eviction policy silently
+  drops a Frist — unacceptable for a legal deadline); pg-boss is transactional with the request ledger
+  in the same Postgres; and B's implementation is already guarded and tested against the corrected
+  state model, whereas A's BullMQ engine is written against the 13-state model and must be re-fitted
+  in wave 5 regardless — so the incumbency argument for BullMQ is weaker than it looks.
+- **Retain the BullMQ adapter** once the factory exists (it costs nothing to keep and preserves A's
+  work); **Temporal remains the production target** (ADR-004, A's D2 — both lines already agree).
+- **What would flip this:** if wave 5 turns out to port A's worker largely verbatim rather than
+  re-deriving it, BullMQ's incumbency wins and pg-boss becomes the second adapter instead.
+
+### ADR-032 · Docs numbering across the merge: B's 00–10 are frozen; A's docs import at fresh numbers
+**Status:** ACCEPTED · **Decided:** 2026-08-11.
+
+A and B both have a `docs/10`, with different content: A's chapter 10 is its consumer-UX research, B's is the utility roadmap. B's ADRs 023–029 and `CLAUDE.md` reference B's numbering repeatedly.
+
+- **B's `docs/00`–`docs/10` keep their numbers.** Renumbering them would rewrite cross-references in
+  the ADR log, CLAUDE.md and the spec-audit's doc-reference check for no gain.
+- **A's `docs/11-dpia.md` imports as `docs/11-dpia.md`** — no collision, and it is a launch-gate
+  artefact (docs/06 "DPIA completed and signed off") that B has no version of.
+- **A's chapter 10 (consumer UX) imports as `docs/12-consumer-ux.md`**, with a one-line header note
+  recording its original number so A's own cross-references stay traceable.
+- **A's spec-audit chapter from 2026-08-07 is not imported.** This line already resolved that audit into
+  spec edits (ADR-011); the file remains in A's history at `cc9dcb4`.
+- Un-numbered docs in this line (`docs/counsel-review-packet.md`, `docs/manual-a11y-protocol.md`,
+  `docs/decision-reconciliation-A.md`) stay un-numbered — they are working artefacts, not spec chapters.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)
