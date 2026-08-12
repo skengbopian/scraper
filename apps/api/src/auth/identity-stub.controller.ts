@@ -1,0 +1,57 @@
+import { BadRequestException, Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+// Value import on purpose: Nest resolves the constructor param via emitted metadata, and a
+// type-only import degrades that metadata to Function (unresolvable).
+import { PrismaClient } from '@prisma/client';
+import { DevOnlyGuard } from '../common/dev-only.guard.js';
+
+class VerifyStubDto {
+  readonly legalName!: string;
+  readonly dateOfBirth!: string; // ISO date
+  readonly street!: string;
+  readonly postalCode!: string;
+  readonly city!: string;
+}
+
+/**
+ * The STUBBED ident-provider callback (dev-only; 404s in production posture). In production this
+ * endpoint does not exist: POSTIDENT/eID (docs/02, ADR defaults) verifies the person and *its*
+ * webhook writes the verified record. The stub keeps the GATE real while making the flow testable:
+ * the caller supplies their own data, the row is marked VERIFIED with providerRef "stub" — and
+ * everything downstream (deriveSubject, guards, snapshot binding) treats it exactly like a real
+ * verification. The subject is still structurally the CALLER: the row updated is the session
+ * user's own Identity; there is no field naming anyone else.
+ */
+@Controller('identity')
+@UseGuards(DevOnlyGuard)
+export class IdentityStubController {
+  constructor(private readonly db: PrismaClient) {}
+
+  @Post('verify-stub')
+  async verifyStub(@Req() req: { userId?: string }, @Body() dto: VerifyStubDto) {
+    if (!req.userId) throw new BadRequestException({ error: 'NO_SESSION', message: 'Bitte zuerst anmelden (Login + TOTP).' });
+    const dob = new Date(String(dto.dateOfBirth ?? ''));
+    if (!dto.legalName || Number.isNaN(dob.getTime()) || !dto.street || !dto.postalCode || !dto.city) {
+      throw new BadRequestException({ error: 'INCOMPLETE', message: 'Name, Geburtsdatum und Anschrift werden benötigt.' });
+    }
+    const identity = await this.db.identity.update({
+      where: { userId: req.userId },
+      data: {
+        status: 'VERIFIED',
+        method: 'EID',
+        legalName: dto.legalName.trim(),
+        dateOfBirth: dob,
+        verifiedAt: new Date(),
+        providerRef: 'stub',
+      },
+    });
+    await this.db.identityAddress.updateMany({ where: { identityId: identity.id, current: true }, data: { current: false } });
+    await this.db.identityAddress.create({
+      data: {
+        identityId: identity.id,
+        street: dto.street.trim(), postalCode: dto.postalCode.trim(), city: dto.city.trim(),
+        country: 'DE', current: true, verifiedAt: new Date(),
+      },
+    });
+    return { status: 'VERIFIED', provider: 'stub', nextAction: 'CREATE_REQUEST' };
+  }
+}

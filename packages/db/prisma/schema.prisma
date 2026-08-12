@@ -156,6 +156,9 @@ model User {
   suppressionEnrolments SuppressionEnrolment[]
   fraudMarkerFilings    FraudMarkerFiling[]
   provenanceLedgers     ProvenanceLedger[]
+  authCredential        AuthCredential?
+  sessions              Session[]
+  creditFileSnapshots   CreditFileSnapshot[]
 }
 
 /// THE SAFETY KEYSTONE. Every RightsRequest's subject identifiers are snapshotted from here and
@@ -173,9 +176,10 @@ model Identity {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  addresses IdentityAddress[]
-  packet    IdentityPacket?
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addresses           IdentityAddress[]
+  packet              IdentityPacket?
+  creditFileSnapshots CreditFileSnapshot[]
 }
 
 model IdentityAddress {
@@ -247,10 +251,11 @@ model Controller {
   identityProofRequired    String?
   responseNormDays         Int?
 
-  playbooks          Playbook[]
-  rightsRequests     RightsRequest[]
-  provenanceLedgers  ProvenanceLedger[]
-  fraudMarkerFilings FraudMarkerFiling[]
+  playbooks           Playbook[]
+  rightsRequests      RightsRequest[]
+  provenanceLedgers   ProvenanceLedger[]
+  fraudMarkerFilings  FraudMarkerFiling[]
+  creditFileSnapshots CreditFileSnapshot[]
 }
 
 model Playbook {
@@ -521,4 +526,130 @@ enum SelfServeRouteType {
   AD_ID_RESET
   CONSENT_WITHDRAWAL
   DSR_ERASURE
+}
+
+/// -----------------------------------------------------------------------------------------------
+/// Auth (docs/01 P0: email + TOTP MFA). Secrets sit apart from User so the auth surface audits in
+/// isolation. The identity-verification gate is UNTOUCHED by auth: a fresh account's Identity stays
+/// UNVERIFIED and every rights-request route keeps 403ing until the ident provider (stubbed in the
+/// alpha) marks it VERIFIED — auth authenticates a person to their account, never to a subject.
+/// TODO(security): envelope-encrypt totpSecret at rest alongside Identity PII (docs/03).
+model AuthCredential {
+  userId       String   @id
+  /// scrypt, self-describing format: scrypt$N$r$p$saltB64$hashB64
+  passwordHash String
+  /// RFC 6238 TOTP secret, base32. Provisioned at registration, verified on every login.
+  totpSecret   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  /// sha256 hex of the bearer token — the raw token never touches the database.
+  tokenHash   String    @unique
+  userId      String
+  /// False until the TOTP step succeeds; guarded routes require a fully-verified session.
+  mfaVerified Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// -----------------------------------------------------------------------------------------------
+/// BYO-Datenkopie ingest (docs/10 §3.1/§3.2 P1.5) — the same-day-utility surface.
+enum CreditFileSourceKind {
+  UPLOAD
+  RESPONSE
+}
+
+enum CreditFileEntryType {
+  NEGATIVE_CLAIM
+  CONTRACT
+  INQUIRY
+  ADDRESS
+  INSOLVENCY
+  SCORE
+  OTHER
+}
+
+enum FindingSeverity {
+  INFO
+  UPCOMING
+  OVERDUE
+}
+
+/// SAFETY (docs/10 §3.1, same class as IdentityPacket — the anti-stalker one rule): a snapshot is
+/// bound to the VERIFIED identity whose parsed name+DOB matched the document. A document about
+/// someone else must be UNREPRESENTABLE here: the API match-gate rejects+purges on mismatch, and the
+/// 0003 trigger re-asserts (identity belongs to user, status VERIFIED) at every write. OQ-15 governs
+/// the match thresholds; the raw upload is purged after normalisation (CLAUDE.md §4) — only the hash
+/// stays.
+model CreditFileSnapshot {
+  id              String               @id @default(cuid())
+  userId          String
+  identityId      String
+  controllerId    String
+  sourceKind      CreditFileSourceKind
+  receivedAt      DateTime             @default(now())
+  matchAssertedAt DateTime
+  parseConfidence Float
+  rawDocumentHash String
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identity   Identity          @relation(fields: [identityId], references: [id])
+  controller Controller        @relation(fields: [controllerId], references: [id])
+  entries    CreditFileEntry[]
+  findings   FileFinding[]
+
+  @@index([userId])
+}
+
+model CreditFileEntry {
+  id          String              @id @default(cuid())
+  snapshotId  String
+  entryType   CreditFileEntryType
+  /// Who reported the entry to the bureau (creditor / source), as parsed. Advisory.
+  reportedBy  String?
+  reportedAt  DateTime?
+  settledAt   DateTime?
+  amountCents Int?
+  disputed    Boolean             @default(false)
+  label       String?
+  /// Full parser output for this entry — advisory only, never drives an irreversible action.
+  raw         Json
+
+  snapshot CreditFileSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  findings FileFinding[]
+
+  @@index([snapshotId])
+}
+
+/// Deterministic rule-engine output. `ruleSetVersion` is load-bearing: rule sets are versioned,
+/// effective-dated and counsel-signed like templates (docs/10 §3.2 P1.5, OQ-13); findings from an
+/// unsigned rule set render as preliminary. Never a score promise (docs/05 §3).
+model FileFinding {
+  id                   String          @id @default(cuid())
+  snapshotId           String
+  entryId              String?
+  ruleId               String
+  ruleSetVersion       String
+  severity             FindingSeverity
+  computedDeadlineAt   DateTime?
+  recommendedAction    String
+  scoreRelevance       String?
+  scoreNegativeWarning Boolean         @default(false)
+  explanation          String
+  createdAt            DateTime        @default(now())
+
+  snapshot CreditFileSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  entry    CreditFileEntry?   @relation(fields: [entryId], references: [id])
+
+  @@index([snapshotId])
 }

@@ -14,8 +14,13 @@ import { DEV_IDENTITY, DEV_USER_ID, devFixturesEnabled } from './dev-fixtures.js
  */
 @Injectable()
 export class DevIdentityMiddleware implements NestMiddleware {
-  use(req: Record<string, unknown>, _res: unknown, next: () => void): void {
-    if (devFixturesEnabled()) {
+  use(req: Record<string, unknown> & { headers?: Record<string, unknown> }, _res: unknown, next: () => void): void {
+    // The fixture only fills a TRUE vacuum: no resolved session AND no Bearer header at all. A
+    // request that presents a token is trying to be a real session — if that session is missing,
+    // expired, or not MFA-verified, it must fail closed as itself, never fall back to the fixture
+    // (a half-authenticated caller acting as the fixture user would mask every auth gate).
+    const hasBearer = typeof req.headers?.authorization === 'string' && req.headers.authorization.length > 0;
+    if (devFixturesEnabled() && req.userId === undefined && !hasBearer) {
       req.userId = DEV_USER_ID;
       req.identity = DEV_IDENTITY;
     }

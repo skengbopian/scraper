@@ -28,37 +28,9 @@ ALTER TYPE "ControllerRole" ADD VALUE IF NOT EXISTS 'ENRICHMENT_BROKER';
 ALTER TYPE "ControllerRole" ADD VALUE IF NOT EXISTS 'EMPLOYER_PROCESSOR';
 
 -- ---------------------------------------------------------------------------------------------
--- 2. The self-serve route kinds (docs/08 §2). DSR_ERASURE is the enrichment-broker "remove me" form.
+-- 2.+3. (FOLDED INTO 0000_init, 2026-08-11 / ADR-028 follow-up)
+-- The SelfServeRouteType enum and the SelfServeRoute table this migration originally created are now
+-- part of the generated 0000_init baseline (they live in schema.prisma). Since no database had ever
+-- been deployed, the pre-baseline history was rewritten per this file's own header note; the enum
+-- ADD VALUE IF NOT EXISTS statements above remain as harmless no-ops to preserve the narrative.
 -- ---------------------------------------------------------------------------------------------
-CREATE TYPE "SelfServeRouteType" AS ENUM (
-  'ACCOUNT_DELETION',
-  'MARKETING_PREFS',
-  'DO_NOT_SELL',
-  'AD_ID_RESET',
-  'CONSENT_WITHDRAWAL',
-  'DSR_ERASURE'
-);
-
--- ---------------------------------------------------------------------------------------------
--- 3. The Tier-1 self-serve route directory (docs/08 §2, docs/10 §7).
--- GUARDRAIL: there is deliberately NO credential column here. A requiresLogin route stays a guided
--- handoff; we never store a third-party password or log in for the user (docs/08 guardrail 1).
--- ---------------------------------------------------------------------------------------------
-CREATE TABLE "SelfServeRoute" (
-  "id"                 TEXT NOT NULL,
-  "companySlug"        TEXT NOT NULL,
-  "routeType"          "SelfServeRouteType" NOT NULL,
-  "url"                TEXT NOT NULL,
-  "steps"              TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-  "requiresLogin"      BOOLEAN NOT NULL DEFAULT false,
-  "estMinutes"         INTEGER,
-  "lastVerifiedAt"     TIMESTAMP(3),
-  "verificationMethod" TEXT,
-  "successRate"        DOUBLE PRECISION,
-  "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  CONSTRAINT "SelfServeRoute_pkey" PRIMARY KEY ("id")
-);
-
-CREATE INDEX "SelfServeRoute_companySlug_idx" ON "SelfServeRoute" ("companySlug");
-CREATE INDEX "SelfServeRoute_companySlug_routeType_idx" ON "SelfServeRoute" ("companySlug", "routeType");

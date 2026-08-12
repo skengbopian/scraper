@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, InMemoryRequestsRepository, SOURCE_HARDENING_ROUTES } from '@scraper/core';
 import { CENSUS } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_MANDATE, devFixturesEnabled } from '../common/dev-fixtures.js';
 import { IdentityVerifiedGuard } from '../common/identity-verified.guard.js';
+import { isPrismaMode } from '../db/db.module.js';
+import { PrismaRequestsRepository } from './prisma-requests.repository.js';
 import { RequestsController } from './requests.controller.js';
 import { RequestsService, type RequestsRepository } from './requests.service.js';
 import { SimulateController } from './simulate.controller.js';
@@ -38,7 +41,11 @@ function devRepository(): RequestsRepository {
   controllers: [RequestsController, SimulateController],
   providers: [
     IdentityVerifiedGuard,
-    { provide: REQUESTS_REPOSITORY, useFactory: devRepository },
+    // memory (default): in-memory seeded adapter. prisma: the packages/db-backed adapter — the
+    // PrismaClient comes from the @Global DbModule, mounted by AppModule in that mode.
+    isPrismaMode()
+      ? { provide: REQUESTS_REPOSITORY, useFactory: (db: PrismaClient) => new PrismaRequestsRepository(db), inject: [PrismaClient] }
+      : { provide: REQUESTS_REPOSITORY, useFactory: devRepository },
     // The useFactory is LOAD-BEARING: RequestsService's repo param is the interface RequestsRepository,
     // which has no runtime DI token, so Nest cannot resolve it via a bare class/useClass provider. Do not
     // simplify to `RequestsService` (shorthand) without adding @Inject(REQUESTS_REPOSITORY) to the ctor.
