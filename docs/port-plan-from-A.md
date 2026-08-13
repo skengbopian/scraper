@@ -48,7 +48,7 @@ contradiction ADR-012 exists to remove.
 | 2c | Akte (the BYO-Datenkopie flagship) + Wissen; structural tests widened from pages to all components | REFIT (L) | **done** |
 | 2d | auth screens (register → secret → login → TOTP) + konto + the identity gate explained; session as an httpOnly cookie | REFIT (M) | **done** — wave 2 complete |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
-| 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
+| 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | **done** — ADR-036 |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
 
 ### Wave-1b detail — why invariants and not the schema
@@ -119,6 +119,31 @@ chain stops there. A's `templates/art17-loeschung-herkunft.de.md` plus the four
 `loeschung-herkunft.{boniversum,crif,infoscore,schufa}.yaml` close it. Highest value per file in the
 whole port.
 
+### Wave-4 outcome — three corrections to the plan above
+The wave landed as ADR-036. Three things this plan got wrong, recorded so the next wave does not
+inherit them:
+
+1. **The playbook/template pair was not enough to close the dead-end.** `art17-loeschung-herkunft.de`
+   renders `{{categories}}` and `{{sourceNames}}`, which are not identity fields and which
+   `subjectFields` is closed against by design. The engine had no seam for them, and `render()` treated
+   an `{{#each}}` over an unsupplied list as EMPTY — so the ported template would have produced a letter
+   announcing a bounded erasure demand at a credit bureau and listing no categories, silently. Closing
+   the dead-end therefore also meant a `scopeSource` binding, a branded `PartialErasureScope`, and
+   making the renderer fail on an unbound `#each` like it already failed on an unbound `{{var}}`.
+2. **"21 files assert a silence escalation off a channel that can never produce a provable send" is not
+   what the corpus says.** Measured against this line's gate: all 45 declare
+   `onDeadlineExpiry: DRAFT_ART77`; **12** have no postal channel at all (web-form-only: 11880,
+   dasoertliche, dastelefonbuch, google-eu-delisting × 3 request types) and are the true "can never"
+   set; **17** declare a postal channel with the bare boolean `registered: false`, of which only 3 carry
+   a real postal address — the other **14** carry a `TODO(counsel): verify` placeholder, which this
+   line's schema ACCEPTED as an address. So the honest split is 12 impossible + 14 blocked on a verified
+   address, not 21 of one kind. Deferred as OQ-26 (`docs/counsel-review-packet.md` §8b).
+3. **Only three of the four `loeschung-herkunft` files were portable.**
+   `loeschung-herkunft.boniversum` contradicts `docs/07`, which keeps `boniversum` as a slug alias after
+   the Sep-2025 merger into infoscore and says "do not write a playbook against it". `provenance.crif`
+   was pulled forward into the tranche instead: without it `loeschung-herkunft.crif` could never derive
+   its scope, which the new corpus-level `SCOPE-UNREACHABLE` check would have failed.
+
 ## Refuse list — do not port these
 
 - **`scripts/generate-playbooks.mjs`.** Running it in B regenerates the corpus in A's shape (no
@@ -130,6 +155,14 @@ whole port.
 - **A's `schema.prisma` and its migration chain** (see wave 1b).
 - **A's `docs/AUDIT-2026-08-07-spec.md`** — this line already resolved that audit into spec edits
   (ADR-011); the file stays in A's history.
+- **A's cost-model and request-accounting modules** under `packages/core/src/leverage/` (ADR-036). The first prices a legal request partly
+  on "it permanently consumes the ONE (user, controller, requestType) idempotency slot" — the
+  pre-ADR-013 model in a constant; the second books on `provableSendConfirmed` and imports the 13-state
+  clock vocabulary. Note the trap the plan did not name: A's expected-cost walk cannot simply be ported
+  with the costs stubbed to zero — `cost(i) < p(i)·E[i+1]` becomes `0 < p·0`, false for every rung, so
+  the router returns the artillery every time with a plausible-looking audit trail.
+- **A's three `boniversum` playbooks** — `docs/07` keeps the slug as an alias only. Now gated by
+  `CENSUS-ALIAS` in `tools/spec-audit/audit.mjs` rather than by prose.
 - **`VerifiedContactIdentifier` (A's D19.13)** until **OQ-19** is decided — it is a partial answer to
   an open safety question and touches ADR-009's closed `subjectFields` enum (ADR-033).
 

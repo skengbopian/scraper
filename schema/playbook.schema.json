@@ -102,6 +102,10 @@
         }
       }
     },
+    "scopeSource": {
+      "description": "Where the letter's bounded SCOPE comes from, when it is not derivable from the identity. PROVENANCE_ANSWER = the category list and source names of an Art. 17(1)(d) partial erasure, taken from this same controller's own prior Art. 15(1)(g) answer. Declaring it makes the engine REFUSE to render without a PartialErasureScope; omitting it on a template that lists categories renders the list as nothing, which turns a bounded demand into an unbounded erasure demand at a bureau — silently, because {{#each}} over an unsupplied list is empty rather than an error. Closed enum: any other provenance for a scope is a new legal instrument, not a config value.",
+      "enum": ["PROVENANCE_ANSWER"]
+    },
     "identityProof": {
       "type": "object",
       "required": ["required", "accepts"],
@@ -239,6 +243,11 @@
       "$comment": "The flagship extracts nothing without a provenance block; onIncompleteSourceList is meaningless without one.",
       "if": { "required": ["requestType"], "properties": { "requestType": { "const": "ACCESS_ART15_SOURCE" } } },
       "then": { "required": ["provenance", "seatDpa"] }
+    },
+    {
+      "$comment": "scopeSource: PROVENANCE_ANSWER is the Art. 17(1)(d) partial-erasure chain and nothing else. On an access or objection playbook it would mean a letter whose scope is bounded by facts the instrument never establishes.",
+      "if": { "required": ["scopeSource"], "properties": { "scopeSource": { "const": "PROVENANCE_ANSWER" } } },
+      "then": { "properties": { "requestType": { "const": "ERASURE_ART17" } } }
     },
     {
       "$comment": "onIncompleteSourceList only has meaning for a source request.",

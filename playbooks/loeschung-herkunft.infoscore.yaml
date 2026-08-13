@@ -1,0 +1,77 @@
+# Art. 17(1)(d) PARTIAL erasure at infoscore Consumer Data GmbH (Experian Deutschland), scoped to the
+# data categories whose source infoscore ITSELF named in its Art. 15(1)(g) answer.
+#
+# This is the last link of the Provenance chain and the reason it stops dead-ending:
+# provenance.infoscore asks who supplied each category -> the answer names a watchlisted broker ->
+# packages/core/src/provenance/ledger.ts proposes this erasure -> this playbook executes it.
+#
+# NOT a request to delete a credit file. docs/07 rules that out and records this as the single
+# exception: "where a provenance answer names a broker as the source of a category, that category may
+# be attacked at the bureau under Art. 17(1)(d) — a targeted deletion of a broker-sourced layer, never
+# a blanket erasure of the file." `scopeSource: PROVENANCE_ANSWER` is what keeps that promise
+# structurally: the engine refuses to render without a PartialErasureScope derived from the answer.
+#
+# Reachable only via cause PROVENANCE_CHAIN, so the broker naming always precedes the letter. It is
+# not offered as a user-initiated instrument.
+#
+# Lineage: ported from the pre-audit line's loeschung-herkunft.infoscore v2 (ADR-030 wave 4). Version
+# restarts at 1 here — the content differs materially (per-channel registered, a real postal address,
+# the scope binding, INCOMPLETE as a distinct outcome), so reusing v2 would seal different bytes under
+# a version number that already means something else in A's history.
+#
+# TODO(counsel): confirm the Art. 17(1)(d) framing for a partial erasure at a bureau, and that
+# chaining it after an access request is not "excessive" under Art. 12 Abs. 5. Tracked as OQ-23.
+slug: loeschung-herkunft.infoscore
+kind: RIGHTS_REQUEST
+controller: infoscore
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 lit. d"
+scopeSource: PROVENANCE_ANSWER        # categories + source names come from infoscore's own answer
+channel:
+  primary: postal
+  fallback: email
+  registered:
+    primary: true                     # escalates on silence, so the send must be provable (CLAUDE.md §6)
+    fallback: false                   # email cannot be registered, and never starts the clock
+recipient:
+  # Street address, not a Postfach: the registered send is an Einwurf-Einschreiben, which is delivered
+  # into a letterbox. Source: the repo's datenanfragen snapshot (CC0, quality "verified"), which
+  # agrees with the address already used by provenance.infoscore.
+  postal: "infoscore Consumer Data GmbH, Abteilung Datenschutz, Rheinstraße 99, 76532 Baden-Baden"  # TODO(counsel): verify
+  email: "ICD-Datenschutz@experian.com"                                                             # TODO(counsel): verify
+template: art17-loeschung-herkunft.de
+identityProof:
+  required: true                      # the bureau matches the demand against the file it holds
+  accepts: [redacted_id]
+subjectFields:
+  - legalName
+  - dateOfBirth
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - structured.erased: true
+      - responseContains: ["wurden gelöscht", "haben wir gelöscht", "Löschung wurde durchgeführt"]
+  # A restriction under Art. 18 is what this letter asks for HILFSWEISE — granting it is not a refusal.
+  # Recording it as one would corrupt the per-controller statistics docs/02 calls the moat (ADR-014).
+  incompleteIf:
+    anyOf:
+      - responseContains: ["Einschränkung der Verarbeitung", "teilweise gelöscht", "eingeschränkt"]
+      - structured.partiallyErased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "Aufbewahrungspflicht", "nicht möglich"]
+  humanReviewIfConfidenceBelow: 0.8   # a bureau letter about a credit file → higher bar
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+seatDpa: LFDI_BW                      # LfDI Baden-Württemberg — the Baden-Baden seat; same venue as CRIF
+notes: >
+  Do NOT widen the demand. The scope is bounded by the categories infoscore itself attributed to a
+  watchlisted broker; a version of this request covering "alle Daten" is a different instrument and is
+  the one docs/07 forbids against a bureau. If infoscore refuses and its own Art. 14 notice names the
+  source, that contradiction is the strongest Art. 77 material the flagship produces — draft, never
+  auto-send.

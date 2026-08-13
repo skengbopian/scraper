@@ -669,6 +669,119 @@ line's `AppStrings` + its copy tests; docs/09 §4.
   full ICU library invites plurals/dates/selects — logic — into a layer that counsel reviews and the
   copy tests treat as leaves.
 
+### ADR-036 · The leverage ladder is an ORDER over rungs plus an equivalence axis; the cost model stays behind
+**Status:** ACCEPTED · **Decided:** 2026-08-13 · **Port wave 4** (ADR-030) · **Source:** the pre-audit
+line's `chooseRung` + its tiers module; `docs/08` guardrail 5; `docs/07`.
+
+The pre-audit line's router is a better abstraction than this line's scalar `preferRoute`, and this
+wave takes the two ideas that make it one — while leaving behind the machinery that carried them.
+
+- **Ladder order, not a cost scalar** (`packages/core/src/leverage/ladder.ts`). Ranking candidates by
+  cost inverts the doctrine: an Art. 21(2) objection sent by email costs about a cent in postage, which
+  ranks it *below* a guided self-serve handoff and makes the router reach for the statutory instrument
+  by default. `LADDER_ORDER` is the single source of truth for which rung comes first, and it follows
+  **this line's `docs/08` table** — Legal LAST — where the pre-audit line put LEGAL ahead of tiers 3–5.
+  That divergence is a decision, not a drift: `docs/08` is normative here and orders the table by
+  marginal cost. It is also unexercised (nothing produces a tier-3/4/5 candidate), and a test binds the
+  map to the markdown table so the two cannot separate quietly.
+- **An outcome-equivalence axis** (`OUTCOME_ACHIEVABLE_BY`). "Cheapest rung that ACHIEVES the outcome"
+  has a second half that the previous router could not express at all. A controller's "download your
+  data" button returns a file; Art. 15(1) obliges the purposes, the recipients, the retention period
+  and the source. Four outcomes are therefore LEGAL-only — `ART15_INFORMATION_OBTAINED`,
+  `DATA_SOURCE_DISCLOSED`, `BROKER_SOURCED_LAYER_ERASED`, `OBJECTION_LODGED` — and a Tier-1 candidate
+  claiming one is rejected with a typed reason rather than out-competed on a score.
+- **A high-harm controller-type bypass** this line lacked. At a `CREDIT_BUREAU`, `AI_SCREENER` or
+  `SCREENING` controller a self-serve page is never an acceptable substitute for the statutory
+  instrument. An UNCLASSIFIED controller is not assumed high-harm — guessing would escalate every
+  unknown controller to artillery, which is the opposite of the doctrine.
+- **Typed rejection reasons, persisted** (`LeverageAction.routingDecision`, migration `0007`). A
+  bureau's self-serve route is recorded as `HIGH_HARM_CONTROLLER_TYPE`, not as "nothing matched", so
+  the audit answers "why did it send a letter when the company has a form?" a year later. The payload
+  is non-personal by construction (outcome, tiers, mechanisms, route refs).
+- **`exhaustedForUser` is wired READ-side only, and that is stated rather than implied.** The router
+  removes a mechanism this user already exhausted against this controller, which is what should let a
+  user who completed the broker's own removal form and is still listed reach the legal rung by carrying
+  on using the product. Both adapters read it from the `LeverageAction` ledger
+  (`outcome = 'FAILED'`) and the routing behaviour is tested. **Nothing writes that outcome yet**: every
+  draft this wave produces is `PENDING` or `UNVERIFIABLE`, and the "did it work?" confirmation that
+  docs/08 §2 specifies for a guided handoff is prose, not an endpoint. So the rung does not open by
+  itself today — it opens as soon as a writer exists, and the reader is not the missing half. Recorded
+  as a gap rather than left to be discovered: a capability whose read path is tested and whose write
+  path does not exist reads as working to anyone who greps for it. `TODO(product)` at both adapters.
+- **`planRequestCreation` stays the pipeline seam**, unchanged in name and position, so the behavioural
+  guarantee that a legal request is never materialised when a self-serve route exists (`insert` is
+  never called) still holds against the same test.
+
+**What was left behind, and the reason it is not a partial port.** The pre-audit line's cost-model module
+prices a legal request partly on "it permanently consumes the ONE (user, controller, requestType)
+idempotency slot" — the PRE-ADR-013 model baked into a constant, where no reviewer would look for it.
+This line's key carries a cycle dimension and a second lawful cycle is expected, so importing the price
+imports the model. Its request-accounting module goes with it (it books on `provableSendConfirmed` and
+imports the 13-state clock vocabulary).
+
+Dropping the numbers also disposes of the expected-cost walk that consumed them, and **that walk does
+not survive having its inputs zeroed**: it seeds the expectation from the most expensive rung and keeps
+a cheaper one only when `cost(i) < p(i) · E[i+1]`. With all costs zero the test is `0 < p · 0`, false
+for every rung, so every cheap rung is dropped and the router returns the artillery every time —
+complete with a plausible `rejected[]` trail explaining that the cheap rungs were "not worth trying
+first". Uniform non-zero stubs invert it identically (`c < p·c` is false for any p < 1). So the rule is
+the doctrine unmodified: **take the lowest eligible rung.** Earning the right to skip a rung needs
+observed success rates from the `docs/08` §1 rollup, which is exactly the data the absent cost model
+was pretending to have. A test scans `src/leverage/**` for the retired vocabulary, and a second one
+requires the exclusion to stay *written down* — an unexplained absence is how a constant comes back.
+
+**Two consequences that are legal, not architectural.**
+
+- **`cause` became a privilege, so the API stopped accepting it.** `PROVENANCE_CHAIN` already skipped
+  the Art. 12(5) re-exercise cooling; with the equivalence axis it also became the only thing that
+  makes an Art. 17(1)(d) erasure lawful at a bureau. It was a field on the create DTO. It is now
+  derived: `POST /requests` always creates `USER_INITIATED`, and the chained follow-up is created by
+  `POST /requests/:id/follow-ups/:id/confirm`, which re-derives the available proposals from the stored
+  provenance entries first. A caller can no longer assert a chain the evidence does not support.
+- **A user-initiated erasure at a credit bureau is now refused outright** (`docs/07`: the levers there
+  are access, provenance, correction and retention). Previously it depended on no active playbook
+  existing. The bounded Art. 17(1)(d) demand that follows a provenance answer is a *different outcome*,
+  so the refusal cannot swallow the flagship chain — and a test holds both halves.
+
+**The flagship dead-end this wave existed to close.** `packages/core/src/provenance/ledger.ts` proposed an Art. 17(1)(d)
+partial erasure at the bureau and nothing could execute it: no playbook, no template, and — the part
+that was not in the port plan — no way for the engine to render one. That letter's scope
+(`{{categories}}`, `{{sourceNames}}`) is not derivable from the identity; it comes from the
+controller's own prior answer. Two failure modes were live:
+
+- `render()` treated an `{{#each}}` over an **unsupplied** list as empty, so the letter announced
+  "Löschung ausschließlich der folgenden Datenkategorien" and listed none — an unbounded erasure demand
+  at a credit bureau, the instrument `docs/07` forbids, arriving with no error anywhere. The renderer's
+  own stated doctrine ("fails on an unresolved variable rather than emitting an empty string") had been
+  implemented for `{{var}}` and not for `{{#each}}`. It now throws, and an empty **array** still
+  renders nothing — that is the caller stating a fact, not the renderer assuming one.
+- Nothing bound the scope to a declaration. `scopeSource: PROVENANCE_ANSWER` now does, and the engine
+  refuses in BOTH directions: declared-but-unsupplied, and supplied-but-undeclared. The scope itself is
+  a branded value with one constructor (`deriveErasureScope`), which re-derives the source name from
+  the playbook's counsel-authored `brokerWatchlist` rather than lifting it from the reply, sanitises
+  category labels against a closed budget, and refuses rather than silently narrowing a legal demand.
+  A scope derived from one bureau's answer cannot be used against another.
+
+**Playbooks: four ported, three deliberately not.** `provenance.crif` (a new entry point — CRIF is a
+`CLAUDE.md` primary target this line had no playbook for) plus `loeschung-herkunft.{schufa, infoscore,
+crif}`. All `active: false`. Postal addresses come from the repo's own datenanfragen snapshot rather
+than the pre-audit line's `TODO(counsel): verify` placeholders — which exposed a real hole: the schema
+accepts such a placeholder as a postal recipient (over 10 characters, no `__PARAM__`), so a playbook
+could declare a *registered* channel, the only thing that starts the Art. 12(3) clock, against a
+note-to-self. A new `POSTAL-PLACEHOLDER` lint closes it. **`loeschung-herkunft.boniversum` was not
+ported**: `docs/07` keeps `boniversum` as a slug alias after the Sep-2025 merger into infoscore and says
+"do not write a playbook against it". A playbook there would also let the same follow-up be raised twice
+under two slugs, since idempotency keys on `controllerId` (ADR-013) — so the prose became a gate
+(`CENSUS-ALIAS`).
+
+**Not converted, and why it is a legal question rather than a mechanical one:** 12 of the pre-audit
+line's playbooks assert a silence → Art. 77 escalation on a controller with no postal channel at all,
+where no provable send is reachable and the deadline was therefore never legally established
+(`CLAUDE.md` §6). Flipping `onDeadlineExpiry` would be a one-character change of legal posture. They are
+listed in `docs/counsel-review-packet.md` §8b as **OQ-26**, with the three sub-questions that decide
+what to build. (The port plan's wave table said 21; the number as measured against this line's gate is
+12 with no postal channel at all, plus 14 more whose postal address is a placeholder — see §8b.)
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)
@@ -707,10 +820,14 @@ Each entry names the audit item it comes from. Nothing here has been decided yet
 | OQ-19 | Email as a subject-identifier for email-keyed brokers: does the subject block gain an email field derived from the verified `User`/`Identity`, or does identification stay name+address with the email-keyed path handled only by the self-serve route? Touches the closed `subjectFields` enum (ADR-009). | docs/10 §7.3 | **safety + counsel** | **OPEN** |
 | OQ-20 | Art. 77 venue for a non-EU-established broker = the user's habitual-residence Land DPA (Art. 77(1)); confirm, and resolve the one-stop-shop nuance for brokers WITH an EU establishment (Cognism GmbH/DE, KASPR SAS/FR). | docs/10 §7.4 | **counsel** | **OPEN** |
 | OQ-21 | Clock/escalation model for controllers with no German postal channel (US/UK brokers): `onDeadlineExpiry: NONE` means no silence-escalation. Is that the intended posture, or should a standalone Art. 14/unlawful-processing complaint path (not tied to a sent letter's receipt) be modeled? | ADR-024 | **engineering + counsel** | **OPEN** |
+| OQ-23 | Art. 17 Abs. 1 lit. d as the instrument for a **partial** erasure at an Auskunftei, scoped to the categories the bureau itself attributed to a Datenlieferant — and whether chaining it after an Art. 15 request risks being "exzessiv" under Art. 12 Abs. 5. Introduced by ADR-036. | `docs/07`, ADR-036 | **counsel** | **OPEN** — blocks the three `loeschung-herkunft.*` playbooks |
+| OQ-24 | Is an **Einwurf-Einschreiben deliverable to a Postfach**? `datenkopie.schufa` and `provenance.schufa` declare a registered postal channel against a Postfach; `loeschung-herkunft.schufa` uses the street address instead, so one controller now has two postal endpoints in the corpus. If the answer is no, the registered channel on two sealed playbooks is not provable. | ADR-036 | **counsel + ops** | **OPEN** |
+| OQ-25 | **CRIF's Art. 77 venue.** `docs/07` and `CLAUDE.md` place CRIF at LfDI BW, and the stated benefit of targeting it is that its escalations pool with infoscore's at one authority; the verified postal address is in München (BayLDA). Confirm the registered seat — if it is Munich, `seatDpa: LFDI_BW` on both CRIF playbooks is a misroute. | ADR-036 | **counsel** | **OPEN** — blocks `provenance.crif`, `loeschung-herkunft.crif` |
+| OQ-26 | Silence-escalation posture for a controller reachable **only by web form**: no provable send is possible, so an Art. 77 complaint founded on silence rests on a deadline that was never legally established. Is `onDeadlineExpiry: NONE` the right answer, is a standalone (non-letter-bound) complaint the instrument, or is a postal address obtainable? Concerns 12 pre-audit playbooks left unported. | ADR-036, `CLAUDE.md` §6 | **counsel** | **OPEN** |
 | OQ-22 | Art. 22(3) (human intervention / contest an automated decision) is a DISTINCT right currently carried on `requestType: ACCESS_ART15` (the AI-screener explanation playbooks). Two consequences: partial compliance (15(1)(h) explanation given, 22(3) human review refused) can read as full via `compliedIf: anyOf`, and the idempotency key collides with a plain Art. 15 Datenkopie so both cannot be in flight at one controller. A dedicated `requestType` (e.g. `HUMAN_REVIEW_ART22`) in the schema + state machine + data model would fix both — a statutory-type addition, so counsel + engineering, not an in-code call. | ADR-026 | **counsel + engineering** | **OPEN** — blocks enabling `explanation.*` |
 
 The six closed items (OQ-1..6) were resolved as spec edits before any code existed, per ADR-011. OQ-9,
-OQ-10 and OQ-17..22 are new, and exist *because* the corresponding decisions were taken — all are
+OQ-10 and OQ-17..26 are new, and exist *because* the corresponding decisions were taken — all are
 counsel/safety/engineering questions that block a real send, not the scaffold.
 
 ---

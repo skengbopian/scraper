@@ -33,7 +33,7 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
     const { seed } = await import('../dist/db/seed.js');
     await seed(db); // second run must not throw or duplicate
     expect(await db.controller.count()).toBe(15);
-    expect(await db.playbook.count()).toBe(4); // the four demo pairs
+    expect(await db.playbook.count()).toBe(5); // the demo pairs, incl. the ERASURE_ART17 chain link
   });
 
   it('the adapter routes all three outcomes and persists CREATED with its audit event', async () => {

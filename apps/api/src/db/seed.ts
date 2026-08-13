@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, SOURCE_HARDENING_ROUTES } from '@scraper/core';
-import { CENSUS } from '../census/census.js';
+import { CENSUS, controllerTypeOf } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_IDENTITY, DEV_MANDATE, DEV_USER_ID, devFixturesEnabled } from '../common/dev-fixtures.js';
 import { AesGcmEnvelopeCrypto, DevKekResolver, EnvelopeSecretCipher, type UserKeyResolver } from '@scraper/core';
 import { hashPassword, generateTotpSecret, totpProvisioningUri } from '../auth/crypto.js';
@@ -18,19 +18,13 @@ import { hashPassword, generateTotpSecret, totpProvisioningUri } from '../auth/c
  * playbooks/ (all of which stays active:false); nothing here can cause a real send because
  * dispatch in the alpha exists only as the dev-only simulate surface.
  */
-const TYPE_MAP: Record<string, 'DATA_ENRICHMENT_BROKER' | 'ADDRESS_TRADER' | 'CREDIT_BUREAU' | 'AI_SCREENER'> = {
-  'Datenhändler': 'DATA_ENRICHMENT_BROKER',
-  'Adress-Broker': 'ADDRESS_TRADER',
-  'Auskunftei': 'CREDIT_BUREAU',
-  'KI-Bewerbungstool': 'AI_SCREENER',
-};
 
 export async function seed(db: PrismaClient): Promise<void> {
   for (const c of CENSUS) {
     await db.controller.upsert({
       where: { slug: c.slug },
-      create: { id: c.id, slug: c.slug, legalName: c.name, type: TYPE_MAP[c.type] ?? 'OTHER' },
-      update: { legalName: c.name, type: TYPE_MAP[c.type] ?? 'OTHER' },
+      create: { id: c.id, slug: c.slug, legalName: c.name, type: controllerTypeOf(c) ?? 'OTHER' },
+      update: { legalName: c.name, type: controllerTypeOf(c) ?? 'OTHER' },
     });
   }
 

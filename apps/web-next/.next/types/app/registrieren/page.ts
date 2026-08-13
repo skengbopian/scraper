@@ -1,4 +1,4 @@
-// File: /Users/hirokibarraud/Downloads/scraper 3/apps/web-next/app/registrieren/page.tsx
+// File: /Users/hirokibarraud/Downloads/scraper-wave4/apps/web-next/app/registrieren/page.tsx
 import * as entry from '../../../../app/registrieren/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

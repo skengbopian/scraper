@@ -482,6 +482,10 @@ model LeverageAction {
   mechanism        String
   costCents        Int       @default(0)
   outcome          String
+  /// ADR-036: which rung was taken and why every other candidate was rejected (typed reasons, e.g.
+  /// HIGH_HARM_CONTROLLER_TYPE, TIER_CANNOT_ACHIEVE_OUTCOME). Non-personal by construction — outcome,
+  /// tiers, mechanisms and route refs only. Nullable: rows predating the ladder have no reason to give.
+  routingDecision  Json?
   verifiedAt       DateTime?
   evidenceRecordId String?
   createdAt        DateTime  @default(now())

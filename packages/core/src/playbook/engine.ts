@@ -1,5 +1,6 @@
 import { projectSubject, type RequestSubject } from '../identity/subject.js';
-import { render, formatGermanDate } from '../template/render.js';
+import { isPartialErasureScope, type PartialErasureScope } from '../provenance/erasure-scope.js';
+import { render, formatGermanDate, type RenderValue } from '../template/render.js';
 import { ENGINE_DERIVED_FLAGS, type Channel, type Condition, type Matcher, type Playbook } from './types.js';
 
 /**
@@ -34,6 +35,12 @@ export interface RenderRequest {
   readonly subject: RequestSubject;
   /** Non-null only when a real IdentityPacket was attached to THIS dispatch. */
   readonly attachedIdentityPacketId: string | null;
+  /**
+   * Required exactly when the playbook declares `scopeSource`, forbidden otherwise. Carries the
+   * category list and source names of an Art. 17(1)(d) partial erasure, derived from the bureau's own
+   * provenance answer — see provenance/erasure-scope.ts for why it is branded.
+   */
+  readonly scope?: PartialErasureScope;
   readonly now: Date;
 }
 
@@ -76,7 +83,48 @@ export function renderRequest(input: RenderRequest): RenderedLetter {
     }
   }
 
-  const values = projectSubject(input.subject, pb.subjectFields);
+  // The request-scoped values. Paired STRICTLY with the playbook's declaration in both directions:
+  // a declared scope with nothing supplied would render `{{#each categories}}` as nothing, turning
+  // "Löschung ausschließlich der folgenden Datenkategorien" into an unbounded erasure demand at a
+  // credit bureau (docs/07); an undeclared scope supplied anyway would be a way to inject values into
+  // a letter that no playbook, and therefore no counsel review, ever sanctioned.
+  const values: Record<string, RenderValue> = { ...projectSubject(input.subject, pb.subjectFields) };
+  if (pb.scopeSource === undefined) {
+    if (input.scope !== undefined) {
+      throw new PlaybookNotSendableError(
+        pb.slug,
+        'a PartialErasureScope was supplied but the playbook declares no scopeSource — a letter may ' +
+          'only carry values its playbook declared it needs.',
+      );
+    }
+  } else {
+    const scope = input.scope;
+    if (scope === undefined) {
+      throw new PlaybookNotSendableError(
+        pb.slug,
+        `it declares scopeSource: ${pb.scopeSource} but no PartialErasureScope was supplied. The ` +
+          'letter states a bounded category list; rendering it without one would send an unbounded ' +
+          'erasure demand to a credit bureau (docs/07), and the empty {{#each}} makes that silent.',
+      );
+    }
+    if (!isPartialErasureScope(scope)) {
+      throw new PlaybookNotSendableError(
+        pb.slug,
+        'the supplied scope did not come from deriveErasureScope(). Category and source labels ' +
+          'reaching a legal letter must pass that constructor (CLAUDE.md §2).',
+      );
+    }
+    if (scope.bureauSlug !== pb.controller) {
+      throw new PlaybookNotSendableError(
+        pb.slug,
+        `the scope was derived from ${scope.bureauSlug}'s answer but this playbook writes to ` +
+          `${pb.controller}. An Art. 17(1)(d) demand may only be made against the controller whose ` +
+          'own answer named the source.',
+      );
+    }
+    values.categories = scope.categories;
+    values.sourceNames = scope.sourceNames.join(', ');
+  }
   values.today = formatGermanDate(input.now);
 
   return {

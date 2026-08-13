@@ -11,6 +11,18 @@
     "version": 1,
     "sha256": "5bbc440947352eb2e7d775b502862d48bc6b4c63a2fa810535dcf921967a083e"
   },
+  "loeschung-herkunft.crif": {
+    "version": 1,
+    "sha256": "f150e8f5ba05dc212fbb1680815a2662697cc9a060aca7fdd47ba4c61725b651"
+  },
+  "loeschung-herkunft.infoscore": {
+    "version": 1,
+    "sha256": "73487078962233e9f0a66b0ca2a8d7882e61cc412213c69d5d5143eae9edde60"
+  },
+  "loeschung-herkunft.schufa": {
+    "version": 1,
+    "sha256": "dc52b4ad35bc28140ca13f8f393b09e84d97c0efdc05024fcbf697379e66568f"
+  },
   "loeschung.apollo": {
     "version": 1,
     "sha256": "3081cca5fd3cb7c32a53b5423256f0df045754ef79ac369fddacd4de301410ec"
@@ -46,6 +58,10 @@
   "loeschung.zoominfo": {
     "version": 1,
     "sha256": "a3e443384f99b03e786424e8ba6e399f15e2eb451d750e7b4e52e5e1fc105761"
+  },
+  "provenance.crif": {
+    "version": 1,
+    "sha256": "478624e7726e9f057c652e050f6d3417ae6734685735243e96546b95903d2b3e"
   },
   "provenance.infoscore": {
     "version": 1,
