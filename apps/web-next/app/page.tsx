@@ -2,6 +2,7 @@ import { strings } from '@/lib/register';
 import { readRegister } from '@/lib/register';
 import { getControllers, getRequests } from '@/lib/api';
 import { CompanyRow } from './company-row';
+import { ApiError } from './api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export default async function StartPage() {
       <h1>{s.start.greeting.replace('{name}', 'Erika')}</h1>
       <p className="sub">{s.start.sub}</p>
 
-      {!census.ok && <p className="err" style={{ marginTop: 16 }}>{s.errors.offline}</p>}
+      {!census.ok && <ApiError status={census.status} message={census.message} s={s} />}
 
       {cases.ok && cases.data.length > 0 && (
         <>

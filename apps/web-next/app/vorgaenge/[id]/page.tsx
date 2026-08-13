@@ -4,6 +4,7 @@ import { readRegister, strings } from '@/lib/register';
 import { resolveDeadline } from '@/lib/clock';
 import { DeadlineCard } from '../../deadline-card';
 import { ResendChoice } from './resend-choice';
+import { ApiError } from '../../api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
   const result = await getRequest(params.id, readRegister());
   if (!result.ok) {
     if (result.status === 404) notFound();
-    return <p className="err">{s.errors.offline}</p>;
+    return <ApiError status={result.status} message={result.message} s={s} />;
   }
   const request = result.data;
   // Throws loudly if the API ever sends a statutory deadline without a provable send — see clock.ts.

@@ -1,6 +1,7 @@
 import { getControllers } from '@/lib/api';
 import { readRegister, strings } from '@/lib/register';
 import { CompanyRow } from '../company-row';
+import { ApiError } from '../api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +13,7 @@ export default async function CompaniesPage() {
       <h1>{s.firms.heading}</h1>
       <p className="sub">{s.firms.sub}</p>
       {!census.ok ? (
-        <p className="err" style={{ marginTop: 16 }}>{s.errors.offline}</p>
+        <ApiError status={census.status} message={census.message} s={s} />
       ) : (
         <div className="list" style={{ marginTop: 16 }}>
           {census.data.map((c) => <CompanyRow key={c.slug} controller={c} />)}

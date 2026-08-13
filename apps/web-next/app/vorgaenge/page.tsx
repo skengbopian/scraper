@@ -1,12 +1,13 @@
 import { getRequests } from '@/lib/api';
 import { readRegister, strings } from '@/lib/register';
+import { ApiError } from '../api-error';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CasesPage() {
   const s = strings();
   const cases = await getRequests(readRegister());
-  if (!cases.ok) return <p className="err">{s.errors.offline}</p>;
+  if (!cases.ok) return <ApiError status={cases.status} message={cases.message} s={s} />;
   if (cases.data.length === 0) {
     return (
       <>

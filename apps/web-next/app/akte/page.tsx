@@ -2,6 +2,7 @@ import { getFindings } from '@/lib/api';
 import { readRegister, strings } from '@/lib/register';
 import { UploadForm } from './upload-form';
 import { FindingList } from './finding-list';
+import { ApiError } from '../api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export default async function FilePage() {
       <UploadForm cta={s.file.uploadCta} busy={s.file.uploading} failed={s.file.uploadFailed} note={s.file.identityNote} />
 
       {!result.ok ? (
-        <p className="err" style={{ marginTop: 16 }}>{s.errors.offline}</p>
+        <ApiError status={result.status} message={result.message} s={s} />
       ) : result.data.snapshotId === null ? (
         <div className="callout blocked">
           <div className="kh">{s.file.emptyTitle}</div>

@@ -1,0 +1,1 @@
+"use strict";exports.id=884,exports.ids=[884],exports.modules={884:(e,s,o)=>{o.d(s,{L:()=>i,j:()=>r,sessionToken:()=>n});var t=o(3865);let i="session";function n(){return t.cookies().get(i)?.value}function r(){return void 0!==n()}}};

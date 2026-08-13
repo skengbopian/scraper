@@ -46,7 +46,7 @@ contradiction ADR-012 exists to remove.
 | 2a | `packages/i18n`: 3-register dictionary (de / de-leicht overlay / en) + the inherited copy tests + a new two-clock copy test; wired into the API's user-facing messages | REFIT (M) | **done** — ADR-034 |
 | 2b | the Next.js shell (`apps/web-next`): shell + start/firmen/firmen[slug]/vorgaenge/vorgaenge[id] on the two-clock contract; served-app axe gate | REFIT (XL) | **partly done** — core loop live |
 | 2c | Akte (the BYO-Datenkopie flagship) + Wissen; structural tests widened from pages to all components | REFIT (L) | **done** |
-| 2d | auth screens (register/login/TOTP) + konto — endpoints exist, the app still runs on the dev-fixture identity | REFIT (M) | next |
+| 2d | auth screens (register → secret → login → TOTP) + konto + the identity gate explained; session as an httpOnly cookie | REFIT (M) | **done** — wave 2 complete |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
@@ -91,7 +91,21 @@ promised number in either direction.
 would have been a mock-up of a capability that does not exist. It waits for wave 5, which is where
 the ops/worker side gets re-derived.
 
-**2d — porting the remaining screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
+**2d status — wave 2 is complete.** Register → the shared secret shown once → sign in → TOTP → an
+MFA-verified session, verified end to end in the browser against the real API. The token lives in an
+**httpOnly cookie** and the bearer header is assembled server-side, so page scripts can never read
+it. The API's own rule does the rest: its dev fixture fills only a true vacuum, so the moment a real
+session exists the fixture stops applying — proven by signing in as a fresh account and seeing an
+EMPTY case list rather than the fixture user's.
+
+That test also exposed a defect worth recording: every page had rendered `errors.offline` for ANY
+failure, so a signed-in but identity-unverified user — a 403, and an entirely expected state — was
+told the network was down. `app/api-error.tsx` now decides from the status and gives 403 its one
+resolving action; a test forbids any component from rendering the offline string directly.
+
+**Remaining screens from A, deliberately not ported:** herkunft, schutz, schufa and report are
+product surfaces whose backing endpoints this API does not have. They belong with the features, not
+with the shell — the ops queue likewise (wave 5). A's copy for its own screens (dashboard, bundle, report, ops) was NOT
 transplanted: it describes pages this line does not have, and its clock strings are written against
 the single-`deadlineAt` model (hazard 3). Port a screen's copy WITH the screen, and when doing so,
 map A's one deadline onto this line's two — never alias `statutoryDeadlineAt` into a `deadlineAt`

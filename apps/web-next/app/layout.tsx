@@ -35,6 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <a href="/akte">{s.file.navLabel}</a>
             <a href="/vorgaenge">{s.nav.cases}</a>
             <a href="/wissen">{s.learn.navLabel}</a>
+            <a href="/konto">{s.account.navLabel}</a>
           </nav>
         </div>
       </body>

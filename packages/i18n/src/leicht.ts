@@ -69,6 +69,15 @@ export const LEICHT: DeepPartial<AppStrings> = {
     heading: 'Wichtige Begriffe',
     sub: 'Tippen Sie einen Begriff an.',
   },
+  auth: {
+    signInSub: 'Geben Sie E-Mail und Passwort ein. Danach kommt Ihr Code.',
+    registerSub: 'Sie brauchen: eine E-Mail, ein Passwort und eine Authenticator-App.',
+    totpSub: 'Öffnen Sie die Authenticator-App. Geben Sie die 6 Zahlen ein.',
+    secretOnce: 'Wir zeigen den Schlüssel nur einmal. Bitte jetzt aufschreiben.',
+  },
+  account: {
+    identityNote: 'Erst nach der Prüfung können Sie Anfragen stellen. Ihren Namen nehmen wir aus der Prüfung.',
+  },
   stateLabel: {
     AWAITING_RESPONSE_PROVISIONAL: 'Wir warten auf Antwort',
     AWAITING_REGISTERED_RESEND: 'Keine Antwort. Jetzt per Einschreiben?',

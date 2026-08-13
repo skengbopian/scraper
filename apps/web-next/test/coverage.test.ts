@@ -70,3 +70,15 @@ describe('no raw engine vocabulary reaches a screen (docs/09 §3)', () => {
     expect(source, 'renders a bare requestType').not.toMatch(/\{[\w.]*\.requestType[^L]/);
   });
 });
+
+describe('failures are explained, never flattened to "offline"', () => {
+  it('no page hardcodes the offline message for every failure', () => {
+    for (const file of components) {
+      const source = readFileSync(file, 'utf8');
+      if (file.endsWith('api-error.tsx')) continue;
+      // Rendering `s.errors.offline` directly means a 403 identity gate — an expected, actionable
+      // state — would be reported as a network problem. ApiError decides from the status instead.
+      expect(source, `${file} renders errors.offline directly`).not.toMatch(/errors\.offline/);
+    }
+  });
+});

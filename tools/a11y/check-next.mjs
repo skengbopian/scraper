@@ -14,7 +14,7 @@ const BASE = process.env.BASE ?? 'http://localhost:3901';
 const CASE_ID = process.env.CASE_ID ?? '';
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'];
 
-const routes = ['/', '/firmen', '/firmen/schufa', '/firmen/zoominfo', '/firmen/hirevue', '/akte', '/wissen', '/vorgaenge'];
+const routes = ['/', '/firmen', '/firmen/schufa', '/firmen/zoominfo', '/firmen/hirevue', '/akte', '/wissen', '/vorgaenge', '/anmelden', '/registrieren', '/konto'];
 if (CASE_ID) routes.push(`/vorgaenge/${CASE_ID}`);
 
 const browser = await chromium.launch();

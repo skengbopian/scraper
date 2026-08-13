@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getControllers } from '@/lib/api';
 import { readRegister, strings } from '@/lib/register';
 import { StartRequestButton } from './start-request-button';
+import { ApiError } from '../../api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export default async function CompanyPage({ params }: { params: { slug: string } }) {
   const s = strings();
   const census = await getControllers(readRegister());
-  if (!census.ok) return <p className="err">{s.errors.offline}</p>;
+  if (!census.ok) return <ApiError status={census.status} message={census.message} s={s} />;
   const c = census.data.find((x) => x.slug === params.slug);
   if (!c) notFound();
 

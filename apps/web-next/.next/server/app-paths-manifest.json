@@ -1,10 +1,14 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/firmen/page": "app/firmen/page.js",
-  "/akte/page": "app/akte/page.js",
   "/firmen/[slug]/page": "app/firmen/[slug]/page.js",
-  "/page": "app/page.js",
-  "/vorgaenge/[id]/page": "app/vorgaenge/[id]/page.js",
+  "/anmelden/code/page": "app/anmelden/code/page.js",
+  "/akte/page": "app/akte/page.js",
+  "/anmelden/page": "app/anmelden/page.js",
+  "/firmen/page": "app/firmen/page.js",
+  "/konto/page": "app/konto/page.js",
+  "/registrieren/page": "app/registrieren/page.js",
   "/vorgaenge/page": "app/vorgaenge/page.js",
-  "/wissen/page": "app/wissen/page.js"
+  "/page": "app/page.js",
+  "/wissen/page": "app/wissen/page.js",
+  "/vorgaenge/[id]/page": "app/vorgaenge/[id]/page.js"
 }

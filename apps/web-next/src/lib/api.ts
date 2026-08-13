@@ -36,11 +36,29 @@ async function readMessage(res: Response): Promise<string> {
   return `HTTP ${res.status}`;
 }
 
+/**
+ * The session bearer, assembled server-side only.
+ *
+ * `next/headers` is imported dynamically because this module is also pulled into client components
+ * (the upload form); a static import would drag a server-only module into the browser bundle.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  if (typeof window !== 'undefined') return {};
+  const { sessionToken } = await import('./session');
+  const token = sessionToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 async function call<T>(path: string, register: Register, init?: RequestInit): Promise<ApiResult<T>> {
   try {
     const res = await fetch(`${apiBase()}${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', ...registerHeaders(register), ...(init?.headers ?? {}) },
+      headers: {
+        'content-type': 'application/json',
+        ...registerHeaders(register),
+        ...(await authHeader()),
+        ...(init?.headers ?? {}),
+      },
       cache: 'no-store',
     });
     if (!res.ok) return { ok: false, status: res.status, message: await readMessage(res) };
@@ -106,6 +124,47 @@ export function uploadCreditFile(bytes: ArrayBuffer, register: Register): Promis
     method: 'POST',
     headers: { 'content-type': 'application/pdf' },
     body: bytes,
+  });
+}
+
+export interface RegisterResult {
+  readonly userId: string;
+  readonly totpSecret: string;
+  readonly totpProvisioningUri: string;
+}
+
+export function registerAccount(email: string, password: string, register: Register): Promise<ApiResult<RegisterResult>> {
+  return call<RegisterResult>('/auth/register', register, { method: 'POST', body: JSON.stringify({ email, password }) });
+}
+
+export function login(email: string, password: string, register: Register): Promise<ApiResult<{ token: string; mfaRequired: true }>> {
+  return call<{ token: string; mfaRequired: true }>('/auth/login', register, {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/** Step 2. The token from step 1 travels in the cookie, so `call()` attaches it. */
+export function verifyTotp(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true }>> {
+  return call<{ mfaVerified: true }>('/auth/totp', register, { method: 'POST', body: JSON.stringify({ code }) });
+}
+
+export function logout(register: Register): Promise<ApiResult<unknown>> {
+  return call('/auth/logout', register, { method: 'POST' });
+}
+
+/** Dev-only identity stub — the stand-in for the ident provider (404s in the production posture). */
+export function verifyIdentityStub(register: Register): Promise<ApiResult<unknown>> {
+  return call('/identity/verify-stub', register, {
+    method: 'POST',
+    body: JSON.stringify({
+      legalName: 'Erika Mustermann',
+      dateOfBirth: '1979-03-12',
+      street: 'Heidestraße 17',
+      postalCode: '51147',
+      city: 'Köln',
+      country: 'DE',
+    }),
   });
 }
 

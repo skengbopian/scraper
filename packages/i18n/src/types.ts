@@ -141,6 +141,36 @@ export interface AppStrings {
     totpPrompt: string;
     identityNote: string;
     verificationRequired: string;
+    signInHeading: string;
+    signInSub: string;
+    registerHeading: string;
+    registerSub: string;
+    passwordHint: string;
+    totpHeading: string;
+    totpSub: string;
+    totpCode: string;
+    /** Shown ONCE after registration — the shared secret for the authenticator app. */
+    secretHeading: string;
+    secretBody: string;
+    secretOnce: string;
+    toSignIn: string;
+    toRegister: string;
+    badCredentials: string;
+    badTotp: string;
+  };
+  /** The account screen: who am I, is my identity verified, and how do I leave. */
+  account: {
+    navLabel: string;
+    heading: string;
+    emailLabel: string;
+    identityHeading: string;
+    identityVerified: string;
+    identityUnverified: string;
+    identityNote: string;
+    verifyCta: string;
+    signOut: string;
+    signedOut: string;
+    notSignedIn: string;
   };
   errors: {
     offline: string;
