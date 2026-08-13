@@ -307,6 +307,36 @@ describe.skipIf(!url)('the ops review queue', () => {
     it('the ops inbox is closed to ordinary users', async () => {
       expect((await get('/ops/inbound-documents', userToken)).status).toBe(403);
     });
+
+    it('(0012) a correlated document blocks the delete until the document itself is purged', async () => {
+      // 0011 created this FK with no ON DELETE clause (Postgres default NO ACTION) while
+      // schema.prisma read as SetNull — 0012 settles it as NO ACTION, because SetNull is not
+      // merely undesirable here but impossible: it nulls `assignedRequestId` alone, and
+      // `inbound_assignment_is_attributed` forbids that half-state.
+      const requestId = await seedRequest('RESPONSE_RECEIVED');
+      const doc = await db.inboundDocument.create({
+        data: {
+          receivedAt: new Date(), channel: 'email', senderRef: 'fk@example.test',
+          storageRef: 's3://fk', sha256: 'c'.repeat(64),
+          purgeRawAt: new Date(Date.now() + 86_400_000),
+          assignedRequestId: requestId, assignedAt: new Date(), assignedByUserId: opsUserId,
+        },
+      });
+
+      // Loud, not silent. An erasure that would have orphaned a stored raw document — storageRef,
+      // sha256, senderRef — fails here instead of leaving one behind (CLAUDE.md §4).
+      await expect(db.rightsRequest.delete({ where: { id: requestId } })).rejects.toThrow();
+
+      // And the half-state the FK would have produced is refused on its own terms, which is why
+      // SetNull could never have been the answer.
+      await expect(
+        db.inboundDocument.update({ where: { id: doc.id }, data: { assignedRequestId: null } }),
+      ).rejects.toThrow();
+
+      // Purge the document, and the erasure proceeds. This ordering is the contract.
+      await db.inboundDocument.delete({ where: { id: doc.id } });
+      await expect(db.rightsRequest.delete({ where: { id: requestId } })).resolves.toBeTruthy();
+    });
   });
 
   describe('resolving a ticket', () => {

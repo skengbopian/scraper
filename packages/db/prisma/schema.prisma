@@ -404,7 +404,12 @@ model InboundDocument {
   assignedByUserId  String?
   createdAt         DateTime @default(now())
 
-  assignedRequest RightsRequest? @relation(fields: [assignedRequestId], references: [id])
+  /// NoAction is stated rather than inherited — leaving it implicit is how this file and the
+  /// database came to disagree (0012). Prisma's default for an optional relation is SetNull, which
+  /// `inbound_assignment_is_attributed` makes impossible: the FK can null only this column, and the
+  /// CHECK forbids that half-state. Deleting a request therefore FAILS while a document points at
+  /// it, so an erasure must purge the document first rather than orphan its raw reference.
+  assignedRequest RightsRequest? @relation(fields: [assignedRequestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([assignedRequestId])
   @@index([receivedAt])
