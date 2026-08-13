@@ -1,5 +1,5 @@
 import type { Register } from '@scraper/i18n';
-import type { CensusController, CreateRequestResult, RequestType, RequestView } from './types';
+import type { CensusController, CreateRequestResult, CreditFileView, RequestType, RequestView } from './types';
 
 /**
  * The API client.
@@ -93,6 +93,19 @@ export function simulate(
   return call<RequestView>(`/requests/${encodeURIComponent(id)}/simulate`, register, {
     method: 'POST',
     body: JSON.stringify(action),
+  });
+}
+
+export function getFindings(register: Register): Promise<ApiResult<CreditFileView>> {
+  return call<CreditFileView>('/credit-file/findings', register);
+}
+
+/** The PDF goes up as raw bytes (the API mounts express.raw for application/pdf). */
+export function uploadCreditFile(bytes: ArrayBuffer, register: Register): Promise<ApiResult<CreditFileView>> {
+  return call<CreditFileView>('/credit-file/upload', register, {
+    method: 'POST',
+    headers: { 'content-type': 'application/pdf' },
+    body: bytes,
   });
 }
 

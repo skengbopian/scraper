@@ -58,6 +58,17 @@ export const LEICHT: DeepPartial<AppStrings> = {
     offline: 'Keine Verbindung. Bitte noch einmal versuchen.',
     generic: 'Das hat nicht geklappt. Bitte noch einmal versuchen.',
   },
+  file: {
+    heading: 'Was steht in Ihrer Akte?',
+    sub: 'Laden Sie Ihre Datenkopie hoch. Wir prüfen die Fristen.',
+    identityNote: 'Wir vergleichen die Datei mit Ihrem Namen. Passt der Name nicht, löschen wir die Datei sofort.',
+    preliminaryNote: 'Das ist keine Rechtsberatung. Ein Anwalt hat die Hinweise noch nicht geprüft.',
+    scoreWarning: 'Achtung: Eine Löschung kann Ihren Score senken.',
+  },
+  learn: {
+    heading: 'Wichtige Begriffe',
+    sub: 'Tippen Sie einen Begriff an.',
+  },
   stateLabel: {
     AWAITING_RESPONSE_PROVISIONAL: 'Wir warten auf Antwort',
     AWAITING_REGISTERED_RESEND: 'Keine Antwort. Jetzt per Einschreiben?',

@@ -84,3 +84,30 @@ export type CreateRequestResult =
   | { readonly routed: 'SELF_SERVE'; readonly nextAction: string; readonly route: SelfServeView; readonly reason: string }
   | { readonly routed: 'NONE'; readonly nextAction: string; readonly reason: string }
   | { readonly routed: 'LEGAL'; readonly id: string; readonly state: 'READY'; readonly nextAction: string };
+
+/** BYO-Datenkopie findings (docs/10 §3.1). */
+export type FindingSeverity = 'INFO' | 'UPCOMING' | 'OVERDUE';
+export type FindingAction = 'REQUEST_DELETION' | 'DISPUTE_ART16' | 'REVIEW' | 'NONE';
+
+export interface FileFinding {
+  readonly entryId: string | null;
+  readonly ruleId: string;
+  readonly ruleSetVersion: string;
+  readonly severity: FindingSeverity;
+  readonly computedDeadlineAt: string | null;
+  readonly recommendedAction: FindingAction;
+  readonly scoreRelevance: string | null;
+  /** CoC rights that are privacy-positive but score-NEGATIVE must warn before acting (docs/10 §2.1). */
+  readonly scoreNegativeWarning: boolean;
+  readonly explanation: string;
+  readonly entryLabel?: string | null;
+}
+
+export interface CreditFileView {
+  readonly snapshotId: string | null;
+  readonly controllerId?: string;
+  readonly parseConfidence?: number;
+  readonly ruleSet: { readonly version: string; readonly counselSignedOff: boolean; readonly preliminary: boolean };
+  readonly findings: readonly FileFinding[];
+  readonly nextAction?: string;
+}

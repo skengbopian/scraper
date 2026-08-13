@@ -32,7 +32,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <nav className="tabs" aria-label={s.brand.name}>
             <a href="/">{s.nav.start}</a>
             <a href="/firmen">{s.nav.firms}</a>
+            <a href="/akte">{s.file.navLabel}</a>
             <a href="/vorgaenge">{s.nav.cases}</a>
+            <a href="/wissen">{s.learn.navLabel}</a>
           </nav>
         </div>
       </body>

@@ -147,6 +147,40 @@ export interface AppStrings {
     duplicate: string;
     generic: string;
   };
+  /** The BYO-Datenkopie surface (docs/10 §3.1 — the same-day-utility flagship). */
+  file: {
+    navLabel: string;
+    eyebrow: string;
+    heading: string;
+    sub: string;
+    uploadCta: string;
+    uploading: string;
+    identityNote: string;
+    emptyTitle: string;
+    emptyBody: string;
+    findingsHeading: string;
+    noFindings: string;
+    /** OQ-13: findings are PRELIMINARY until counsel signs off the rule set. Never optional. */
+    preliminaryBadge: string;
+    preliminaryNote: string;
+    severityOverdue: string;
+    severityUpcoming: string;
+    severityInfo: string;
+    actionRequestDeletion: string;
+    actionDispute: string;
+    actionReview: string;
+    actionNone: string;
+    scoreWarning: string;
+    deadlineLabel: string;
+    uploadFailed: string;
+  };
+  /** Static explainers (the Datenfluss map + the jargon list). */
+  learn: {
+    navLabel: string;
+    eyebrow: string;
+    heading: string;
+    sub: string;
+  };
   /**
    * Plain-language names for the engine's vocabulary. docs/09 §3 is explicit: "No raw status
    * codes." A user must never meet `AWAITING_RESPONSE_PROVISIONAL` — these maps are what stands

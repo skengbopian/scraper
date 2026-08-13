@@ -45,7 +45,8 @@ contradiction ADR-012 exists to remove.
 | 1b | A's extra Prisma **invariants** as forward-only `0005` (6 of them) + the first DB gate in `tools/spec-audit` | REFIT (M) | **done** — `0005_harden_existing` |
 | 2a | `packages/i18n`: 3-register dictionary (de / de-leicht overlay / en) + the inherited copy tests + a new two-clock copy test; wired into the API's user-facing messages | REFIT (M) | **done** — ADR-034 |
 | 2b | the Next.js shell (`apps/web-next`): shell + start/firmen/firmen[slug]/vorgaenge/vorgaenge[id] on the two-clock contract; served-app axe gate | REFIT (XL) | **partly done** — core loop live |
-| 2c | A's remaining screens: auth, konto, ops queue, herkunft, schutz, schufa, wissen, report | REFIT (L) | next |
+| 2c | Akte (the BYO-Datenkopie flagship) + Wissen; structural tests widened from pages to all components | REFIT (L) | **done** |
+| 2d | auth screens (register/login/TOTP) + konto — endpoints exist, the app still runs on the dev-fixture identity | REFIT (M) | next |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
@@ -75,7 +76,22 @@ raw state or requestType (docs/09 §3 — the plain-language labels in `@scraper
 and the register switches are plain `<form>` posts rather than click handlers, so they work before
 hydration and with JS disabled.
 
-**2c — porting the remaining screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
+**2c status.** Two screens landed, chosen by what the API can actually serve rather than by what A
+had: **/akte**, the BYO-Datenkopie surface (docs/10 §3.1) — the same-day-utility flagship that had a
+working backend and no UI at all — and **/wissen**, the jargon list (docs/09 §4). Verified against the
+real fixture: five CoC findings render with severity, computed deadlines, and the score-negative
+warning.
+
+Two honesty rules are structural on the Akte screen: findings carry the **preliminary** badge and the
+"not legal advice" note for as long as `ruleSet.counselSignedOff` is false (OQ-13), and a finding
+whose action helps privacy but hurts the score warns before the user acts (docs/10 §2.1) — never a
+promised number in either direction.
+
+**Deliberately NOT built: the ops queue.** A has one; this API has no ops endpoints, so the screen
+would have been a mock-up of a capability that does not exist. It waits for wave 5, which is where
+the ops/worker side gets re-derived.
+
+**2d — porting the remaining screens.** A's copy for its own screens (dashboard, bundle, report, ops) was NOT
 transplanted: it describes pages this line does not have, and its clock strings are written against
 the single-`deadlineAt` model (hazard 3). Port a screen's copy WITH the screen, and when doing so,
 map A's one deadline onto this line's two — never alias `statutoryDeadlineAt` into a `deadlineAt`
