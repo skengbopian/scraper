@@ -84,6 +84,55 @@ export interface IngestInput {
   readonly channel: 'email' | 'postal' | 'web_form';
 }
 
+export class MalformedIngestJobError extends Error {
+  constructor(message: string) {
+    super(`ingest job payload is malformed: ${message}`);
+    this.name = 'MalformedIngestJobError';
+  }
+}
+
+/**
+ * Rebuild an `IngestInput` from a queue payload.
+ *
+ * A durable queue is a JSON boundary, and JSON has no Date and no Uint8Array. Reading
+ * `document.receivedAt` off a delivered job gives a STRING, so `receivedAt.getTime()` throws — which
+ * is how this was found, at runtime, against the real worker. The failure was caught (the request
+ * fails closed to NEEDS_HUMAN) but the reply was lost on the way: no `ControllerResponse` row was
+ * written, so the answer a controller actually sent left no record. For a workflow whose entire
+ * purpose is not to drop replies, "it failed safely" is not good enough.
+ *
+ * So the boundary is parsed rather than trusted, in one place, and a payload that cannot be revived
+ * is rejected loudly instead of being handed on as a plausible-looking object.
+ */
+export function reviveIngestJob(payload: unknown): IngestInput {
+  const p = payload as { requestId?: unknown; channel?: unknown; document?: Record<string, unknown> };
+  const doc = p.document;
+  if (typeof p.requestId !== 'string' || !doc) throw new MalformedIngestJobError('requestId and document are required');
+
+  const channels = ['email', 'postal', 'web_form'] as const;
+  if (!channels.includes(p.channel as (typeof channels)[number])) {
+    throw new MalformedIngestJobError(`channel must be one of ${channels.join(', ')}`);
+  }
+
+  const receivedAt = new Date(String(doc.receivedAt ?? ''));
+  if (Number.isNaN(receivedAt.getTime())) {
+    // Not a detail: receivedAt sets the retention purge date (CLAUDE.md §4). A silently-wrong one
+    // would keep a raw controller document past its window, or purge it before it was normalised.
+    throw new MalformedIngestJobError(`document.receivedAt is not a date: ${String(doc.receivedAt)}`);
+  }
+
+  return {
+    requestId: p.requestId,
+    channel: p.channel as IngestInput['channel'],
+    document: {
+      id: String(doc.id ?? ''),
+      mimeType: String(doc.mimeType ?? 'application/octet-stream'),
+      bytes: Uint8Array.from(Array.isArray(doc.bytes) ? (doc.bytes as number[]) : []),
+      receivedAt,
+    },
+  };
+}
+
 export async function ingestResponse(deps: IngestDeps, input: IngestInput): Promise<string> {
   const row = await deps.load(input.requestId);
   if (!row) return `skip: request ${input.requestId} not found`;
@@ -167,7 +216,14 @@ async function decide(
   }
 
   const verdict = validateResponse(row.playbook, parsed);
-  const result = apply(judged, verdict.event, { actor: 'SYSTEM', now: deps.now() });
+  const result = apply(judged, verdict.event, {
+    actor: 'SYSTEM',
+    now: deps.now(),
+    // "Low confidence" and "nothing matched" are different problems with different fixes, and the
+    // ops reviewer is the one who has to tell them apart. Carrying the verdict's own reason is what
+    // stops the queue showing a ticket with an empty explanation.
+    ...(verdict.event === 'lowConfidence|ambiguous' ? { reason: verdict.reason } : {}),
+  });
   await deps.applyTransition(received.id, result);
   return `${received.id}: response ${response.id} → ${result.to}${verdict.event === 'lowConfidence|ambiguous' ? ` (${verdict.reason})` : ''}`;
 }

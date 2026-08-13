@@ -34,7 +34,10 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
     await seed(db); // second run must not throw or duplicate
     expect(await db.controller.count()).toBe(15);
     // The demo pairs: the ERASURE_ART17 chain link (wave 4) and the az-direct Datenkopie (wave 5).
-    expect(await db.playbook.count()).toBe(6);
+    // ACTIVE, not total: `playbook_freeze` forbids rewriting a shipped document, so a fixture change
+    // ships as a new version and stands its predecessor down (seed.ts DEMO_PLAYBOOK_VERSION). The
+    // superseded rows are meant to still be there — one active per pair is the invariant.
+    expect(await db.playbook.count({ where: { active: true } })).toBe(6);
   });
 
   it('the adapter routes all three outcomes and persists CREATED with its audit event', async () => {

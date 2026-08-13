@@ -1,5 +1,13 @@
 import type { Register } from '@scraper/i18n';
-import type { CensusController, CreateRequestResult, CreditFileView, RequestType, RequestView } from './types';
+import type {
+  CensusController,
+  CreateRequestResult,
+  CreditFileView,
+  InboundDocumentView,
+  OpsQueueItem,
+  RequestType,
+  RequestView,
+} from './types';
 
 /**
  * The API client.
@@ -202,4 +210,61 @@ export function verifyIdentityStub(register: Register): Promise<ApiResult<unknow
 
 export function getHealth(register: Register): Promise<ApiResult<{ ok: true; devFixtures: boolean }>> {
   return call<{ ok: true; devFixtures: boolean }>('/health', register);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The internal review queue (port wave 5, ADR-037)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Every call here 403s with `reason: OPS_ROLE_REQUIRED` unless the session's user carries the
+ * HUMAN_OPS role in the database. There is no header the client can set to change that — the
+ * pre-audit line's ops surface was gated on exactly such a header, which is why this one is not.
+ */
+export function getOpsQueue(register: Register): Promise<ApiResult<OpsQueueItem[]>> {
+  return call<OpsQueueItem[]>('/ops/queue', register);
+}
+
+export function getOpsInbox(register: Register): Promise<ApiResult<InboundDocumentView[]>> {
+  return call<InboundDocumentView[]>('/ops/inbound-documents', register);
+}
+
+export type OpsResolution = 'complied' | 'incomplete' | 'refused' | 'resend' | 'escalate';
+
+export function resolveOpsRequest(
+  id: string,
+  resolution: OpsResolution,
+  register: Register,
+): Promise<ApiResult<{ state: string; outcome: string | null }>> {
+  return call<{ state: string; outcome: string | null }>(`/ops/requests/${encodeURIComponent(id)}/resolve`, register, {
+    method: 'POST',
+    body: JSON.stringify({ resolution }),
+  });
+}
+
+/**
+ * The ONLY route in this client that can reach ESCALATED (ADR-008, invariant 3).
+ *
+ * There is deliberately no user-facing sibling: `humanSend` requires the HUMAN_OPS actor, and a
+ * "send my complaint" button on the user's own Vorgang screen would be a second inbound edge to
+ * ESCALATED in everything but name. Do not add one, however convenient it looks.
+ */
+export function sendOpsEscalation(id: string, register: Register): Promise<ApiResult<{ state: string }>> {
+  return call<{ state: string }>(`/ops/requests/${encodeURIComponent(id)}/escalation/send`, register, { method: 'POST' });
+}
+
+export function discardOpsEscalation(id: string, register: Register): Promise<ApiResult<{ state: string }>> {
+  return call<{ state: string }>(`/ops/requests/${encodeURIComponent(id)}/escalation/discard`, register, { method: 'POST' });
+}
+
+/** Correlate an inbound document to a case. The case id comes from the reviewer, never the document. */
+export function assignInboundDocument(
+  documentId: string,
+  requestId: string,
+  register: Register,
+): Promise<ApiResult<{ assigned: true }>> {
+  return call<{ assigned: true }>(`/ops/inbound-documents/${encodeURIComponent(documentId)}/assign`, register, {
+    method: 'POST',
+    body: JSON.stringify({ requestId }),
+  });
 }

@@ -144,10 +144,21 @@ enum IdentityPacketKind {
 // Core entities
 // ---------------------------------------------------------------------------------------------
 
+/// Who may reach the ops review queue (port wave 5, ADR-037). Deliberately NOT a request header:
+/// ops routes read every user's request ledger — a map of who is exercising rights against whom,
+/// which is exactly the targeting signal CLAUDE.md's one rule exists to suppress — and they file
+/// Art. 77 complaints in a user's name. That is a stored property of a principal, not a claim a
+/// caller makes about itself.
+enum UserRole {
+  USER
+  HUMAN_OPS
+}
+
 model User {
   id                 String   @id @default(cuid())
   email              String   @unique
   subscriptionStatus String   @default("none")
+  role               UserRole @default(USER)
   createdAt          DateTime @default(now())
 
   /// Per-user envelope key material (CLAUDE.md §4). The DEK is sealed under a KEK the app does not
@@ -345,6 +356,7 @@ model RightsRequest {
   responses        ControllerResponse[]
   evidence         EvidenceRecord[]
   provenanceLedger ProvenanceLedger?
+  inboundDocuments InboundDocument[]
 
   @@index([userId, controllerId, requestType])
   @@index([state])
@@ -365,6 +377,37 @@ model RequestEvent {
   request RightsRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@index([requestId])
+}
+
+/// A document that arrived without knowing which request it answers (port wave 5, ADR-037).
+///
+/// Phase-0 inbound correlation is HUMAN (docs/04). A controller's reply quotes our reference, or a
+/// letter arrives in the post, and a person decides which request it belongs to. That decision is
+/// never derived from the document's own content: a hostile PDF asserting "this answers request X"
+/// would otherwise be able to close a stranger's statutory request. The columns below record who
+/// decided and when, and 0011 refuses an assignment that names neither.
+model InboundDocument {
+  id          String      @id @default(cuid())
+  receivedAt  DateTime
+  channel     ChannelMode
+  /// As received. A correlation HINT for a human, never trusted to name a subject or a request.
+  senderRef   String
+  subjectLine String?
+  storageRef  String
+  sha256      String
+  /// CLAUDE.md §4: a retained raw reference with no purge date is an open-ended retention.
+  purgeRawAt  DateTime
+
+  assignedRequestId String?
+  assignedAt        DateTime?
+  /// The HUMAN_OPS principal who correlated it. Attribution is the point (CLAUDE.md §2).
+  assignedByUserId  String?
+  createdAt         DateTime @default(now())
+
+  assignedRequest RightsRequest? @relation(fields: [assignedRequestId], references: [id])
+
+  @@index([assignedRequestId])
+  @@index([receivedAt])
 }
 
 model ControllerResponse {

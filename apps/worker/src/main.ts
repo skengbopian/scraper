@@ -11,7 +11,7 @@ import { SimulatedTimestamper, StubMailer, StubPostalProvider } from './provider
 import { PrismaWorkerRepository } from './repo/prisma-worker.repo.js';
 import { handleDeadlineExpiry, sweepExpiredDeadlines, type DeadlinePayload } from './workflows/deadline.js';
 import { dispatchReadyRequest, type DispatchDeps } from './workflows/dispatch.js';
-import { ingestResponse, type IngestDeps } from './workflows/ingest.js';
+import { ingestResponse, reviveIngestJob, type IngestDeps } from './workflows/ingest.js';
 
 /**
  * The worker process — port wave 5 (ADR-037).
@@ -135,8 +135,10 @@ async function main(): Promise<void> {
   });
   await boss.work('ingest-response', async (jobs) => {
     for (const job of jobs) {
-      const d = job.data as { requestId: string; document: RawDocument; channel: 'email' | 'postal' | 'web_form' };
-      console.log(`[ingest-response] ${await ingestResponse(ingestDeps, d)}`);
+      // The queue is a JSON boundary: `receivedAt` arrives as a string and `bytes` as an array.
+      // Reviving here rather than trusting the shape is what stops a controller's reply being
+      // recorded as "processing failed" with no ControllerResponse row (see reviveIngestJob).
+      console.log(`[ingest-response] ${await ingestResponse(ingestDeps, reviveIngestJob(job.data))}`);
     }
   });
 

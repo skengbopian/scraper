@@ -65,6 +65,18 @@ export const LEICHT: DeepPartial<AppStrings> = {
     preliminaryNote: 'Das ist keine Rechtsberatung. Ein Anwalt hat die Hinweise noch nicht geprüft.',
     scoreWarning: 'Achtung: Eine Löschung kann Ihren Score senken.',
   },
+  // The review queue is an internal screen, so the overlay is short: only the sentences a reader
+  // has to parse quickly, not the labels, which are already one or two words.
+  ops: {
+    heading: 'Diese Vorgänge brauchen einen Menschen',
+    sub: 'Jeder Eintrag wartet auf eine Entscheidung. Nichts geht von allein weiter.',
+    queueEmpty: 'Gerade wartet kein Vorgang.',
+    inboxEmpty: 'Es sind keine Dokumente da.',
+    inboxUnassigned: 'Gehört noch zu keinem Vorgang',
+    sendNote: 'Ein Mensch reicht die Beschwerde ein. Nicht das System. Sie klicken hier, wenn Sie es getan haben.',
+    noProvenReceipt:
+      'Es gibt keinen Nachweis, dass die Anfrage angekommen ist. Und es gibt keine Antwort von der Firma. Darum geht es hier nicht weiter.',
+  },
   learn: {
     heading: 'Wichtige Begriffe',
     sub: 'Tippen Sie einen Begriff an.',

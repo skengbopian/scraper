@@ -37,6 +37,17 @@ export function ApiError({
       </>
     );
   }
+  // A third 403, and the one whose next action is "none". Without this branch an ordinary user who
+  // opened /ops would be told to verify their identity — a resolving action for a problem they do
+  // not have, and one that implies the door would then open. It would not.
+  if (status === 403 && reason === 'OPS_ROLE_REQUIRED') {
+    return (
+      <>
+        <p className="err" role="alert">{s.ops.forbidden}</p>
+        <div className="btnrow"><a className="btn" href="/">{s.nav.start}</a></div>
+      </>
+    );
+  }
   if (status === 403) {
     return (
       <>

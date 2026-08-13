@@ -111,3 +111,39 @@ export interface CreditFileView {
   readonly findings: readonly FileFinding[];
   readonly nextAction?: string;
 }
+
+// ------------------------------------------------------------------------------------------------
+// The internal review queue (port wave 5, ADR-037)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * One case waiting on a person.
+ *
+ * Note what is NOT here, and that the absence is the design: no legal name, no date of birth, no
+ * address. A cross-user ledger keyed to real identities is exactly the artefact CLAUDE.md's one rule
+ * describes — a map of who is exercising rights against whom. `userId` is opaque: enough to
+ * correlate two tickets, not enough to locate anyone. The API does not send more than this, and this
+ * type is why a future field would have to be added deliberately.
+ */
+export interface OpsQueueItem {
+  readonly id: string;
+  readonly userId: string;
+  readonly controllerSlug: string;
+  readonly requestType: RequestType;
+  readonly state: RequestState;
+  /** Whether the Art. 12(3) clock is genuinely running. NOT a date — see the note in ops/page.tsx. */
+  readonly clockIsProvable: boolean;
+  readonly reason: string | null;
+  readonly queuedAt: string;
+}
+
+/** A document that arrived without knowing which case it answers. Correlated by a human. */
+export interface InboundDocumentView {
+  readonly id: string;
+  readonly receivedAt: string;
+  readonly channel: string;
+  /** As received, and rendered as received. Untrusted: a sender can write anything here. */
+  readonly senderRef: string;
+  readonly subjectLine: string | null;
+  readonly assignedRequestId: string | null;
+}

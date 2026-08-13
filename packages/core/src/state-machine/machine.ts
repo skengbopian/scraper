@@ -63,6 +63,16 @@ export interface TransitionResult {
     closedAt: Date | null;
   }>;
   readonly note?: string;
+  /**
+   * The caller's `ctx.reason`, carried through so it reaches the RequestEvent payload.
+   *
+   * It used to stop at `apply()`, which meant a `sendPermanentlyFailed` transition recorded THAT a
+   * send failed and never WHY. The ops queue then showed a ticket with an empty reason column — a
+   * human asked to decide with the one fact that would inform the decision missing. Invariant 7 says
+   * every transition writes an event; an event that drops the reason satisfies the letter of that
+   * and not the point.
+   */
+  readonly reason?: string;
 }
 
 export class IllegalTransitionError extends Error {
@@ -111,6 +121,7 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
       actor: ctx.actor,
       at: ctx.now,
       patch: { outcome: 'WITHDRAWN', closedAt: ctx.now },
+      ...(ctx.reason ? { reason: ctx.reason } : {}),
     };
   }
 
@@ -189,7 +200,10 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
   if (outcome) patch.outcome = outcome;
   if (isTerminal(edge.to)) patch.closedAt = ctx.now;
 
-  return { from: req.state, to: edge.to, event, actor: ctx.actor, at: ctx.now, patch, note: edge.note };
+  return {
+    from: req.state, to: edge.to, event, actor: ctx.actor, at: ctx.now, patch, note: edge.note,
+    ...(ctx.reason ? { reason: ctx.reason } : {}),
+  };
 }
 
 /** Does this finished request count toward the controller's published compliance record? */

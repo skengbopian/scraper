@@ -74,6 +74,10 @@ const REQUIRED = {
     'ADR-037: an anchor ref and its qualification are one fact. Two columns that can disagree is the shape that drifts, and the disagreement that matters is a SIMULATED anchor read months later as a QTSP one.',
   clock_critical_evidence_anchor_is_honest:
     'CLAUDE.md §6 / ADR-037: a POSTAL_PROOF anchor is one of the two facts that authorise provableSendConfirmed. If the row cannot say whether that anchor was qualified, the deadline it justified cannot be evidenced to a DPA.',
+  inbound_assignment_is_attributed:
+    'docs/04 / CLAUDE.md §2: Phase-0 inbound correlation is HUMAN. An assignment with no human attached is an automatic one — which lets a hostile document\'s own content decide which request it closes.',
+  inbound_assignment_freeze:
+    'CLAUDE.md the one rule: re-pointing an assigned document at a different request rewrites whose evidence it is, after the fact. Corrections are new rows, as they are for RequestEvent.',
 };
 
 const dirs = readdirSync(MIGRATIONS, { withFileTypes: true })

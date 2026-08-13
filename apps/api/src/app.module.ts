@@ -6,6 +6,7 @@ import { CreditFileModule } from './credit-file/credit-file.module.js';
 import { DbModule, isPrismaMode } from './db/db.module.js';
 import { DevIdentityMiddleware } from './common/dev-identity.middleware.js';
 import { HealthController } from './health.controller.js';
+import { OpsModule } from './ops/ops.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 
 /**
@@ -35,7 +36,9 @@ class SessionModule implements NestModule {
  *                      sessions resolve to the caller's own identity.
  */
 @Module({
-  imports: [...(isPrismaMode() ? [DbModule, SessionModule, AuthModule] : []), RequestsModule, CreditFileModule],
+  // OpsModule is DB-mode only: its guard reads `User.role` for an authenticated session, and the
+  // in-memory alpha has neither. An ops surface whose authorisation has nothing to read is not one.
+  imports: [...(isPrismaMode() ? [DbModule, SessionModule, AuthModule, OpsModule] : []), RequestsModule, CreditFileModule],
   controllers: [HealthController, CensusController],
 })
 export class AppModule implements NestModule {

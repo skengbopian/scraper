@@ -144,7 +144,13 @@ export function ingestProvenanceResponse(input: ProvenanceIngestInput): Provenan
   const transition = apply(
     { ...input.request, parseConfidence: input.parsed.confidence, reviewedByHuman: input.parsed.reviewedByHuman },
     event,
-    { actor: input.parsed.reviewedByHuman ? 'HUMAN_OPS' : 'SYSTEM', now: input.now },
+    {
+      actor: input.parsed.reviewedByHuman ? 'HUMAN_OPS' : 'SYSTEM',
+      now: input.now,
+      // The notes are what a human needs to act on this ticket — which category was missing, or why
+      // the parse was not trusted. They reach the RequestEvent payload, and from there the ops queue.
+      ...(notes.length > 0 ? { reason: notes.join('; ') } : {}),
+    },
   );
 
   const brokersNamed = entries.some((e) => e.isBroker);

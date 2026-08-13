@@ -286,7 +286,9 @@ export class PrismaRequestsRepository implements RequestsRepository {
           fromState: t.from,
           toState: t.to,
           actor: t.actor,
-          payload: { note: t.note ?? null },
+          // The reason is what an ops reviewer reads to decide. Dropping it made NEEDS_HUMAN
+          // tickets arrive with an empty explanation (ADR-037).
+          payload: { note: t.note ?? null, ...(t.reason ? { reason: t.reason } : {}) },
         },
       }),
     ]);

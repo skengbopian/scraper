@@ -124,11 +124,13 @@ export async function dispatchReadyRequest(deps: DispatchDeps, requestId: string
     return `skip: ${requestId} is in ${row.snapshot.state}, not READY — dispatch job is stale`;
   }
 
-  const templateBody = await deps.readTemplate(row.playbook.template).catch(() => null);
-  const prepared =
-    templateBody === null
-      ? ({ kind: 'HUMAN_QUEUE', reason: `template ${row.playbook.template} could not be read` } as const)
-      : prepareDispatch(row, templateBody, deps.now());
+  // POLICY REFUSALS BEFORE I/O. `prepareDispatch` is run against a sentinel body first, so a
+  // playbook counsel has not signed off, a web-form channel, or an unreachable registered re-send is
+  // reported as itself — not as "template X could not be read", which is what the filesystem-first
+  // order produced when this was run for real. It is also simply wrong to go looking for the letter
+  // of a request that may not be sent.
+  const preflight = prepareDispatch(row, TEMPLATE_NOT_READ, deps.now());
+  const prepared = preflight.kind === 'HUMAN_QUEUE' ? preflight : await withTemplate(deps, row);
 
   if (prepared.kind === 'HUMAN_QUEUE') {
     // NOT a transition. The request never left READY, so there is nothing to undo and nothing to
@@ -144,6 +146,33 @@ export async function dispatchReadyRequest(deps: DispatchDeps, requestId: string
 
   const outcome = await deps.gateway.send(gatewayRequest(row, prepared));
   return applySendOutcome(deps, sentSnapshot, outcome, prepared.deadlineDays);
+}
+
+/**
+ * The sentinel body used for the preflight pass.
+ *
+ * `renderRequest()` applies every policy check — active, parameterised, identity packet, engine-
+ * derived flags, erasure scope — BEFORE it touches the template text, so a preflight over a sentinel
+ * surfaces all of them. If the preflight passes, the body it produced is discarded and the real
+ * template is read; the sentinel never reaches a letter, and a template whose placeholders do not
+ * resolve still fails on the real pass.
+ */
+const TEMPLATE_NOT_READ = '[preflight]';
+
+async function withTemplate(deps: DispatchDeps, row: DispatchableRequest): Promise<PreparedDispatch> {
+  let templateBody: string;
+  try {
+    templateBody = await deps.readTemplate(row.playbook.template);
+  } catch (e) {
+    return {
+      kind: 'HUMAN_QUEUE',
+      reason:
+        `the playbook is sendable but its template "${row.playbook.template}" could not be read ` +
+        `(${e instanceof Error ? e.message : String(e)}). Counsel-owned prose lives in templates/; ` +
+        `this is an operational fault, not a policy refusal.`,
+    };
+  }
+  return prepareDispatch(row, templateBody, deps.now());
 }
 
 function gatewayRequest(row: DispatchableRequest, prepared: Extract<PreparedDispatch, { kind: 'SEND' }>): GatewaySendRequest {

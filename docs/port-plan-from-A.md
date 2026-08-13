@@ -49,7 +49,7 @@ contradiction ADR-012 exists to remove.
 | 2d | auth screens (register → secret → login → TOTP) + konto + the identity gate explained; session as an httpOnly cookie | REFIT (M) | **done** — wave 2 complete |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | **done** — ADR-035, migration `0008_auth_policy` |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | **done** — ADR-036 |
-| 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | **dispatch core done** — ADR-037, migration `0010_anchor_qualification` |
+| 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | **done** — ADR-037, migrations `0010_anchor_qualification` + `0011_ops_queue`. **The port is closed.** |
 
 ### Wave-1b detail — why invariants and not the schema
 A's schema is a different foundation (uuid ids, `multiSchema`, the 13-state clock, a triple-blocking
@@ -89,7 +89,9 @@ promised number in either direction.
 
 **Deliberately NOT built: the ops queue.** A has one; this API has no ops endpoints, so the screen
 would have been a mock-up of a capability that does not exist. It waits for wave 5, which is where
-the ops/worker side gets re-derived.
+the ops/worker side gets re-derived. — **Built in wave 5** (ADR-037): the endpoints landed first
+(`apps/api/src/ops`, behind a role stored on the User row rather than asserted by a header), and
+`/ops` followed them.
 
 **2d status — wave 2 is complete.** Register → the shared secret shown once → sign in → TOTP → an
 MFA-verified session, verified end to end in the browser against the real API. The token lives in an
@@ -192,3 +194,69 @@ inherit them:
   processing today** — it needs the amendment its own scope note anticipates before it goes to
   counsel, covering ACCESS_ART15_SOURCE, the BYO-Datenkopie ingest, and the provable-clock risk
   ("we assert a deadline that was never legally established") that a ladder-scoped DPIA never faced.
+
+### Wave-5 outcome — the rebuild, and two defects only running it exposed
+The wave landed as **ADR-037** in two commits (dispatch core, then the ops queue). What the plan got
+right: every one of the four cited lines in A's dispatch layer was a defect, and none of them could be
+fixed by porting-then-patching. What it did not anticipate:
+
+1. **Deleting the boolean was the fix; the rest followed from the type.** The plan framed hazard 1 as
+   "`provable` is hardcoded true — correct it". Correcting it keeps a boolean that some later change
+   sets from a DKIM check. What landed instead is a branded `ProvableSendEvidenceId` with one
+   constructor and channel adapters whose return types cannot express a provable send. The brand
+   announced its own scope: the compiler immediately rejected `apps/api`'s simulate surface (which
+   passed the string `ev_sim_<id>`) and `apps/worker`'s LetterXpress and QTSP adapters, which had been
+   silently asserting exactly the two facts that authorise a legal deadline.
+2. **The consequence is that this repo cannot start a statutory clock at all,** and that is correct
+   rather than a gap: with no QTSP account and no hybrid-mail account there is nothing to evidence a
+   deadline with. The alpha's "registered send" therefore fails closed to the ops queue with
+   `SIMULATED_ANCHOR` instead of demonstrating a clock it could never defend.
+3. **Two defects surfaced only by running it end to end**, after the whole suite was green — recorded
+   in ADR-037 because the lesson generalises: the durable queue is a JSON boundary that silently
+   destroyed a controller's reply, and `ctx.reason` stopped at `apply()` so the ops queue showed
+   tickets with an empty explanation. Neither is visible in a unit test that constructs its own inputs.
+
+## What was deliberately never brought across from A
+
+The port is closed. This section exists so nobody re-opens a question that was already answered — if
+something below looks like an oversight, it is not, and the reason is here.
+
+**Refused on the merits** (the refuse list above, unchanged and still binding):
+`scripts/generate-playbooks.mjs`, `packages/core/src/subject/verified-subject.ts`, A's `schema.prisma`
+and migration chain, `docs/AUDIT-2026-08-07-spec.md`, the `packages/core/src/leverage/` cost-model and
+request-accounting modules, the three `boniversum` playbooks, and `VerifiedContactIdentifier`. Wave 5
+adds one more: **`packages/db/src/repositories/rights-request.repo.ts`**, whose
+`OPEN_OR_COMPLETE_EXCLUDED` semantics contradict ADR-013 and would permanently block a lawful second
+cycle after `COMPLIED`.
+
+**Superseded by a re-derivation** — A's file exists, this line has its own, and they are not
+interchangeable. `channels/email.ts`, `channels/postal.ts`, `workflows/dispatch.ts`,
+`workflows/deadline-sweep.ts`, `workflows/ingest-response.ts` and `gateway/controller-gateway.ts` were
+all rewritten against the 16-state machine (ADR-037). A's versions are written against a 13-state
+machine in which an email starts the statutory clock; copying any one of them back re-imports C1.
+A's `engine/factory.ts` and `bullmq-engine.ts` are the exception — adopted, with the default changed
+(ADR-031).
+
+**Not ported because the backing capability does not exist here**, and a screen or worker for a
+capability the product lacks is a mock-up (the wave-2c rule):
+- A's `herkunft`, `schutz`, `schufa` and `report` screens — product surfaces whose endpoints this API
+  does not have. They belong with the features, not with the shell.
+- A's `workflows/alias-relay.ts`, `suppression-renewal.ts`, `route-staleness.ts` and `anomaly-sweep.ts`
+  — Tier-1 ladder machinery. The rungs exist here (ADR-036) but nothing yet produces the entities
+  these sweeps maintain, so porting them would ship four cron jobs over empty tables.
+- A's `workflows/purge-raw-docs.ts` — the retention window is enforced as a DB constraint here
+  (`raw_document_requires_purge_date`, 0005) but the sweep that acts on `purgeRawAt` is **not built**.
+  This is the one genuine gap in the list rather than a decision: **TODO(safety)** — every raw
+  document currently carries a purge date nothing enforces.
+- A's `workflows/art77-draft.ts` — this line records that a complaint is DUE (`ESCALATION_DRAFTED`)
+  and evidences the human's filing, but does not render the complaint text. That is counsel-owned
+  prose (`CLAUDE.md`), and A's generator writes it in code.
+
+**Not ported because it is a legal question, not a mechanical one:** the 12 web-form-only playbooks
+asserting a silence → Art. 77 escalation, and the 14 whose postal address is a `TODO(counsel)`
+placeholder — **OQ-26**, `docs/counsel-review-packet.md` §8b.
+
+**Carried as a lesson rather than as code:** A's fixture-environment allow-list (its D29), which this
+line re-expressed in `devFixturesEnabled()` in wave 1; and A's `assertStartupSafe` positive-check
+insight (an unset provider selector also defaults to a stub), re-expressed in
+`apps/worker/src/config.ts` in wave 5.

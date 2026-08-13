@@ -991,6 +991,50 @@ never "has this triple ever been used".
 **Nothing leaves the process.** Every playbook is `active: false` and `renderRequest()` refuses an
 inactive one, so a real dispatch job renders nothing and lands in the ops queue with that reason —
 tested, not asserted. The wire path is complete and exercised; the counsel gate is what holds it shut.
+The dev fixture had been hiding this: its demo playbook document was a three-key stub with no
+`template`, so the worker failed on a missing file *before* reaching the gate. It is now a complete
+`active: false` document, and because `playbook_freeze` (0005) forbids rewriting a shipped version in
+place, the fixture ships as version 2 with version 1 stood down — the rule applies to fixtures too,
+which is the point of enforcing it at the database.
+
+**The ops surface, and the role that is not a header.** Wave 2c refused to build the `/ops` screen
+because the endpoints did not exist and the screen would have mocked a capability the product did not
+have. `apps/api/src/ops` is those endpoints, and `/ops` in `apps/web-next` follows them.
+
+The pre-audit line gated its ops routes on `x-ops-role: true`, and its own guard comment records what
+that cost before an env flag was bolted on: an unauthenticated caller who sent the header received
+every user's request ledger — a map of who is exercising rights against whom, which is exactly the
+targeting signal `CLAUDE.md`'s one rule exists to suppress — plus the ability to close a stranger's
+statutory request and file Art. 77 complaints in their name. Here the role is `User.role` (migration
+`0011`), read for a session `SessionMiddleware` already authenticated, and the module is DB-mode only
+because a role needs a principal to live on. Three further properties:
+
+- **The queue shows no subject identifiers.** State, controller, which clock is running, the ops
+  reason — and an opaque `userId`. Enough to correlate two tickets, not enough to locate anyone. A
+  test asserts the absence rather than trusting the query.
+- **`humanSend` is the one edge into ESCALATED and it lives only here.** `RequestsController` still
+  has no route that sends a complaint; a "send my complaint" button for end users would be a second
+  inbound edge in everything but name (ADR-008). The ops UI does not get one either.
+- **Ops is privileged, not exempt.** `humanResolve:resend` re-enters READY, so it re-runs the full
+  guard set (invariant 1): a mandate revoked mid-flight blocks an ops re-send exactly as it blocks a
+  user's. `humanResolve:escalate` still meets invariant 3b in `apply()`, not in ops code.
+
+**Inbound documents are correlated by a human, and the database says so.** `0011`'s
+`inbound_assignment_is_attributed` refuses an assignment that names a request but no human, and
+`inbound_assignment_freeze` refuses a re-point. The case id comes from the reviewer, never from the
+document: a reply that quotes our reference is a hint for the person reading it, and a hostile PDF
+that named a request would otherwise close a stranger's statutory request.
+
+**Two defects the runtime walk found that reading the code did not.** Both are recorded because the
+lesson is the same one: this wave's tests all passed before either was fixed.
+1. *The queue is a JSON boundary.* pg-boss round-trips a job payload, so `document.receivedAt` arrives
+   as a string; `receivedAt.getTime()` threw and the request took the fail-closed branch —
+   `NEEDS_HUMAN`, with **no `ControllerResponse` row**. Safe, and still wrong: the controller's reply
+   left no record, in the one workflow whose whole purpose is not to lose one. `reviveIngestJob()`
+   parses the boundary and refuses an undated document rather than guessing a retention window.
+2. *The audit trail dropped the reason.* `ctx.reason` stopped at `apply()`, so a `sendPermanentlyFailed`
+   event recorded THAT a send failed and never WHY — and the ops queue showed a ticket with an empty
+   explanation column. `TransitionResult` now carries it through to the `RequestEvent` payload.
 
 ---
 

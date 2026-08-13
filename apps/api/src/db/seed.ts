@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, SOURCE_HARDENING_ROUTES } from '@scraper/core';
 import { CENSUS, controllerTypeOf } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_IDENTITY, DEV_MANDATE, DEV_USER_ID, devFixturesEnabled } from '../common/dev-fixtures.js';
@@ -15,8 +15,9 @@ import { hashPassword, generateTotpSecret, totpProvisioningUri } from '../auth/c
  *
  * The demo playbooks are DB rows with `document.demo=true` and slug `demo.*` — the database
  * equivalent of the in-memory demo markers. They are NOT the counsel-gated YAML corpus in
- * playbooks/ (all of which stays active:false); nothing here can cause a real send because
- * dispatch in the alpha exists only as the dev-only simulate surface.
+ * playbooks/ (all of which stays active:false). Since port wave 5 the WORKER dispatches for real,
+ * so "nothing can leave" no longer rests on dispatch being simulated: it rests on the demo
+ * document's own `active: false`, which renderRequest() refuses (see demoPlaybookDocument below).
  */
 
 export async function seed(db: PrismaClient): Promise<void> {
@@ -120,19 +121,79 @@ export async function seed(db: PrismaClient): Promise<void> {
   for (const pair of DEV_DEMO_PLAYBOOK_PAIRS) {
     const controller = await db.controller.findUnique({ where: { slug: pair.controllerSlug } });
     if (!controller) continue;
+    const slug = `demo.${pair.controllerSlug}.${pair.requestType.toLowerCase()}`;
+    // `playbook_one_active` (0005) allows exactly one active row per (controller, requestType), so
+    // the predecessor is stood down before the new version is stood up.
+    await db.playbook.updateMany({ where: { slug, version: { not: DEMO_PLAYBOOK_VERSION } }, data: { active: false } });
     await db.playbook.upsert({
-      where: { slug_version: { slug: `demo.${pair.controllerSlug}.${pair.requestType.toLowerCase()}`, version: 1 } },
+      where: { slug_version: { slug, version: DEMO_PLAYBOOK_VERSION } },
       create: {
         controllerId: controller.id,
-        slug: `demo.${pair.controllerSlug}.${pair.requestType.toLowerCase()}`,
+        slug,
         requestType: pair.requestType as never,
-        version: 1,
-        active: true, // DEMO row (document.demo=true), not a counsel-gated YAML — see header note.
-        document: { demo: true, channel: { primary: 'email', registered: { fallback: true } }, validation: { humanReviewIfConfidenceBelow: 0.75 } },
+        version: DEMO_PLAYBOOK_VERSION,
+        // The ROW is active so the router can find it and the LEGAL branch is reachable in the
+        // alpha. The DOCUMENT is `active: false`, which is the counsel gate: `renderRequest()`
+        // refuses it, so the worker's dispatch reaches the ops queue with that reason and no letter
+        // is ever produced. Two different `active` flags, deliberately — one is routing, one is
+        // sign-off, and conflating them is how a demo fixture would start sending real letters.
+        active: true,
+        document: demoPlaybookDocument(slug, pair.controllerSlug, pair.requestType),
       },
+      // ONLY `active`. `playbook_freeze` (0005) refuses to rewrite a shipped version's document in
+      // place, and it is right to: the counsel sign-off recorded against version N would stop
+      // describing what version N sends. A changed fixture is a new version — hence the constant.
       update: { active: true },
     });
   }
+}
+
+/**
+ * Bumped in port wave 5. The demo document went from a three-key stub to a complete Playbook, and
+ * `playbook_freeze` forbids editing v1 in place — exactly as its error message says: "shipped
+ * versions are immutable except active — bump the version instead (docs/04)". The rule applies to
+ * fixtures too, which is the point of enforcing it at the database rather than by convention.
+ */
+const DEMO_PLAYBOOK_VERSION = 2;
+
+/**
+ * A COMPLETE, valid Playbook document for the demo rows — and `active: false`.
+ *
+ * It used to be a three-key stub (`{demo, channel, validation}`), which meant the worker's dispatch
+ * failed on "template undefined could not be read" before it ever reached the counsel gate. The
+ * fixture was hiding the thing it should have been demonstrating. Now the worker plans a real
+ * channel, resolves a real recipient, and is refused for the reason that actually applies.
+ *
+ * `template` names a file that exists in `templates/`, so the refusal cannot be an artefact of a
+ * missing file either.
+ */
+function demoPlaybookDocument(slug: string, controllerSlug: string, requestType: string): Prisma.InputJsonValue {
+  const template =
+    requestType === 'OBJECTION_ART21'
+      ? 'art21-werbewiderspruch.de'
+      : requestType === 'ACCESS_ART15_SOURCE'
+        ? 'art15g-herkunft.de'
+        : requestType === 'ERASURE_ART17'
+          ? 'art17-loeschung.de'
+          : 'art15-datenkopie.de';
+  return {
+    demo: true,
+    slug,
+    kind: 'RIGHTS_REQUEST',
+    controller: controllerSlug,
+    requestType,
+    version: 1,
+    // THE COUNSEL GATE. Never flip this in a fixture: renderRequest() refuses an inactive playbook,
+    // and that refusal is the only thing standing between the alpha and a real outbound letter.
+    active: false,
+    channel: { primary: 'email' },
+    recipient: { email: `datenschutz@${controllerSlug}.invalid` },
+    template,
+    subjectFields: ['legalName', 'dateOfBirth', 'addresses'],
+    deadlineDays: 30,
+    validation: { compliedIf: { responseContains: ['gelöscht', 'widersprochen'] }, humanReviewIfConfidenceBelow: 0.75 },
+    escalation: { onDeadlineExpiry: 'NONE', onRefusal: 'DRAFT_ART77' },
+  };
 }
 
 const isMain = process.argv[1]?.endsWith('seed.js') || process.argv[1]?.endsWith('seed.ts');

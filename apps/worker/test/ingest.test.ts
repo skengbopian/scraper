@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { DocSandbox, Playbook, RawDocument, RequestSnapshot, SandboxParseResult, TransitionResult } from '@scraper/core';
-import { ingestResponse, type IngestDeps, type IngestibleRequest } from '../src/workflows/ingest.js';
+import {
+  ingestResponse,
+  MalformedIngestJobError,
+  reviveIngestJob,
+  type IngestDeps,
+  type IngestibleRequest,
+} from '../src/workflows/ingest.js';
 
 /**
  * Response ingestion: hazard 4 (emailed replies must not be dropped) and invariant 5 (the confidence
@@ -130,5 +136,54 @@ describe('failure is closed, not silent', () => {
     // waiting state pretending nothing arrived.
     expect(h.transitions.map((t) => t.to)).toEqual(['RESPONSE_RECEIVED', 'NEEDS_HUMAN']);
     expect(note).toMatch(/sandbox unavailable/);
+  });
+});
+
+describe('the queue is a JSON boundary, and it is parsed rather than trusted', () => {
+  /**
+   * A REGRESSION TEST for a bug found by running the worker for real, not by reading it.
+   *
+   * pg-boss round-trips a job payload through JSON, so `document.receivedAt` arrives as a STRING.
+   * The workflow treated it as a Date, `receivedAt.getTime()` threw, and the request fell into the
+   * fail-closed branch: NEEDS_HUMAN, with no `ControllerResponse` row. Safe, and still wrong — the
+   * controller's reply left no record, in the one workflow whose entire purpose is not to lose one.
+   */
+  it('revives a payload that has been through JSON', () => {
+    const input = reviveIngestJob({
+      requestId: 'req_1',
+      channel: 'email',
+      document: { id: 'doc_1', mimeType: 'application/pdf', bytes: [1, 2, 3], receivedAt: '2026-08-13T09:00:00.000Z' },
+    });
+    expect(input.document.receivedAt).toBeInstanceOf(Date);
+    expect(input.document.receivedAt.toISOString()).toBe('2026-08-13T09:00:00.000Z');
+    expect(input.document.bytes).toBeInstanceOf(Uint8Array);
+    expect(Array.from(input.document.bytes)).toEqual([1, 2, 3]);
+  });
+
+  it('the revived document survives a full ingest, and the response IS persisted', async () => {
+    const h = harness('AWAITING_RESPONSE_PROVISIONAL', sandbox('Ihre Daten wurden gelöscht.', 0.95));
+    const revived = reviveIngestJob({
+      requestId: 'req_1',
+      channel: 'email',
+      document: { id: 'doc_1', mimeType: 'application/pdf', bytes: [], receivedAt: NOW.toISOString() },
+    });
+    await ingestResponse(h.deps, revived);
+    expect(h.transitions.map((t) => t.to)).toEqual(['RESPONSE_RECEIVED', 'COMPLIED']);
+    expect(h.responses).toHaveLength(1);
+  });
+
+  it('refuses an undated document rather than inventing a retention window', () => {
+    // receivedAt sets purgeRawAt (CLAUDE.md §4). A guessed one either keeps a raw controller
+    // document past its window or purges it before it has been normalised.
+    expect(() =>
+      reviveIngestJob({ requestId: 'req_1', channel: 'email', document: { id: 'd', receivedAt: 'not-a-date' } }),
+    ).toThrowError(MalformedIngestJobError);
+  });
+
+  it('refuses a payload with no channel or no request', () => {
+    expect(() => reviveIngestJob({ channel: 'email', document: { receivedAt: NOW.toISOString() } })).toThrowError(MalformedIngestJobError);
+    expect(() => reviveIngestJob({ requestId: 'r', channel: 'carrier-pigeon', document: { receivedAt: NOW.toISOString() } })).toThrowError(
+      MalformedIngestJobError,
+    );
   });
 });

@@ -15,6 +15,11 @@ const CASE_ID = process.env.CASE_ID ?? '';
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'];
 
 const routes = ['/', '/firmen', '/firmen/schufa', '/firmen/zoominfo', '/firmen/hirevue', '/akte', '/wissen', '/vorgaenge', '/anmelden', '/registrieren', '/konto', '/bestaetigen', '/anmelden/code'];
+// The review queue (port wave 5). Scanned in its REFUSED state — an unauthenticated scan of /ops
+// renders the OPS_ROLE_REQUIRED branch, which is the state most users will ever see and therefore
+// the one that has to be accessible. A signed-in ops scan needs a seeded HUMAN_OPS session and
+// belongs with the manual pass (docs/manual-a11y-protocol.md).
+routes.push('/ops');
 if (CASE_ID) routes.push(`/vorgaenge/${CASE_ID}`);
 
 const browser = await chromium.launch();

@@ -229,6 +229,44 @@ export interface AppStrings {
     deadlineLabel: string;
     uploadFailed: string;
   };
+  /**
+   * The internal review queue (port wave 5, ADR-037).
+   *
+   * Its audience is the review team, not a consumer — but it goes through the same dictionary as
+   * everything else, for two reasons that are not about translation. First, the app's structural
+   * tests forbid inline German and raw engine codes in ANY component, and an ops screen that
+   * bypassed the register would quietly re-introduce `AWAITING_RESPONSE_PROVISIONAL` on a screen.
+   * Second, the forbidden-phrase test (docs/05 §3) applies here too: an ops button that promised an
+   * outcome would be read by the person about to file an Art. 77 complaint in someone's name.
+   */
+  ops: {
+    navLabel: string;
+    eyebrow: string;
+    heading: string;
+    sub: string;
+    queueHeading: string;
+    queueEmpty: string;
+    inboxHeading: string;
+    inboxEmpty: string;
+    inboxUnassigned: string;
+    inboxAssigned: string;
+    controllerLabel: string;
+    reasonLabel: string;
+    waitingSince: string;
+    /** The resolution actions. Each states what it DOES, never what it will achieve. */
+    resolveComplied: string;
+    resolveIncomplete: string;
+    resolveRefused: string;
+    resolveResend: string;
+    resolveEscalate: string;
+    /** The send is a human act, and the copy says so rather than implying a system did it. */
+    sendComplaint: string;
+    discardComplaint: string;
+    sendNote: string;
+    /** Shown when invariant 3b blocks a draft: nothing proves the controller received the request. */
+    noProvenReceipt: string;
+    forbidden: string;
+  };
   /** Static explainers (the Datenfluss map + the jargon list). */
   learn: {
     navLabel: string;
