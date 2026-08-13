@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { QualifiedTimestamp, Timestamper } from '../providers/index.js';
+import { isQualifiedAnchor, type TimestampAnchor, type Timestamper } from '../providers/index.js';
 
 /**
  * Tamper-evident evidence ledger (CLAUDE.md §6).
@@ -18,7 +18,12 @@ export interface EvidenceRecord {
   readonly sha256: string;
   readonly prevHash: string | null;
   readonly chainHash: string;
-  readonly qualifiedTimestamp: QualifiedTimestamp | null;
+  /**
+   * The anchor, if this kind is clock-critical. It is the UNION type, not `QualifiedTimestamp`:
+   * a dev/sandbox anchor is recorded honestly as `SIMULATED` rather than being either dropped
+   * (losing the audit trail) or laundered into looking qualified.
+   */
+  readonly qualifiedTimestamp: TimestampAnchor | null;
   readonly storageRef: string;
   readonly createdAt: Date;
 }
@@ -87,22 +92,44 @@ export interface ChainVerdict {
   readonly intact: boolean;
   readonly brokenAt: number | null;
   readonly reason: string | null;
+  /**
+   * Integrity and QUALIFICATION are different questions and are reported separately on purpose.
+   *
+   * A dev chain anchored by a simulated timestamper is perfectly intact — nothing was tampered with
+   * — but none of its times are legally established. Folding that into `intact` would make every
+   * dev run report a broken chain (training reviewers to ignore the field); leaving it out entirely
+   * is how a sandbox anchor gets mistaken for a qualified one at review time. So: `intact` answers
+   * "was this altered", `unqualifiedAnchors` answers "would this stand up as evidence of time".
+   */
+  readonly unqualifiedAnchors: readonly string[];
 }
 
 export function verifyChain(records: readonly EvidenceRecord[]): ChainVerdict {
+  const unqualifiedAnchors = records
+    .filter((r) => isClockCritical(r.kind) && !isQualifiedAnchor(r.qualifiedTimestamp))
+    .map((r) => r.id);
   let prev: string | null = GENESIS_HASH;
   for (const [i, r] of records.entries()) {
     if (r.prevHash !== prev) {
-      return { intact: false, brokenAt: i, reason: `record ${r.id} expected prevHash ${prev}, has ${r.prevHash}` };
+      return {
+        intact: false, brokenAt: i, unqualifiedAnchors,
+        reason: `record ${r.id} expected prevHash ${prev}, has ${r.prevHash}`,
+      };
     }
     const expected = computeChainHash({ prevHash: r.prevHash, sha256: r.sha256, kind: r.kind, requestId: r.requestId });
     if (expected !== r.chainHash) {
-      return { intact: false, brokenAt: i, reason: `record ${r.id} chainHash does not recompute — content or metadata was altered` };
+      return {
+        intact: false, brokenAt: i, unqualifiedAnchors,
+        reason: `record ${r.id} chainHash does not recompute — content or metadata was altered`,
+      };
     }
     if (isClockCritical(r.kind) && r.qualifiedTimestamp === null) {
-      return { intact: false, brokenAt: i, reason: `record ${r.id} is clock-critical (${r.kind}) but carries no qualified timestamp` };
+      return {
+        intact: false, brokenAt: i, unqualifiedAnchors,
+        reason: `record ${r.id} is clock-critical (${r.kind}) but carries no timestamp anchor at all`,
+      };
     }
     prev = r.chainHash;
   }
-  return { intact: true, brokenAt: null, reason: null };
+  return { intact: true, brokenAt: null, reason: null, unqualifiedAnchors };
 }

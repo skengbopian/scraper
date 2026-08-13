@@ -50,10 +50,13 @@ describe('the Provenance chain no longer dead-ends', () => {
     expect(created.routed).toBe('LEGAL');
     const id = String(created.id);
 
-    // 2. A registered send — the only thing that starts the statutory clock (CLAUDE.md §6).
-    const sent = await json(await post(base, `/requests/${id}/simulate`, { action: 'dispatch', channel: 'postal_registered' }));
-    expect(sent.clockIsProvable).toBe(true);
-    expect(sent.statutoryDeadlineAt).toBeTruthy();
+    // 2. The send. Email in the alpha, so a PROVISIONAL clock only — the statutory one needs a
+    //    carrier receipt anchored at a real QTSP, which no stub can produce (ADR-037). The chain
+    //    below does not depend on which clock ran: a reply is ingestable from either waiting state.
+    const sent = await json(await post(base, `/requests/${id}/simulate`, { action: 'dispatch', channel: 'email' }));
+    expect(sent.clockIsProvable).toBe(false);
+    expect(sent.statutoryDeadlineAt).toBeNull();
+    expect(sent.provisionalDeadlineAt).toBeTruthy();
 
     // 3. The answer. Two categories attributed to AZ Direct, one to a contract partner.
     const answered = await json(await post(base, `/requests/${id}/simulate`, { action: 'respond', outcome: 'complied' }));

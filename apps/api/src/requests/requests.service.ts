@@ -1,10 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   apply,
+  appendEvidence,
   buildEntries,
   createRequest,
   proposeFollowUps,
+  provableSendEvidenceIdOf,
   runGuards,
+  UnprovableSendError,
   type CreateRequestPort,
   type FollowUpProposal,
   type ProvenanceEntry,
@@ -14,7 +17,13 @@ import {
   type TransitionResult,
   type VerifiedIdentity,
 } from '@scraper/core';
-import { DEV_PROVENANCE_ANSWER, DEV_PROVENANCE_PLAYBOOK, devFixturesEnabled } from '../common/dev-fixtures.js';
+import {
+  DEV_PROVENANCE_ANSWER,
+  DEV_PROVENANCE_PLAYBOOK,
+  devFixturesEnabled,
+  simulatedDeliveryProof,
+  SIMULATED_TIMESTAMPER,
+} from '../common/dev-fixtures.js';
 import { createHash } from 'node:crypto';
 import type { WorkflowEngine } from '@scraper/core';
 
@@ -195,9 +204,13 @@ export class RequestsService {
         await step(r, 'dispatch');
         const sent = await this.mustLoad(id);
         if (action.channel === 'postal_registered') {
-          // Simulated Einwurf-Einschreiben: the machine still demands an evidence id + deadline days;
-          // the id is unmistakably a simulation artefact, never a real QTSP anchor.
-          await step(sent, 'provableSendConfirmed', { provableSendEvidenceId: `ev_sim_${id}`, deadlineDays: 30 });
+          const refusal = await this.simulateRegisteredSend(id, sent, step, now);
+          if (refusal) {
+            // Fail closed, exactly as the worker does. Reported rather than thrown: the tester asked
+            // to see what a registered send does here, and "it landed in the ops queue because the
+            // proof is simulated" IS the answer.
+            return { ...this.view(await this.mustLoad(id)), simulated: true as const, refused: refusal };
+          }
         } else {
           await step(sent, 'sendAccepted:nonProvable', { deadlineDays: 30 });
         }
@@ -299,6 +312,50 @@ export class RequestsService {
       ...p,
       id: `${p.requestType}:${p.targetControllerSlug}:${i}`,
     }));
+  }
+
+  /**
+   * The simulated Einwurf-Einschreiben, run through the REAL provable-send constructor.
+   *
+   * This method used to hand `apply()` the string `ev_sim_<id>` and get a statutory deadline for it.
+   * It cannot any more, and that is the wave-5 correction (ADR-037): `provableSendEvidenceId` is a
+   * branded type whose only constructor requires a carrier-issued receipt anchored at a real QTSP.
+   * The alpha has neither, so this assembles exactly the artefacts a registered dispatch produces,
+   * hands them to the same constructor the worker uses, and reports the refusal.
+   *
+   * Returns null on success (reachable only with a real QTSP + hybrid-mail account configured), or
+   * the refusal after routing the request to NEEDS_HUMAN.
+   */
+  private async simulateRegisteredSend(
+    id: string,
+    sent: RequestSnapshot,
+    step: (s: RequestSnapshot, event: string, ctx?: Record<string, unknown>) => Promise<TransitionResult>,
+    now: Date,
+  ): Promise<{ reason: string; message: string } | null> {
+    const proof = simulatedDeliveryProof(id);
+    // Not persisted: a send whose proof is refused has no provable delivery to evidence. The record
+    // exists to be CHECKED, which is the only thing it is for here.
+    const record = await appendEvidence(
+      {
+        requestId: id,
+        kind: 'POSTAL_PROOF',
+        content: `${proof.kind} ${proof.trackingRef} ${proof.deliveredAt.toISOString()}`,
+        storageRef: `sim://evidence/${id}/postal-proof-${proof.trackingRef}.txt`,
+        prevHash: null,
+        now,
+        idFactory: () => `ev_sim_${id}`,
+      },
+      SIMULATED_TIMESTAMPER,
+    );
+    try {
+      const provableSendEvidenceId = provableSendEvidenceIdOf(record, proof);
+      await step(sent, 'provableSendConfirmed', { provableSendEvidenceId, deadlineDays: 30 });
+      return null;
+    } catch (e) {
+      if (!(e instanceof UnprovableSendError)) throw e;
+      await step(sent, 'sendPermanentlyFailed', { reason: e.message });
+      return { reason: e.reason, message: e.message };
+    }
   }
 
   /** Durable Frist timer (docs/10 P0: deadline expiry fires from timers, not demo buttons). */

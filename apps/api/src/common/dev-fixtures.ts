@@ -1,4 +1,4 @@
-import type { MandateSnapshot, Playbook, ProvenanceEntryInput, VerifiedIdentity } from '@scraper/core';
+import type { DeliveryProof, MandateSnapshot, Playbook, ProvenanceEntryInput, Timestamper, VerifiedIdentity } from '@scraper/core';
 
 /**
  * DEV/ALPHA fixtures — the simulated tester account.
@@ -82,6 +82,11 @@ export const DEV_DEMO_PLAYBOOK_PAIRS: readonly {
   readonly requestType: MandateSnapshot['scope'][number];
 }[] = [
   { controllerSlug: 'az-direct', requestType: 'OBJECTION_ART21' },
+  // A Datenkopie at the broker itself, distinct from the objection above. Added in port wave 5: a
+  // (controller, requestType) triple holds one non-terminal request at a time (ADR-013), so with
+  // only one az-direct pair the alpha could demonstrate the objection lifecycle or the access
+  // lifecycle, but never both in one session.
+  { controllerSlug: 'az-direct', requestType: 'ACCESS_ART15' },
   { controllerSlug: 'schufa', requestType: 'ACCESS_ART15' },
   { controllerSlug: 'infoscore', requestType: 'ACCESS_ART15_SOURCE' },
   { controllerSlug: 'regis24', requestType: 'ACCESS_ART15_SOURCE' },
@@ -133,3 +138,45 @@ export const DEV_PROVENANCE_PLAYBOOK: Playbook = Object.freeze({
   },
   validation: { compliedIf: { anyOf: [{ 'structured.sourcesNamedPerCategory': true }] }, humanReviewIfConfidenceBelow: 0.8 },
 } as Playbook);
+
+// ------------------------------------------------------------------------------------------------
+// The simulated "registered send" (port wave 5, ADR-037)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * A timestamper with no QTSP behind it.
+ *
+ * It returns `kind: 'SIMULATED'` and says why. That is the entire point: the pre-audit line's
+ * equivalent returned something indistinguishable from a real anchor, and this line keys the
+ * statutory clock off exactly that distinction. `provableSendEvidenceIdOf()` refuses this anchor, so
+ * the alpha's "registered send" fails closed to the human queue instead of inventing a legal
+ * deadline (CLAUDE.md §6, ADR-012).
+ */
+export const SIMULATED_TIMESTAMPER: Timestamper = {
+  async anchor(sha256Hex: string) {
+    return {
+      kind: 'SIMULATED' as const,
+      tsaRef: `sim:${sha256Hex.slice(0, 16)}`,
+      signedAt: new Date(),
+      algorithm: 'SHA-256',
+      reason: 'no QTSP account is configured — a dev timestamper cannot establish legal time',
+    };
+  },
+};
+
+/**
+ * The receipt a stubbed hybrid-mail account "returns" for a registered send.
+ *
+ * `origin: 'SIMULATED'` is not decoration. The pre-audit line's stub returned
+ * `proofRef: 'stub:einwurf-proof-N'` — receipt-shaped, carrier-indistinguishable — for any
+ * `registered: true` call. Here a proof object is one of the two things that authorise the Art.
+ * 12(3) clock, so the provider has to declare that no carrier issued it.
+ */
+export function simulatedDeliveryProof(requestId: string): DeliveryProof {
+  return {
+    kind: 'EINWURF_EINSCHREIBEN',
+    trackingRef: `sim-einwurf-${requestId}`,
+    deliveredAt: new Date(),
+    origin: 'SIMULATED',
+  };
+}

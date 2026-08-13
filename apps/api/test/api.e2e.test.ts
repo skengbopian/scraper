@@ -89,7 +89,7 @@ describe('alpha API with dev fixtures ON', () => {
     expect(((await json(r)) as { error: string }).error).toBe('INVALID_REQUEST_TYPE');
   });
 
-  it('walks the full lifecycle: provisional clock → chase → statutory clock → escalation draft', async () => {
+  it('walks the full lifecycle: provisional clock → chase → a REFUSED registered send → escalation draft', async () => {
     const post = (path: string, body?: unknown) =>
       fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
 
@@ -113,31 +113,51 @@ describe('alpha API with dev fixtures ON', () => {
     const resent = (await json(await post(`/requests/${id}/registered-resend`))) as Record<string, unknown>;
     expect(resent.state).toBe('READY');
 
-    // Registered dispatch: NOW the statutory clock starts.
+    // Registered dispatch. In the alpha the postal provider and the timestamper are BOTH stubs, so
+    // the receipt is `origin: SIMULATED` and the anchor is `kind: SIMULATED` — and the statutory
+    // clock is refused (ADR-037). This used to hand `apply()` the string `ev_sim_<id>` and get a
+    // legal deadline for it. Failing closed to the ops queue is the correct behaviour, not a
+    // limitation: a deadline we cannot evidence is a deadline we may not assert (CLAUDE.md §6).
     const registered = (await json(
       await post(`/requests/${id}/simulate`, { action: 'dispatch', channel: 'postal_registered' }),
     )) as Record<string, unknown>;
-    expect(registered.state).toBe('AWAITING_RESPONSE');
-    expect(registered.statutoryDeadlineAt).not.toBeNull();
-    expect(registered.clockIsProvable).toBe(true);
+    expect(registered.state).toBe('NEEDS_HUMAN');
+    expect(registered.statutoryDeadlineAt).toBeNull();
+    expect(registered.clockIsProvable).toBe(false);
+    expect((registered.refused as { reason: string }).reason).toBe('SIMULATED_ANCHOR');
 
-    // An incomplete answer (the BayLDA pattern) → INCOMPLETE → a DRAFTED complaint. No send route exists.
+    // No statutory clock was ever invented along the way, and the request is now an ops ticket.
+    expect(registered.nextAction).toBe('AWAIT_OPS_REVIEW');
+    const list = (await (await fetch(`${base}/requests`)).json()) as Record<string, unknown>[];
+    expect(list.some((r) => r.id === id && r.state === 'NEEDS_HUMAN' && r.statutoryDeadlineAt === null)).toBe(true);
+  });
+
+  it('a reply to an EMAILED request is ingested, and an incomplete answer drafts a complaint no route can send', async () => {
+    const post = (path: string, body?: unknown) =>
+      fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    // A pair no other test in this file claims: an open request blocks its own triple (ADR-013), so
+    // two tests sharing (controller, requestType) would make the second creation fail the guard.
+    const { id } = (await json(await post('/requests', { controllerSlug: 'az-direct', requestType: 'ACCESS_ART15' }))) as { id: string };
+
+    // Hazard 4: the pre-audit line gated ingest on AWAITING_RESPONSE alone, so this reply — to the
+    // most common kind of send — would have been silently discarded.
+    await post(`/requests/${id}/simulate`, { action: 'dispatch', channel: 'email' });
     const responded = (await json(await post(`/requests/${id}/simulate`, { action: 'respond', outcome: 'incomplete' }))) as Record<string, unknown>;
     expect(responded.state).toBe('INCOMPLETE');
+    expect(responded.statutoryDeadlineAt).toBeNull();
+
+    // Escalating on an INCOMPLETE answer needs no provable send — the controller's own reply proves
+    // receipt (invariant 3b). The complaint is DRAFTED; there is no route on this API that sends it.
     const drafted = (await json(await post(`/requests/${id}/simulate`, { action: 'escalate' }))) as Record<string, unknown>;
     expect(drafted.state).toBe('ESCALATION_DRAFTED');
     expect(drafted.nextAction).toBe('AWAIT_OPS_SEND');
-
-    // The list view carries the Vorgang with both clocks labelled.
-    const list = (await (await fetch(`${base}/requests`)).json()) as Record<string, unknown>[];
-    expect(list.some((r) => r.id === id && r.state === 'ESCALATION_DRAFTED')).toBe(true);
   });
 
   it('an unreadable response routes to NEEDS_HUMAN (invariant 5), never to a validated outcome', async () => {
     const post = (path: string, body?: unknown) =>
       fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     const { id } = (await json(await post('/requests', { controllerSlug: 'az-direct', requestType: 'OBJECTION_ART21' }))) as { id: string };
-    await post(`/requests/${id}/simulate`, { action: 'dispatch', channel: 'postal_registered' });
+    await post(`/requests/${id}/simulate`, { action: 'dispatch', channel: 'email' });
     const r = (await json(await post(`/requests/${id}/simulate`, { action: 'respond', outcome: 'unreadable' }))) as Record<string, unknown>;
     expect(r.state).toBe('NEEDS_HUMAN');
     expect(r.nextAction).toBe('AWAIT_OPS_REVIEW');

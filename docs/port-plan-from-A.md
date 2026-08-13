@@ -49,7 +49,7 @@ contradiction ADR-012 exists to remove.
 | 2d | auth screens (register → secret → login → TOTP) + konto + the identity gate explained; session as an httpOnly cookie | REFIT (M) | **done** — wave 2 complete |
 | 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | **done** — ADR-035, migration `0008_auth_policy` |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | **done** — ADR-036 |
-| 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
+| 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | **dispatch core done** — ADR-037, migration `0010_anchor_qualification` |
 
 ### Wave-1b detail — why invariants and not the schema
 A's schema is a different foundation (uuid ids, `multiSchema`, the 13-state clock, a triple-blocking

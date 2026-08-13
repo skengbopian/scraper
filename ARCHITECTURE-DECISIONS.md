@@ -907,6 +907,91 @@ listed in `docs/counsel-review-packet.md` §8b as **OQ-26**, with the three sub-
 what to build. (The port plan's wave table said 21; the number as measured against this line's gate is
 12 with no postal channel at all, plus 14 more whose postal address is a placeholder — see §8b.)
 
+### ADR-037 · Dispatch is re-derived, not ported: the provable-send id is branded and has one constructor
+**Status:** ACCEPTED · **Decided:** 2026-08-13 · **Port wave 5** (ADR-030), the final wave · **Source:**
+the pre-audit line's `apps/worker` + `apps/api/src/ops`; `CLAUDE.md` §6; `schema/request-state-machine.md`
+invariants 1–7; ADR-008/012/013/031.
+
+Wave 5 is the only wave classed REBUILD rather than REFIT, because the pre-audit line's dispatch layer
+is where the C1 violation this whole line exists to fix actually lives — in code, at four cited lines.
+
+**The root, and why a boolean was the wrong shape.** A's `channels/email.ts:22` returns
+`{ providerRef, provable: true }`, with a comment at `:18-21` admitting the flag is hardcoded and must
+be replaced "before any real send". `workflows/dispatch.ts:100-122` branches on that boolean and
+applies `provableSendConfirmed`, so an email starts the Art. 12(3) clock. The defect is not that the
+value is wrong; it is that "provable" was modelled as an opinion the *sender* holds about its own send.
+It is not. It is two external facts — a carrier issued a receipt, and a QTSP anchored it — that only
+the postal path can ever possess.
+
+So this wave replaced the boolean with types that cannot express the lie:
+
+1. **`ProvableSendEvidenceId` is branded** (`packages/core/src/evidence/provable-send.ts`) and
+   `TransitionContext.provableSendEvidenceId` now takes it instead of `string`. The single constructor,
+   `provableSendEvidenceIdOf(record, proof)`, requires a `POSTAL_PROOF` evidence record whose anchor is
+   `kind: 'QUALIFIED'` *and* a receipt whose `origin` is `CARRIER`, *and* that the anchored artefact is
+   the receipt (not the letter). **There is deliberately no simulated constructor, not even a dev-gated
+   one** — a second minter is a second way in, which is precisely what went wrong upstream.
+2. **The channel adapters' return types are narrowed.** `sendLegalRequestEmail()` returns
+   `NonProvableSendOutcome`, an `Extract` over the outcome union with no `DELIVERY_PROVEN` variant. An
+   email adapter that claimed a provable send is now a compile error, not a code review.
+3. **The subtle re-entry is closed structurally.** A's gateway anchored `OUTBOUND_COPY` for both
+   channels alike (`controller-gateway.ts:114-137`), and was right to — when *we* sent is clock-critical.
+   The danger was that a qualified anchor sitting on an email send reads like the proof that authorises
+   a deadline. It still gets anchored here, and it still cannot authorise anything, because the
+   constructor demands `POSTAL_PROOF`. `OUTBOUND_COPY` = we sent this text. `POSTAL_PROOF` = they
+   received it. Two facts, two record kinds, one of which is not admissible for the clock.
+
+**The stub-proof hazard, and what it costs.** A's `StubPostalProvider` returns
+`proofRef: 'stub:einwurf-proof-N'` for any registered call — inert there, catastrophic here, because a
+proof object is one of the two things that authorise the clock. Two independent markers on two
+different providers close it: `DeliveryProof.origin: 'CARRIER' | 'SIMULATED'` and
+`TimestampAnchor = QualifiedTimestamp | SimulatedTimestamp`. The consequence is deliberate and is not a
+limitation to route around: **a process with no QTSP account and no hybrid-mail account cannot start a
+statutory clock at all.** A registered send degrades to a provisional clock and says so in the event
+payload. Migration `0010` persists the anchor's qualification so the distinction survives in the row,
+because "was this anchor qualified?" is a question the audit trail must answer months later, to a DPA.
+
+**Two consequences accepted rather than worked around.**
+- *The dev simulate surface lost its fake statutory clock.* It used to hand `apply()` the string
+  `ev_sim_<id>`; the brand made that a compile error, which is how the change announced itself. It now
+  assembles the same artefacts a real registered dispatch produces, hands them to the same constructor,
+  and fails closed to `NEEDS_HUMAN` with `reason: SIMULATED_ANCHOR`. Where the worker and the simulate
+  path diverged, the worker was right and simulate followed — the alpha demonstrates the refusal
+  instead of the fiction, which is the more useful demo.
+- *`apps/web-next`'s "authorise registered re-send" no longer chains a simulated dispatch.* Recording
+  the user's authorisation is the page's job; manufacturing the proof that authorisation waits for is not.
+
+**Two expiry paths, not one.** A has a single path: `AWAITING_RESPONSE` past `deadlineAt` → draft an
+Art. 77 complaint. Coherent in a 13-state machine where email started the clock; here the same code on a
+provisional deadline would found a DPA complaint on a deadline that was never legally established. So
+`workflows/deadline.ts` has a table, not an if-chain: provisional → `AWAITING_REGISTERED_RESEND` (the
+user decides, ADR-012); statutory → `ESCALATION_DRAFTED`. The handler also refuses to fire *early*,
+because pg-boss `startAfter` is a floor rather than a guarantee.
+
+**Ingest accepts a reply from every state that has the edge.** A gates on
+`state === 'AWAITING_RESPONSE'` (`ingest-response.ts:109`). Ported unchanged that would have silently
+discarded every controller reply to an emailed request — the most common case — as an info-level skip,
+leaving an answered request displaying "waiting" forever. `INGESTIBLE_STATES` is derived from the
+transition table and a test binds the two, so it also recovers the late-reply states (H1) the
+single-state gate lost.
+
+**Adopted from A rather than re-derived:** the engine interface + `engine/factory.ts` shape (ADR-031 —
+pg-boss stays the default, the BullMQ adapter is retained but demoted and lazily imported so Redis is
+not a build dependency, Temporal remains the target); the gateway's *ordering* (evidence before the
+wire, at-most-once via existing outbound evidence); `assertStartupSafe`'s positive-check insight (an
+unset provider selector also defaults to a stub, so production must configure every seam explicitly);
+and the human-queue rule that a request which never reached the wire stays `READY` rather than
+inventing a `READY → NEEDS_HUMAN` edge.
+
+**Refused, again:** A's `packages/db/src/repositories/rights-request.repo.ts`. Its
+`OPEN_OR_COMPLETE_EXCLUDED` semantics (line 34) contradict ADR-013 and would block a lawful second
+cycle. The gateway's send-level idempotency here asks "did *this* request already reach the wire",
+never "has this triple ever been used".
+
+**Nothing leaves the process.** Every playbook is `active: false` and `renderRequest()` refuses an
+inactive one, so a real dispatch job renders nothing and lands in the ops queue with that reason —
+tested, not asserted. The wire path is complete and exercised; the counsel gate is what holds it shut.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)

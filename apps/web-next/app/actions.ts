@@ -28,11 +28,11 @@ export async function startRequest(slug: string, requestType: RequestType): Prom
 }
 
 export async function authoriseRegisteredResend(id: string): Promise<void> {
-  const register = readRegister();
-  const result = await confirmRegisteredResend(id, register);
-  // The registered send is what STARTS the statutory clock; in the alpha it is simulated, and the
-  // simulate surface 404s in the production posture, so a failure here is expected and silent.
-  if (result.ok) await simulate(id, { action: 'dispatch', channel: 'postal_registered' }, register);
+  await confirmRegisteredResend(id, readRegister());
+  // The request re-enters READY (guards re-run — invariant 1) and the WORKER dispatches it. This
+  // used to chain a simulated `postal_registered` dispatch here, which produced a statutory deadline
+  // out of a stub receipt. It cannot any more (ADR-037), and it should not: the page's job is to
+  // record the user's authorisation, not to manufacture the proof that authorisation is waiting for.
   revalidatePath('/', 'layout');
 }
 

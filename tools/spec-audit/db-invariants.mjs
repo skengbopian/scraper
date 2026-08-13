@@ -68,6 +68,12 @@ const REQUIRED = {
     'ADR-035: a negative failure count silently disables the lockout it is supposed to drive.',
   session_expiry_sweep:
     'ADR-035: the expiry sweep must have an index matching the query it runs, partial on live sessions — otherwise session cleanup degrades exactly as the table grows.',
+
+  // --- Dispatch and evidence (port wave 5, ADR-037) ---------------------------------------------
+  evidence_anchor_kind_agrees:
+    'ADR-037: an anchor ref and its qualification are one fact. Two columns that can disagree is the shape that drifts, and the disagreement that matters is a SIMULATED anchor read months later as a QTSP one.',
+  clock_critical_evidence_anchor_is_honest:
+    'CLAUDE.md §6 / ADR-037: a POSTAL_PROOF anchor is one of the two facts that authorise provableSendConfirmed. If the row cannot say whether that anchor was qualified, the deadline it justified cannot be evidenced to a DPA.',
 };
 
 const dirs = readdirSync(MIGRATIONS, { withFileTypes: true })

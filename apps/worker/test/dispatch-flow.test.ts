@@ -1,0 +1,241 @@
+import { describe, expect, it } from 'vitest';
+import {
+  deriveSubject,
+  type EvidenceRecord,
+  type Playbook,
+  type RequestSnapshot,
+  type TimestampAnchor,
+  type Timestamper,
+  type TransitionResult,
+  type VerifiedIdentity,
+} from '@scraper/core';
+import { ControllerGateway } from '../src/gateway/controller-gateway.js';
+import { StubMailer, StubPostalProvider, SimulatedTimestamper } from '../src/providers/stub-providers.js';
+import { dispatchReadyRequest, prepareDispatch, type DispatchableRequest, type DispatchDeps } from '../src/workflows/dispatch.js';
+
+/**
+ * The dispatch workflow end to end against fakes: READY → SENT → the channel → the right clock.
+ *
+ * Two properties this file is really testing, beyond "it works":
+ *   - the COUNSEL GATE holds. Every playbook in this repo is `active: false`, and a dispatch of one
+ *     must reach the ops queue rather than the wire. That is the "nothing may leave the process"
+ *     rule, tested rather than asserted.
+ *   - the clock follows the OUTCOME TYPE, not the channel name. There is no branch anywhere in
+ *     dispatch.ts that reads 'email' and decides a deadline.
+ */
+
+const NOW = new Date('2026-08-13T09:00:00Z');
+
+const IDENTITY: VerifiedIdentity = {
+  id: 'id_1', userId: 'u1', status: 'VERIFIED', method: 'EID',
+  legalName: 'Erika Mustermann', dateOfBirth: new Date('1979-03-12T00:00:00Z'),
+  addresses: [{ street: 'Heidestraße 17', postalCode: '51147', city: 'Köln', country: 'DE', current: true, verifiedAt: NOW }],
+  verifiedAt: NOW, providerRef: 'test',
+};
+
+function playbook(over: Partial<Playbook> = {}): Playbook {
+  return {
+    slug: 'test.email', kind: 'RIGHTS_REQUEST', controller: 'az-direct', requestType: 'OBJECTION_ART21',
+    version: 1, active: true,
+    channel: { primary: 'email' }, recipient: { email: 'datenschutz@example.de' },
+    template: 'test-template', subjectFields: ['legalName', 'dateOfBirth', 'addresses'], deadlineDays: 30,
+    validation: { compliedIf: { responseContains: ['gelöscht'] }, humanReviewIfConfidenceBelow: 0.8 },
+    escalation: { onDeadlineExpiry: 'NONE', onRefusal: 'DRAFT_ART77' },
+    ...over,
+  } as Playbook;
+}
+
+function row(pb: Playbook, over: Partial<DispatchableRequest> = {}): DispatchableRequest {
+  const snapshot: RequestSnapshot = {
+    id: 'req_1', state: 'READY', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
+    provableSendConfirmedAt: null, deadlineAt: null, provisionalDeadlineAt: null,
+    hasControllerResponse: false, reviewedByHuman: false, parseConfidence: null,
+    humanReviewIfConfidenceBelow: 0.8, outcome: null,
+  };
+  return { snapshot, playbook: pb, subject: deriveSubject(IDENTITY), attachedIdentityPacketId: null, forceRegistered: false, ...over };
+}
+
+const TEMPLATE = 'Sehr geehrte Damen und Herren,\n\n{{legalName}}, geboren am {{dateOfBirth}}.\n{{primaryAddress}}\n\n{{today}}';
+
+interface Harness {
+  readonly deps: DispatchDeps;
+  readonly transitions: { id: string; result: TransitionResult }[];
+  readonly queued: { requestId: string; reason: string }[];
+  readonly scheduled: { key: string; at: Date }[];
+  readonly evidence: EvidenceRecord[];
+}
+
+function harness(r: DispatchableRequest, timestamper: Timestamper = new SimulatedTimestamper()): Harness {
+  const transitions: Harness['transitions'] = [];
+  const queued: Harness['queued'] = [];
+  const scheduled: Harness['scheduled'] = [];
+  const evidence: EvidenceRecord[] = [];
+
+  const gateway = new ControllerGateway({
+    mailer: new StubMailer(),
+    postal: new StubPostalProvider(),
+    timestamper,
+    appendEvidenceRecord: async (rec) => { evidence.push(rec); return rec; },
+    latestChainHash: async () => evidence.at(-1)?.chainHash ?? null,
+    hasOutboundEvidence: async () => evidence.some((e) => e.kind === 'OUTBOUND_COPY'),
+    objectStorePut: async (key) => `mem://${key}`,
+    idFactory: () => `ev_${evidence.length + 1}`,
+    now: () => NOW,
+  });
+
+  return {
+    transitions, queued, scheduled, evidence,
+    deps: {
+      load: async () => r,
+      readTemplate: async () => TEMPLATE,
+      gateway,
+      applyTransition: async (id, result) => void transitions.push({ id, result }),
+      recordHumanQueueEntry: async (e) => void queued.push({ requestId: e.requestId, reason: e.reason }),
+      engine: { schedule: async (key, at) => void scheduled.push({ key, at }), cancel: async () => undefined },
+      log: () => undefined,
+      now: () => NOW,
+    },
+  };
+}
+
+describe('email dispatch', () => {
+  it('READY → SENT → AWAITING_RESPONSE_PROVISIONAL, with only the provisional clock armed', async () => {
+    const h = harness(row(playbook()));
+    const note = await dispatchReadyRequest(h.deps, 'req_1');
+
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE_PROVISIONAL']);
+    const send = h.transitions[1]!.result;
+    expect(send.patch.deadlineAt).toBeNull();
+    expect(send.patch.provisionalDeadlineAt).toEqual(new Date(NOW.getTime() + 30 * 86_400_000));
+    expect(note).toMatch(/NOT a statutory deadline/);
+
+    // Exactly one timer, and it is the provisional one.
+    expect(h.scheduled).toHaveLength(1);
+    expect(h.scheduled[0]!.key).toMatch(/:provisional:/);
+  });
+
+  it('captures the rendered copy as anchored OUTBOUND_COPY evidence before the send', async () => {
+    const h = harness(row(playbook()));
+    await dispatchReadyRequest(h.deps, 'req_1');
+    const outbound = h.evidence.find((e) => e.kind === 'OUTBOUND_COPY');
+    expect(outbound).toBeDefined();
+    // The anchor IS taken on an email send — it evidences OUR send time — and it still cannot
+    // authorise anything, because provableSendEvidenceIdOf() requires a POSTAL_PROOF.
+    expect(outbound!.qualifiedTimestamp).not.toBeNull();
+    expect(h.transitions[1]!.result.to).toBe('AWAITING_RESPONSE_PROVISIONAL');
+  });
+
+  it('refuses a second wire attempt once outbound evidence exists (Art. 12(5) duplicate risk)', async () => {
+    const h = harness(row(playbook()));
+    await dispatchReadyRequest(h.deps, 'req_1');
+    h.transitions.length = 0;
+
+    // A replayed job on a request that is somehow READY again — the guard is at the wire, not the state.
+    const outcome = await h.deps.gateway.send({
+      requestId: 'req_1', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
+      channel: 'email', registered: false, recipient: 'x@y.de', subject: 's', body: 'b',
+    });
+    expect(outcome.kind).toBe('FAILED');
+    if (outcome.kind === 'FAILED') expect(outcome.reason).toMatch(/already exists/);
+  });
+});
+
+describe('registered dispatch', () => {
+  it('with stub providers it degrades to a provisional clock and NEVER a statutory one', async () => {
+    const pb = playbook({
+      slug: 'test.postal', channel: { primary: 'postal', registered: { primary: true } },
+      recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+    });
+    const h = harness(row(pb, { forceRegistered: true }));
+    await dispatchReadyRequest(h.deps, 'req_1');
+
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE_PROVISIONAL']);
+    expect(h.transitions[1]!.result.patch.deadlineAt).toBeNull();
+    expect(h.scheduled[0]!.key).toMatch(/:provisional:/);
+  });
+
+  it('with a real carrier receipt AND a qualified anchor it starts the Art. 12(3) clock', async () => {
+    const qualified: Timestamper = {
+      async anchor(hash): Promise<TimestampAnchor> {
+        return { kind: 'QUALIFIED', tsaRef: `qtsp:${hash.slice(0, 8)}`, signedAt: NOW, algorithm: 'SHA-256' };
+      },
+    };
+    class CarrierPostal extends StubPostalProvider {
+      override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+        const base = await super.send(letter, opts);
+        return base.proof ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const } } : base;
+      }
+    }
+    const pb = playbook({
+      slug: 'test.postal', channel: { primary: 'postal', registered: { primary: true } },
+      recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+    });
+    const r = row(pb, { forceRegistered: true });
+    const h = harness(r, qualified);
+    // Swap in the carrier provider on the gateway the harness built.
+    const gateway = new ControllerGateway({
+      mailer: new StubMailer(), postal: new CarrierPostal(), timestamper: qualified,
+      appendEvidenceRecord: async (rec) => { h.evidence.push(rec); return rec; },
+      latestChainHash: async () => h.evidence.at(-1)?.chainHash ?? null,
+      hasOutboundEvidence: async () => h.evidence.some((e) => e.kind === 'OUTBOUND_COPY'),
+      objectStorePut: async (key) => `mem://${key}`,
+      idFactory: () => `ev_${h.evidence.length + 1}`,
+      now: () => NOW,
+    });
+    await dispatchReadyRequest({ ...h.deps, gateway }, 'req_1');
+
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE']);
+    expect(h.transitions[1]!.result.patch.deadlineAt).toEqual(new Date(NOW.getTime() + 30 * 86_400_000));
+    expect(h.scheduled[0]!.key).toMatch(/:statutory:/);
+    // The id that authorised the clock is the POSTAL_PROOF record's — not the OUTBOUND_COPY's.
+    const proof = h.evidence.find((e) => e.kind === 'POSTAL_PROOF');
+    expect(proof?.qualifiedTimestamp?.kind).toBe('QUALIFIED');
+  });
+});
+
+describe('the counsel gate and the human queue', () => {
+  it('an inactive playbook never reaches the wire — the request stays READY', async () => {
+    const h = harness(row(playbook({ active: false })));
+    const note = await dispatchReadyRequest(h.deps, 'req_1');
+
+    expect(h.transitions).toHaveLength(0); // not even READY → SENT
+    expect(h.evidence).toHaveLength(0);
+    expect(h.queued).toHaveLength(1);
+    expect(h.queued[0]!.reason).toMatch(/counsel signs it off/);
+    expect(note).toMatch(/human queue/);
+  });
+
+  it('a web-form playbook goes to the human queue: Phase 0 does not automate forms', async () => {
+    const pb = playbook({ channel: { primary: 'web_form' }, recipient: { webForm: 'https://example.de/dsgvo' } });
+    const h = harness(row(pb));
+    await dispatchReadyRequest(h.deps, 'req_1');
+    expect(h.transitions).toHaveLength(0);
+    expect(h.queued[0]!.reason).toMatch(/does not automate/);
+  });
+
+  it('a forced registered re-send with no postal+registered channel is queued, not faked', async () => {
+    const h = harness(row(playbook(), { forceRegistered: true }));
+    await dispatchReadyRequest(h.deps, 'req_1');
+    expect(h.queued[0]!.reason).toMatch(/no provable send is reachable/);
+    expect(h.transitions).toHaveLength(0);
+  });
+
+  it('a request that is not READY is skipped rather than re-dispatched', async () => {
+    const r = row(playbook());
+    const h = harness({ ...r, snapshot: { ...r.snapshot, state: 'AWAITING_RESPONSE_PROVISIONAL' } });
+    expect(await dispatchReadyRequest(h.deps, 'req_1')).toMatch(/not READY/);
+    expect(h.transitions).toHaveLength(0);
+  });
+});
+
+describe('prepareDispatch is pure', () => {
+  it('renders without performing any I/O, and reports the deadline days the playbook declares', () => {
+    const prepared = prepareDispatch(row(playbook({ deadlineDays: 14 })), TEMPLATE, NOW);
+    expect(prepared.kind).toBe('SEND');
+    if (prepared.kind === 'SEND') {
+      expect(prepared.deadlineDays).toBe(14);
+      expect(prepared.body).toContain('Erika Mustermann');
+      expect(prepared.plan.expectedEvent).toBe('sendAccepted:nonProvable');
+    }
+  });
+});

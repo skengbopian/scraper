@@ -17,7 +17,24 @@ export interface IdentityProvider {
 export interface PostalSendResult {
   readonly providerId: string;
   /** Present only for registered mail. This is what makes a send provable. */
-  readonly proof: { readonly kind: 'EINWURF_EINSCHREIBEN'; readonly trackingRef: string; readonly deliveredAt: Date } | null;
+  readonly proof: DeliveryProof | null;
+}
+
+/**
+ * A postal delivery receipt.
+ *
+ * `origin` is the anti-stub marker and is REQUIRED, not optional. In the pre-audit line the stub
+ * postal provider returned `proofRef: 'stub:einwurf-proof-N'` for any registered send — inert there,
+ * because nothing keyed a legal deadline off it. Here the presence of a proof is one of the two
+ * things that authorise `provableSendConfirmed`, so a stub that merely *looks* like a carrier would
+ * start a real Art. 12(3) clock. A provider that did not receive a receipt from a carrier must say
+ * `SIMULATED`, and `provableSendEvidenceIdOf()` refuses it (evidence/provable-send.ts).
+ */
+export interface DeliveryProof {
+  readonly kind: 'EINWURF_EINSCHREIBEN';
+  readonly trackingRef: string;
+  readonly deliveredAt: Date;
+  readonly origin: 'CARRIER' | 'SIMULATED';
 }
 
 export interface PostalProvider {
@@ -49,15 +66,39 @@ export interface InboundMail {
   poll(): Promise<readonly RawDocument[]>;
 }
 
+/** An anchor from a real qualified trust service provider. Only this kind establishes legal time. */
 export interface QualifiedTimestamp {
+  readonly kind: 'QUALIFIED';
   readonly tsaRef: string;
   readonly signedAt: Date;
   readonly algorithm: string;
 }
 
+/**
+ * An anchor from anything that is not a QTSP — a dev stub, a vendor sandbox, a test double.
+ *
+ * It is a distinct TYPE rather than a boolean flag so that "is this anchor qualified?" is answered
+ * by the type system at every call site, and so an implementation cannot forget to say which it is:
+ * `Timestamper.anchor()` returns the union, and every consumer must narrow.
+ */
+export interface SimulatedTimestamp {
+  readonly kind: 'SIMULATED';
+  readonly tsaRef: string;
+  readonly signedAt: Date;
+  readonly algorithm: string;
+  /** Why this is not qualified — surfaced verbatim when the machine refuses the send. */
+  readonly reason: string;
+}
+
+export type TimestampAnchor = QualifiedTimestamp | SimulatedTimestamp;
+
+export function isQualifiedAnchor(a: TimestampAnchor | null | undefined): a is QualifiedTimestamp {
+  return a !== null && a !== undefined && a.kind === 'QUALIFIED';
+}
+
 export interface Timestamper {
   /** A hash chain proves integrity; only a QTSP proves time (docs/05 §6, docs/06 M13). */
-  anchor(sha256Hex: string): Promise<QualifiedTimestamp>;
+  anchor(sha256Hex: string): Promise<TimestampAnchor>;
 }
 
 export interface SandboxParseResult {

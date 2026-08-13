@@ -55,7 +55,17 @@ export class LetterXpressPostalProvider implements PostalProvider {
       providerId: String(body.data?.id ?? ''),
       proof:
         opts.registered && body.data?.tracking
-          ? { kind: 'EINWURF_EINSCHREIBEN', trackingRef: body.data.tracking, deliveredAt: new Date() }
+          ? {
+              kind: 'EINWURF_EINSCHREIBEN',
+              trackingRef: body.data.tracking,
+              deliveredAt: new Date(),
+              // TODO(credentials): this says a carrier issued the receipt, which is what authorises
+              // the Art. 12(3) clock (ADR-037). It is honest only once this adapter fetches the
+              // Auslieferungsbeleg rather than echoing the lodgement tracking ref — OQ-11. Until the
+              // live-sandbox onboarding closes that, LETTERXPRESS_MODE must stay 'sandbox', where the
+              // vendor returns no tracking and this branch does not fire.
+              origin: 'CARRIER' as const,
+            }
           : null,
     };
   }
@@ -75,7 +85,16 @@ export class OpenapiTimestamper implements Timestamper {
     });
     if (!res.ok) throw new Error(`QTSP: HTTP ${res.status} — ${await res.text()}`);
     const body = (await res.json()) as { id?: string; timestamp?: string };
-    return { tsaRef: String(body.id ?? ''), signedAt: body.timestamp ? new Date(body.timestamp) : new Date(), algorithm: 'SHA-256' };
+    // `kind: 'QUALIFIED'` is the claim that this anchor can establish legal time, and it is the
+    // second of the two facts that authorise a statutory deadline (ADR-037). It is true only against
+    // the PRODUCTION endpoint: `QTSP_BASE` defaults to the test service above, whose tokens are not
+    // qualified. TODO(credentials): assert the production base at onboarding rather than trusting env.
+    return {
+      kind: 'QUALIFIED' as const,
+      tsaRef: String(body.id ?? ''),
+      signedAt: body.timestamp ? new Date(body.timestamp) : new Date(),
+      algorithm: 'SHA-256',
+    };
   }
 }
 

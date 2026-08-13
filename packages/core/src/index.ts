@@ -11,6 +11,7 @@ export * from './playbook/types.js';
 export * from './playbook/engine.js';
 export * from './providers/index.js';
 export * from './evidence/chain.js';
+export * from './evidence/provable-send.js';
 export * from './provenance/ledger.js';
 export * from './provenance/erasure-scope.js';
 export * from './leverage/ladder.js';

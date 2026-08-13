@@ -1,3 +1,4 @@
+import type { ProvableSendEvidenceId } from '../evidence/provable-send.js';
 import { COUNTS_TOWARD_COMPLIANCE_STATS, isTerminal, type Actor, type Outcome, type RequestState } from './states.js';
 import { TRANSITIONS, WITHDRAW_EVENT, type Transition } from './transitions.js';
 
@@ -34,8 +35,16 @@ export interface TransitionContext {
   readonly now: Date;
   /** Set on sends. */
   readonly deadlineDays?: number;
-  /** Set on `provableSendConfirmed` — the QTSP-anchored evidence record proving delivery. */
-  readonly provableSendEvidenceId?: string;
+  /**
+   * Set on `provableSendConfirmed` — the QTSP-anchored evidence record proving delivery.
+   *
+   * BRANDED, and the brand is the guard. This used to be a `string`, which meant any string — a
+   * request id, a provider reference, `'stub:einwurf-proof-1'` — satisfied invariant 2's check. The
+   * only constructor is `provableSendEvidenceIdOf()`, which requires a carrier-issued receipt
+   * anchored at a real QTSP. A simulated proof is now a COMPILE error at every call site and a
+   * throw at the one place ids are made, rather than a runtime `if` someone can relax later.
+   */
+  readonly provableSendEvidenceId?: ProvableSendEvidenceId;
   readonly reason?: string;
 }
 
@@ -131,7 +140,8 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
         'provableSend',
         'provableSendConfirmed requires a QTSP-anchored evidence record id proving delivery. ' +
           'Without it this is not a provable send and must use sendAccepted:nonProvable ' +
-          '(CLAUDE.md §6, docs/05 §6).',
+          '(CLAUDE.md §6, docs/05 §6). Mint the id with provableSendEvidenceIdOf(); there is no ' +
+          'other constructor, and deliberately no simulated one.',
       );
     }
     if (!ctx.deadlineDays) throw new GuardViolationError('provableSend', 'deadlineDays is required to set the clock');
