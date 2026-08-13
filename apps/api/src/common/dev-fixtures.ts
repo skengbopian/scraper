@@ -1,5 +1,4 @@
-import type { VerifiedIdentity } from '@scraper/core';
-import type { MandateSnapshot } from '@scraper/core';
+import type { MandateSnapshot, Playbook, ProvenanceEntryInput, VerifiedIdentity } from '@scraper/core';
 
 /**
  * DEV/ALPHA fixtures — the simulated tester account.
@@ -86,4 +85,51 @@ export const DEV_DEMO_PLAYBOOK_PAIRS: readonly {
   { controllerSlug: 'schufa', requestType: 'ACCESS_ART15' },
   { controllerSlug: 'infoscore', requestType: 'ACCESS_ART15_SOURCE' },
   { controllerSlug: 'regis24', requestType: 'ACCESS_ART15_SOURCE' },
+  // The last link of the Provenance chain (ADR-036, port wave 4). Without this pair the alpha can ask
+  // infoscore where the data came from and then do nothing with the answer — which is exactly the
+  // dead end wave 4 exists to close.
+  { controllerSlug: 'infoscore', requestType: 'ERASURE_ART17' },
 ];
+
+/**
+ * The simulated bureau answer to an Art. 15(1)(g) request. Two categories attributed to a watchlisted
+ * broker and one to a genuine contract partner, so the bounded Art. 17(1)(d) demand the chain produces
+ * is visibly NARROWER than the file — which is the whole legal point (docs/07).
+ *
+ * This is a stand-in for parser output, and it is treated as exactly that: nothing here is trusted as a
+ * source name. `deriveErasureScope` re-derives the source from the playbook's own counsel-authored
+ * watchlist and refuses anything that is not on it.
+ */
+export const DEV_PROVENANCE_ANSWER: readonly ProvenanceEntryInput[] = Object.freeze([
+  { dataCategory: 'Anschriftendaten', statedSource: 'AZ Direct GmbH', statedLegalBasis: 'Art. 6 Abs. 1 lit. f DS-GVO', confidence: 0.94 },
+  { dataCategory: 'Umzugsdaten', statedSource: 'AZ Direct GmbH', statedLegalBasis: 'Art. 6 Abs. 1 lit. f DS-GVO', confidence: 0.91 },
+  { dataCategory: 'Vertragsdaten', statedSource: 'Sparkasse Köln-Bonn', statedLegalBasis: 'Art. 6 Abs. 1 lit. b DS-GVO', confidence: 0.97 },
+]);
+
+/**
+ * The watchlist the alpha classifies that answer against.
+ *
+ * It MIRRORS `playbooks/provenance.infoscore.yaml`, and the mirror is guarded rather than trusted:
+ * `packages/core/test/erasure-scope.test.ts` reads the YAML and fails if the two drift. The API does
+ * not parse `playbooks/` at runtime (no YAML dependency in a production app for a dev fixture), so
+ * this is the seam where a copy is unavoidable — a checked copy rather than a quiet one.
+ */
+export const DEV_PROVENANCE_PLAYBOOK: Playbook = Object.freeze({
+  slug: 'provenance.infoscore',
+  kind: 'RIGHTS_REQUEST',
+  controller: 'infoscore',
+  requestType: 'ACCESS_ART15_SOURCE',
+  version: 1,
+  active: false,
+  channel: { primary: 'postal', fallback: 'web_form', registered: { primary: true, fallback: false } },
+  recipient: { postal: 'infoscore Consumer Data GmbH, Abteilung Datenschutz, Rheinstraße 99, 76532 Baden-Baden' },
+  template: 'art15g-herkunft.de',
+  subjectFields: ['legalName', 'dateOfBirth', 'addresses'],
+  provenance: {
+    extractPerCategory: true,
+    brokerWatchlist: ['az-direct', 'acxiom', 'deutsche-post-direkt', 'schober', 'capaneo'],
+    expectSource: 'az-direct',
+    flagIf: { incompleteSourceList: true, contradictsArt14: true },
+  },
+  validation: { compliedIf: { anyOf: [{ 'structured.sourcesNamedPerCategory': true }] }, humanReviewIfConfidenceBelow: 0.8 },
+} as Playbook);

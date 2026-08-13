@@ -14,6 +14,8 @@
  */
 
 /** The kinds of self-serve off-switch a company exposes. Mirrors the Prisma `SelfServeRouteType`. */
+import type { ProtectionOutcome } from './ladder.js';
+
 export type SelfServeRouteType =
   | 'ACCOUNT_DELETION'
   | 'MARKETING_PREFS'
@@ -44,15 +46,18 @@ export interface SelfServeRoute {
   readonly successRate?: number;
 }
 
-/** The welfare outcome the user wants — mapped to the route kinds that achieve it. */
-export type DesiredOutcome =
-  | 'ERASURE'
-  | 'MARKETING_STOP'
-  | 'DO_NOT_SELL'
-  | 'ACCOUNT_DELETION'
-  | 'CONSENT_WITHDRAWAL';
+/**
+ * The welfare outcomes a Tier-1 self-serve route can achieve — the subset of `ProtectionOutcome`
+ * (ladder.ts) that has route kinds at all. Written as an `Extract` so a rename in the ladder is a
+ * compile error here rather than a silently empty route list.
+ */
+export type DesiredOutcome = Extract<
+  ProtectionOutcome,
+  'ERASURE' | 'MARKETING_STOP' | 'DO_NOT_SELL' | 'ACCOUNT_DELETION' | 'CONSENT_WITHDRAWAL'
+>;
 
-const OUTCOME_ROUTE_TYPES: Readonly<Record<DesiredOutcome, readonly SelfServeRouteType[]>> = Object.freeze({
+/** Which route kinds achieve which outcome. Exported: the router reads it to build Tier-1 candidates. */
+export const OUTCOME_ROUTE_TYPES: Readonly<Record<DesiredOutcome, readonly SelfServeRouteType[]>> = Object.freeze({
   // An erasure is satisfied by a genuine data-subject-erasure form or by full account deletion.
   ERASURE: Object.freeze(['DSR_ERASURE', 'ACCOUNT_DELETION']),
   MARKETING_STOP: Object.freeze(['MARKETING_PREFS', 'DO_NOT_SELL', 'CONSENT_WITHDRAWAL']),

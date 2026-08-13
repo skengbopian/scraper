@@ -46,11 +46,33 @@ describe('GUARDRAIL — the API surface cannot express a subject', () => {
     });
   }
 
-  it('the create DTO exposes only controllerSlug, requestType and cause', () => {
+  it('the create DTO exposes only controllerSlug and requestType', () => {
     const src = fs.readFileSync(path.join(ROOT, 'apps/api/src/requests/create-request.dto.ts'), 'utf8');
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const fields = [...code.matchAll(/readonly\s+([A-Za-z0-9_]+)\s*[?!]?\s*:/g)].map((m) => m[1]);
-    expect(fields.sort()).toEqual(['cause', 'controllerSlug', 'requestType']);
+    expect(fields.sort()).toEqual(['controllerSlug', 'requestType']);
+  });
+
+  it('the caller cannot name its own `cause` — that is a privilege, not a description (ADR-036)', () => {
+    // PROVENANCE_CHAIN skips the Art. 12(5) re-exercise cooling AND is what makes an Art. 17(1)(d)
+    // erasure lawful at a credit bureau. A body field would let a client assert both with no evidence
+    // that a provenance answer exists, so the create route hardcodes USER_INITIATED and the chained
+    // follow-up route derives the cause from the stored provenance entries.
+    const dto = fs.readFileSync(path.join(ROOT, 'apps/api/src/requests/create-request.dto.ts'), 'utf8');
+    const dtoCode = dto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(dtoCode).not.toMatch(/cause/);
+
+    const ctrl = fs.readFileSync(path.join(ROOT, 'apps/api/src/requests/requests.controller.ts'), 'utf8');
+    const ctrlCode = ctrl.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(ctrlCode).not.toMatch(/dto\.cause/);
+    expect(ctrlCode).toMatch(/cause:\s*'USER_INITIATED'/);
+
+    const svc = fs.readFileSync(path.join(ROOT, 'apps/api/src/requests/requests.service.ts'), 'utf8');
+    // The one place PROVENANCE_CHAIN is set is the confirmation path, and it re-derives the proposal
+    // list from stored evidence before doing so.
+    const provenanceCauses = [...svc.matchAll(/cause:\s*'PROVENANCE_CHAIN'/g)];
+    expect(provenanceCauses).toHaveLength(1);
+    expect(svc).toMatch(/deriveFollowUps/);
   });
 
   it('the controller exposes no route that sends an Art. 77 complaint', () => {

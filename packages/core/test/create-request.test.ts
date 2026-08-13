@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRequest,
+  type ControllerType,
   type CreateRequestInput,
   type CreateRequestPort,
   type MandateSnapshot,
@@ -28,21 +29,27 @@ function route(over: Partial<SelfServeRoute> & Pick<SelfServeRoute, 'companySlug
 
 interface PortOverrides {
   controllerId?: string | null;
+  controllerType?: ControllerType | null;
   routes?: SelfServeRoute[];
   hasPlaybook?: boolean;
   mandates?: MandateSnapshot[];
   siblings?: OpenRequestRef[];
+  exhausted?: string[];
 }
 
 function makePort(over: PortOverrides = {}) {
   const calls = { insert: 0, record: 0, insertRows: [] as Record<string, unknown>[] };
   const port: CreateRequestPort = {
-    findControllerIdBySlug: async () => (over.controllerId === undefined ? 'ctrl_1' : over.controllerId),
+    findControllerBySlug: async () => {
+      const id = over.controllerId === undefined ? 'ctrl_1' : over.controllerId;
+      return id === null ? null : { id, type: over.controllerType ?? null };
+    },
     findSelfServeRoutes: async () => over.routes ?? [],
     hasLegalPlaybook: async () => over.hasPlaybook ?? true,
     findLivemandates: async () => over.mandates ?? [mandate],
     findNonTerminalSiblings: async () => over.siblings ?? [],
     countTerminalPredecessors: async () => 0,
+    findExhaustedMechanisms: async () => over.exhausted ?? [],
     insert: async (row) => { calls.insert++; calls.insertRows.push(row); return { id: String(row.id) }; },
     recordLeverageAction: async () => { calls.record++; },
   };

@@ -10,15 +10,16 @@
  * real user data.
  */
 import { assertNoCredential, type SelfServeRoute } from '../leverage/self-serve.js';
-import type { CreateRequestPort, LeverageActionRow } from './create-request.js';
+import type { ControllerRef, CreateRequestPort, LeverageActionRow } from './create-request.js';
 import type { MandateSnapshot, OpenRequestRef, RequestTypeStatutory } from '../state-machine/guards.js';
 import type { RequestSnapshot, TransitionResult } from '../state-machine/machine.js';
+import type { ProvenanceEntry } from '../provenance/ledger.js';
 
 const TERMINAL: ReadonlySet<string> = new Set(['COMPLIED', 'CLOSED_FAILED', 'WITHDRAWN']);
 const norm = (s: string): string => s.trim().toLowerCase();
 
 export interface InMemorySeed {
-  readonly controllers: readonly { readonly slug: string; readonly id: string }[];
+  readonly controllers: readonly { readonly slug: string; readonly id: string; readonly type?: ControllerRef['type'] }[];
   readonly selfServeRoutes: readonly SelfServeRoute[];
   /** (controllerSlug, requestType) pairs that have a counsel-approved ACTIVE legal playbook. Since every
    *  shipped playbook is active:false, real controllers have none here — a demo may add a fixture pair to
@@ -28,22 +29,51 @@ export interface InMemorySeed {
 }
 
 export class InMemoryRequestsRepository implements CreateRequestPort {
-  private readonly controllers = new Map<string, string>();
+  private readonly controllers = new Map<string, ControllerRef>();
   private readonly routes: readonly SelfServeRoute[];
   private readonly playbooks = new Set<string>();
   private readonly mandates: readonly MandateSnapshot[];
   private readonly requests = new Map<string, RequestSnapshot>();
   private readonly leverage: LeverageActionRow[] = [];
+  private readonly provenance = new Map<string, readonly ProvenanceEntry[]>();
 
   constructor(seed: InMemorySeed) {
-    for (const c of seed.controllers) this.controllers.set(norm(c.slug), c.id);
+    for (const c of seed.controllers) this.controllers.set(norm(c.slug), { id: c.id, type: c.type ?? null });
     this.routes = seed.selfServeRoutes;
     for (const p of seed.activePlaybooks) this.playbooks.add(`${norm(p.controllerSlug)}|${p.requestType}`);
     this.mandates = seed.mandates;
   }
 
-  async findControllerIdBySlug(slug: string): Promise<string | null> {
+  async findControllerBySlug(slug: string): Promise<ControllerRef | null> {
     return this.controllers.get(norm(slug)) ?? null;
+  }
+  async findControllerSlugById(controllerId: string): Promise<string | null> {
+    for (const [slug, ref] of this.controllers) if (ref.id === controllerId) return slug;
+    return null;
+  }
+  async saveProvenanceEntries(args: {
+    readonly requestId: string;
+    readonly userId: string;
+    readonly controllerId: string;
+    readonly entries: readonly ProvenanceEntry[];
+  }): Promise<void> {
+    this.provenance.set(args.requestId, args.entries);
+  }
+  async loadProvenanceEntries(requestId: string): Promise<readonly ProvenanceEntry[]> {
+    return this.provenance.get(requestId) ?? [];
+  }
+  /**
+   * Ledger-derived: a mechanism this user took against this controller whose outcome came back FAILED.
+   * TODO(product): nothing books a FAILED outcome yet (ADR-036), so this is always empty today.
+   */
+  async findExhaustedMechanisms(userId: string, controllerId: string): Promise<readonly string[]> {
+    return [
+      ...new Set(
+        this.leverage
+          .filter((a) => a.userId === userId && a.controllerId === controllerId && a.outcome === 'FAILED')
+          .map((a) => a.mechanism),
+      ),
+    ];
   }
   async findSelfServeRoutes(controllerSlug: string): Promise<readonly SelfServeRoute[]> {
     const t = norm(controllerSlug);

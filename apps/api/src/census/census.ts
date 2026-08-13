@@ -1,4 +1,4 @@
-import type { RequestTypeStatutory } from '@scraper/core';
+import type { ControllerType, RequestTypeStatutory } from '@scraper/core';
 import { DATENANFRAGEN_SNAPSHOT, type DatenanfragenRecord } from './datenanfragen.snapshot.js';
 
 /**
@@ -27,6 +27,26 @@ export interface CensusEntry {
   readonly defaultRequestType: RequestTypeStatutory;
   /** Shown on the start screen's preview list. */
   readonly featured: boolean;
+}
+
+/**
+ * The census's German display label -> the Prisma `ControllerType` the router classifies by.
+ *
+ * It lives here, next to the labels, because two consumers need the same answer: the DB seed writes
+ * `Controller.type`, and the in-memory dev adapter has to report the same classification or the
+ * high-harm bypass (ADR-036) would fire in one mode and not the other. An unmapped label reads as
+ * unclassified rather than OTHER — see `controllerTypeOf`.
+ */
+const TYPE_BY_LABEL: Readonly<Record<CensusEntry['type'], ControllerType>> = {
+  'Datenhändler': 'DATA_ENRICHMENT_BROKER',
+  'Adress-Broker': 'ADDRESS_TRADER',
+  'Auskunftei': 'CREDIT_BUREAU',
+  'KI-Bewerbungstool': 'AI_SCREENER',
+};
+
+/** The ControllerType for a census entry. Never guesses: an unknown label yields null. */
+export function controllerTypeOf(entry: Pick<CensusEntry, 'type'>): ControllerType | null {
+  return TYPE_BY_LABEL[entry.type] ?? null;
 }
 
 export const CENSUS: readonly CensusEntry[] = [

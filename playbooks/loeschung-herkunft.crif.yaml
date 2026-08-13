@@ -1,0 +1,62 @@
+# Art. 17(1)(d) PARTIAL erasure at CRIF GmbH, scoped to the data categories whose source CRIF ITSELF
+# named in its Art. 15(1)(g) answer (provenance.crif, ported in the same tranche — without it this
+# playbook would be unreachable, since its scope can only be derived from a provenance answer).
+#
+# NOT a request to delete a credit file (docs/07). `scopeSource: PROVENANCE_ANSWER` makes the engine
+# refuse to render without the derived scope, so the bounded demand cannot silently become unbounded.
+# Reachable only via cause PROVENANCE_CHAIN.
+#
+# Lineage: the pre-audit line's loeschung-herkunft.crif v2 (ADR-030 wave 4). Version restarts at 1.
+#
+# TODO(counsel): confirm the Art. 17(1)(d) framing for a partial erasure at a bureau, and that
+# chaining it after an access request is not "excessive" under Art. 12 Abs. 5. Tracked as OQ-23.
+slug: loeschung-herkunft.crif
+kind: RIGHTS_REQUEST
+controller: crif
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 lit. d"
+scopeSource: PROVENANCE_ANSWER        # categories + source names come from CRIF's own answer
+channel:
+  primary: postal
+  fallback: email
+  registered:
+    primary: true                     # escalates on silence, so the send must be provable (CLAUDE.md §6)
+    fallback: false                   # email cannot be registered, and never starts the clock
+recipient:
+  # Same street address as provenance.crif; see OQ-25 for the Bavaria/LfDI-BW venue tension.
+  postal: "CRIF GmbH, Datenschutzbeauftragter, Leopoldstraße 244, 80807 München"   # TODO(counsel): verify
+  email: "datenschutz.de@crif.com"                                                 # TODO(counsel): verify
+template: art17-loeschung-herkunft.de
+identityProof:
+  required: true                      # the bureau matches the demand against the file it holds
+  accepts: [redacted_id]
+subjectFields:
+  - legalName
+  - dateOfBirth
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - structured.erased: true
+      - responseContains: ["wurden gelöscht", "haben wir gelöscht", "Löschung wurde durchgeführt"]
+  # Art. 18 restriction is the letter's own HILFSWEISE ask — granting it is a partial answer, not a
+  # refusal, and recording it as one corrupts the per-controller statistics (ADR-014).
+  incompleteIf:
+    anyOf:
+      - responseContains: ["Einschränkung der Verarbeitung", "teilweise gelöscht", "eingeschränkt"]
+      - structured.partiallyErased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "Aufbewahrungspflicht", "nicht möglich"]
+  humanReviewIfConfidenceBelow: 0.8   # a bureau letter about a credit file → higher bar
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+seatDpa: LFDI_BW                      # same venue as infoscore — escalations pool at one authority
+notes: >
+  Do NOT widen the demand. The scope is bounded by the categories CRIF itself attributed to a
+  watchlisted broker. CRIF is under BayLDA scrutiny (docs/07); a refusal that will not state the legal
+  basis per category is Art. 77 material, drafted for a human and never auto-sent.

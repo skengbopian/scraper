@@ -33,8 +33,30 @@ export class RequestsController {
       identity: req.identity,
       controllerSlug: dto.controllerSlug,
       requestType: dto.requestType,
-      cause: dto.cause ?? 'USER_INITIATED',
+      // Always USER_INITIATED here. A chained follow-up is created through the follow-up route below,
+      // where the cause is established from stored evidence — see create-request.dto.ts.
+      cause: 'USER_INITIATED',
     });
+  }
+
+  /**
+   * The follow-ups a provenance answer has opened up (docs/09 — the Provenance flagship's last link).
+   *
+   * Proposals only: each carries `requiresHumanConfirmation: true`, and listing them creates nothing.
+   */
+  @Get(':id/follow-ups')
+  async followUps(@Req() req: AuthedRequest, @Param('id') id: string) {
+    return this.service.listFollowUps(req.userId, id);
+  }
+
+  /**
+   * Confirm one — the human step between a broker named in parser output and an outbound legal
+   * request (CLAUDE.md §2). The proposal is re-derived from the stored provenance entries before
+   * anything is created, so a caller cannot invent a chain that the evidence does not support.
+   */
+  @Post(':id/follow-ups/:followUpId/confirm')
+  async confirmFollowUp(@Req() req: AuthedRequest, @Param('id') id: string, @Param('followUpId') followUpId: string) {
+    return this.service.confirmFollowUp(req.userId, req.identity, id, followUpId);
   }
 
   /** The user's Vorgänge — what the pipeline screen lists (docs/09 §3). */

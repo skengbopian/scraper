@@ -108,6 +108,24 @@ const cases = [
     validation({ compliedIf: { responseContains: ['x'] } }), 'MUST REJECT'],
   ['recipient.webForm is a plain http:// URL — credentials/identity over cleartext',
     { ...base, channel: { primary: 'web_form', fallback: 'postal', registered: { fallback: true } }, recipient: { ...base.recipient, webForm: 'http://example.de/form' } }, 'MUST REJECT'],
+
+  // --- wave 4: the Art. 17(1)(d) partial-erasure scope, and the placeholder address it exposed ---
+  ['the template states a bounded erasure scope but no scopeSource supplies it — {{#each categories}} over an unsupplied list renders NOTHING, so the letter announces "ausschließlich der folgenden Datenkategorien" and then lists none: an unbounded erasure demand at a credit bureau, arriving silently',
+    { ...base,
+      requestType: 'ERASURE_ART17',
+      template: 'art17-loeschung-herkunft.de',
+      subjectFields: ['legalName', 'dateOfBirth', 'addresses'],
+      identityProof: { required: true, accepts: ['redacted_id'] },
+      channel: { primary: 'postal', fallback: 'email', registered: { primary: true, fallback: false } },
+      recipient: { postal: 'SCHUFA Holding AG, Datenschutz, Kormoranweg 5, 65201 Wiesbaden', email: 'datenschutz@example.de' },
+    }, 'MUST REJECT'],
+  ['scopeSource on a request type that never establishes a scope — an objection letter bounded by categories no Art. 21 answer produces',
+    { ...base, scopeSource: 'PROVENANCE_ANSWER' }, 'MUST REJECT'],
+  ['a REGISTERED postal channel whose address is a note-to-self ("TODO(counsel): verify") — over 10 characters and free of __PARAM__, so the schema accepts it, while a registered send is the only thing that starts the Art. 12(3) clock',
+    { ...base,
+      channel: { primary: 'email', fallback: 'postal', registered: { primary: false, fallback: true } },
+      recipient: { ...base.recipient, postal: 'TODO(counsel): verify' },
+    }, 'MUST REJECT'],
 ];
 
 // ---------------------------------------------------------------------------

@@ -53,6 +53,14 @@ export interface Playbook {
     readonly expectSource?: string;
     readonly flagIf?: { readonly incompleteSourceList?: boolean; readonly contradictsArt14?: boolean };
   };
+  /**
+   * Declares that this playbook's letter states a scope it cannot derive from the identity — the
+   * category list and source of an Art. 17(1)(d) partial erasure, which come from the controller's
+   * OWN prior Art. 15(1)(g) answer. The engine then refuses to render without a `PartialErasureScope`
+   * (provenance/erasure-scope.ts), because an unsupplied `{{#each categories}}` renders empty and
+   * turns a bounded demand into an unbounded one, silently.
+   */
+  readonly scopeSource?: 'PROVENANCE_ANSWER';
   readonly identityProof?: { readonly required: boolean; readonly accepts: readonly IdentityProofKind[] };
   readonly subjectFields: readonly SubjectField[];
   readonly deadlineDays?: number;

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, InMemoryRequestsRepository, SOURCE_HARDENING_ROUTES } from '@scraper/core';
-import { CENSUS } from '../census/census.js';
+import { CENSUS, controllerTypeOf } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_MANDATE, devFixturesEnabled } from '../common/dev-fixtures.js';
 import { IdentityVerifiedGuard } from '../common/identity-verified.guard.js';
 import { isPrismaMode } from '../db/db.module.js';
@@ -36,7 +36,9 @@ function schedulerEnabled(): boolean {
 function devRepository(): RequestsRepository {
   const fixtures = devFixturesEnabled();
   return new InMemoryRequestsRepository({
-    controllers: CENSUS.map((c) => ({ slug: c.slug, id: c.id })),
+    // `type` matters: without it the high-harm bypass (ADR-036) would be a no-op in memory mode and
+    // live in DB mode, i.e. the alpha would route a bureau differently from production.
+    controllers: CENSUS.map((c) => ({ slug: c.slug, id: c.id, type: controllerTypeOf(c) })),
     selfServeRoutes: [...ENRICHMENT_BROKER_ROUTES, ...SOURCE_HARDENING_ROUTES],
     activePlaybooks: fixtures ? [...DEV_DEMO_PLAYBOOK_PAIRS] : [],
     mandates: fixtures ? [DEV_MANDATE] : [],

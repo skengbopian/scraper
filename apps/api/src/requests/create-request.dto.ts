@@ -16,6 +16,15 @@ export class CreateRightsRequestDto {
   /** Which right to exercise. Constrained to the four statutory types (docs/03 §ActionType). */
   readonly requestType!: 'OBJECTION_ART21' | 'ACCESS_ART15' | 'ACCESS_ART15_SOURCE' | 'ERASURE_ART17';
 
-  /** Set when this follows from a provenance answer, so Art. 12(5) cooling does not block it. */
-  readonly cause?: 'USER_INITIATED' | 'PROVENANCE_CHAIN' | 'FRAUD_REPAIR';
+  // There is deliberately NO `cause` field.
+  //
+  // `cause` is a PRIVILEGE, not a description. `PROVENANCE_CHAIN` skips the Art. 12(5) re-exercise
+  // cooling (state-machine/guards.ts `mayOpenNewCycle`) and, since ADR-036, is the only thing that
+  // makes an Art. 17(1)(d) erasure lawful at a credit bureau — a user-initiated erasure there is
+  // refused outright (docs/07). A client that could name its own cause could assert both without any
+  // evidence that a provenance answer exists.
+  //
+  // So the cause is DERIVED, never declared: this endpoint always creates USER_INITIATED, and the
+  // chained follow-up is created by POST /requests/:id/follow-ups/:followUpId/confirm, which
+  // re-derives the available proposals from the stored provenance entries first.
 }

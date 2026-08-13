@@ -1,1 +1,0 @@
-"use strict";exports.id=884,exports.ids=[884],exports.modules={884:(e,s,t)=>{t.d(s,{Ls:()=>n,dV:()=>u,jF:()=>i,sessionToken:()=>r});var o=t(3865);let n="session";function r(){return o.cookies().get(n)?.value}function i(){return void 0!==r()}function u(e){return/^\/(?![/\\])[A-Za-z0-9\-_/]*$/.test(e)}}};

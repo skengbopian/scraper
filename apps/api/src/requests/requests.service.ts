@@ -1,14 +1,20 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   apply,
+  buildEntries,
   createRequest,
+  proposeFollowUps,
   runGuards,
   type CreateRequestPort,
+  type FollowUpProposal,
+  type ProvenanceEntry,
+  type ProvenanceEntryInput,
   type RequestSnapshot,
   type RequestTypeStatutory,
   type TransitionResult,
   type VerifiedIdentity,
 } from '@scraper/core';
+import { DEV_PROVENANCE_ANSWER, DEV_PROVENANCE_PLAYBOOK, devFixturesEnabled } from '../common/dev-fixtures.js';
 import { createHash } from 'node:crypto';
 import type { WorkflowEngine } from '@scraper/core';
 
@@ -38,6 +44,22 @@ export interface RequestsRepository extends CreateRequestPort {
   load(id: string): Promise<(RequestSnapshot & { userId: string }) | null>;
   applyTransition(id: string, result: unknown): Promise<void>;
   listByUser(userId: string): Promise<readonly (RequestSnapshot & { userId: string })[]>;
+  /** Persist the per-category provenance rows a controller's Art. 15(1)(g) answer yielded. */
+  saveProvenanceEntries(args: {
+    readonly requestId: string;
+    readonly userId: string;
+    readonly controllerId: string;
+    readonly entries: readonly ProvenanceEntry[];
+  }): Promise<void>;
+  /** Read them back. Empty when the request has no provenance ledger. */
+  loadProvenanceEntries(requestId: string): Promise<readonly ProvenanceEntry[]>;
+  /** Resolve a controller id back to its slug — a proposal names a controller the user can act on. */
+  findControllerSlugById(controllerId: string): Promise<string | null>;
+}
+
+/** One follow-up the user may confirm. `id` is stable so a confirmation names a specific proposal. */
+export interface FollowUpView extends FollowUpProposal {
+  readonly id: string;
 }
 
 /** The dev-only simulate actions (alpha: no real send ever happens — these drive the REAL machine). */
@@ -199,6 +221,13 @@ export class RequestsService {
           humanReviewIfConfidenceBelow: 0.75,
         };
         await step(parsed, action.outcome === 'unreadable' ? 'lowConfidence|ambiguous' : `validated:${action.outcome}`);
+        // A provenance answer carries per-category source rows. Persisting them is what turns the
+        // reply into the evidence a follow-up can later be DERIVED from, rather than asserted by a
+        // caller — see confirmFollowUp, where the chain's cause is established from these rows.
+        if (r.requestType === 'ACCESS_ART15_SOURCE' && action.outcome !== 'unreadable' && devFixturesEnabled()) {
+          const entries = buildEntries(DEV_PROVENANCE_ANSWER as readonly ProvenanceEntryInput[], DEV_PROVENANCE_PLAYBOOK);
+          await this.repo.saveProvenanceEntries({ requestId: id, userId, controllerId: r.controllerId, entries });
+        }
         break;
       }
       case 'escalate': {
@@ -210,6 +239,66 @@ export class RequestsService {
     }
     const after = await this.mustLoad(id);
     return { ...this.view(after), simulated: true as const };
+  }
+
+  /**
+   * The follow-ups a provenance answer has made available (docs/09).
+   *
+   * PROPOSALS ONLY. Every one carries `requiresHumanConfirmation: true` and nothing here creates or
+   * sends anything — a broker named in parser output may not spawn an outbound legal request
+   * (CLAUDE.md §2). The list is DERIVED from the stored entries on every call rather than persisted,
+   * so it cannot drift from the evidence it claims to rest on.
+   */
+  async listFollowUps(userId: string, id: string): Promise<{ requestId: string; followUps: FollowUpView[] }> {
+    const r = await this.repo.load(id);
+    if (!r || r.userId !== userId) throw new NotFoundException();
+    return { requestId: id, followUps: await this.deriveFollowUps(r) };
+  }
+
+  /**
+   * Confirm one follow-up — the human step the chain is gated on.
+   *
+   * The important thing here is what the CALLER does not get to say. `cause: PROVENANCE_CHAIN` unlocks
+   * two things: it skips the Art. 12(5) re-exercise cooling (guards.ts `mayOpenNewCycle`) and, since
+   * ADR-036, it is what makes an Art. 17(1)(d) erasure lawful at a credit bureau at all — a
+   * user-initiated erasure there is refused (docs/07). So the cause is DERIVED from stored evidence:
+   * the source request must be this user's, must be a provenance request, and must have produced an
+   * entry naming a watchlisted broker. A body field could assert none of that.
+   */
+  async confirmFollowUp(userId: string, identity: VerifiedIdentity, id: string, followUpId: string) {
+    const r = await this.repo.load(id);
+    if (!r || r.userId !== userId) throw new NotFoundException();
+    const followUps = await this.deriveFollowUps(r);
+    const chosen = followUps.find((f) => f.id === followUpId);
+    if (!chosen) {
+      throw new BadRequestException({
+        error: 'UNKNOWN_FOLLOW_UP',
+        message: 'no such follow-up for this request — the proposals are derived from the stored answer',
+        nextAction: 'VIEW_FOLLOW_UPS',
+      });
+    }
+    return this.create({
+      userId,
+      identity,
+      controllerSlug: chosen.targetControllerSlug,
+      requestType: chosen.requestType,
+      // Established above from the ledger, never taken from the request body.
+      cause: 'PROVENANCE_CHAIN',
+    });
+  }
+
+  private async deriveFollowUps(r: RequestSnapshot & { userId: string }): Promise<FollowUpView[]> {
+    if (r.requestType !== 'ACCESS_ART15_SOURCE') return [];
+    const entries = await this.repo.loadProvenanceEntries(r.id);
+    if (!entries.some((e) => e.isBroker)) return [];
+    // proposeFollowUps names the bureau by SLUG (it is what a follow-up request is addressed to); the
+    // snapshot carries the internal id, so resolve it rather than leaking an id into a proposal.
+    const bureauSlug = await this.repo.findControllerSlugById(r.controllerId);
+    if (!bureauSlug) return [];
+    return proposeFollowUps(entries, bureauSlug).map((p, i) => ({
+      ...p,
+      id: `${p.requestType}:${p.targetControllerSlug}:${i}`,
+    }));
   }
 
   /** Durable Frist timer (docs/10 P0: deadline expiry fires from timers, not demo buttons). */

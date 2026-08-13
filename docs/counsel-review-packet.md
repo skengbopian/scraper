@@ -1,14 +1,15 @@
 # Counsel review packet — everything that blocks a real send
 
-**Snapshot:** repo state at commit `d0941af`, compiled 2026-08-12. File/line references are to this
-snapshot; re-run `grep -rn "TODO(counsel)"` after any edit.
+**Snapshot:** repo state at commit `d0941af`, compiled 2026-08-12; **amended 2026-08-13 for port wave 4**
+(§8, plus the new rows in §3/§4 and OQ-23…OQ-26). File/line references are to this snapshot; re-run
+`grep -rn "TODO(counsel)"` after any edit.
 
 This packet is the single organised handoff for German data-protection **and RDG** counsel. It compiles —
 without resolving — every open legal question, draft template, unverified endpoint, and counsel-gated
 activation decision currently recorded in the repo, so that counsel can clear, item by item, everything
 that stands between the built engine and the first real outbound request. It is a compilation with
 citations, not a legal analysis: nothing in it takes a position, and **nothing it lists is enabled until
-signed** — every playbook ships `active: false` (verified against `playbooks/.shipped.json`), all seven
+signed** — every playbook ships `active: false` (verified against `playbooks/.shipped.json`), all eight
 templates are marked DRAFT in their own headers, and flipping any playbook to `active: true` is a
 deliberate human act recorded against that playbook's `version` (`ARCHITECTURE-DECISIONS.md` §4,
 `docs/04-playbook-spec.md`). How to use it: work through §§1–5 in order, mark each row's sign-off box with
@@ -20,11 +21,12 @@ Sections:
 
 1. [`TODO(counsel)` inventory](#1-todocounsel-inventory) — every marker in the repo, by file:line.
 2. [Open questions OQ-7 … OQ-22](#2-open-questions-oq-7--oq-22) — the decisions no coding agent may take.
-3. [Template sign-off matrix](#3-template-sign-off-matrix) — 7 templates, their playbook bindings, statutory basis.
-4. [Playbook activation checklist](#4-playbook-activation-checklist) — 15 playbooks, per-slug verification before `active: true`.
+3. [Template sign-off matrix](#3-template-sign-off-matrix) — 8 templates, their playbook bindings, statutory basis.
+4. [Playbook activation checklist](#4-playbook-activation-checklist) — 19 playbooks, per-slug verification before `active: true`.
 5. [CoC rules-engine sign-off](#5-coc-rules-engine-sign-off-s1s7--p15) — S1–S7 levers, rule-set versioning, § 37a BDSG re-audit.
 6. [Governing frame](#6-governing-frame-docs05-legal-guardrailsmd) — `docs/05-legal-guardrails.md`, cited not restated.
 7. [Fastest path to the first real send](#7-fastest-path-to-the-first-real-send) — ordered, from `ARCHITECTURE-DECISIONS.md` §4.
+8. [Port wave 4 — the leverage-ladder tranche](#8-port-wave-4--the-leverage-ladder-tranche) — the four playbooks ported from the pre-audit line, and the 12 that were **not**.
 
 ---
 
@@ -144,7 +146,7 @@ counsel approval before any use (`ARCHITECTURE-DECISIONS.md` §4 item 1; `docs/0
 carry no version field of their own; per `docs/04` ("legal wording lives only in `templates/`,
 counsel-reviewed") sign-off is recorded against the **binding playbook's `version`** — all bindings are
 at v1 per `playbooks/.shipped.json`. Bindings verified by grep over `playbooks/*.yaml` `template:` keys;
-all 15 playbooks and all 7 templates are covered, no orphans in either direction.
+all 19 playbooks and all 8 templates are covered, no orphans in either direction.
 
 | Template | Bound playbooks | Statutory basis (from the file's own content) | Sign-off status | Version | Sign-off | Datum | Notizen |
 |---|---|---|---|---|---|---|---|
@@ -155,13 +157,14 @@ all 15 playbooks and all 7 templates are covered, no orphans in either direction
 | `templates/art15-17-screening.de.md` | `loeschung.hireright` | Art. 15 DS-GVO Auskunft (inkl. lit. g) + Art. 17 Abs. 1 lit. d Löschung unrechtmäßig erhobener Screening-Daten; Grenzen: Art. 10 DS-GVO + §§ 32, 51, 53 BZRG, Art. 9, private Social-Media, Schufa-in-hiring; Controller/Processor per case (`:16`) | PENDING | DRAFT / unversioned (v1) | [ ] | | |
 | `templates/art17-datenhaendler.de.md` | `loeschung.zoominfo`, `loeschung.apollo`, `loeschung.lusha`, `loeschung.cognism`, `loeschung.peopledatalabs`, `loeschung.rocketreach`, `loeschung.generic-datenhaendler` (stencil) | Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1 DSGVO; Unrechtmäßigkeit geführt über den Art.-14-Transparenzverstoß, Art. 17(1)(d) (KASPR-Argument sekundär/hedged) + Art. 21(1)→17(1)(c)-Brücke; identifies by `legalName` only (minimisation, OQ-19); open: KASPR citation, English variant (`:31`, `:33`) | PENDING | DRAFT / unversioned (v1 ×7) | [ ] | | |
 | `templates/art17-loeschung.de.md` | `loeschung.generic-adresshaendler` (stencil) | Art. 17 Abs. 1 DSGVO Löschung, aufbauend auf erklärtem Art. 21 Abs. 2 Widerspruch; NICHT für Auskunfteien (`:20`); optional objection-date variant (`:15`) | PENDING | DRAFT / unversioned (v1) | [ ] | | |
+| `templates/art17-loeschung-herkunft.de.md` | `loeschung-herkunft.schufa`, `loeschung-herkunft.infoscore`, `loeschung-herkunft.crif` | **Art. 17 Abs. 1 lit. d DS-GVO — TEILlöschung bei einer Auskunftei**, begrenzt auf die Kategorien, deren Quelle die Auskunftei in ihrer eigenen Art.-15-Abs.-1-lit.-g-Antwort benannt hat; ausdrücklicher Ausschluss des Gesamtbestands und der Vertragsdaten; flankierend Art. 19 (Empfängerunterrichtung) und hilfsweise Art. 18 Abs. 1 lit. b/d (Einschränkung); Begründung: fehlende Rechtsgrundlage nach Art. 6 Abs. 1 bei Erhebung über einen Adress-/Datenhändler | PENDING | DRAFT / unversioned (v1 ×3) | [ ] | | |
 
 ---
 
 ## 4. Playbook activation checklist
 
-Source: `ARCHITECTURE-DECISIONS.md` §4 (the human checklist) + `playbooks/.shipped.json` (all 15 at
-`version: 1`, hashes sealed) + each playbook's own header. All 15 are `active: false`; the two stencils
+Source: `ARCHITECTURE-DECISIONS.md` §4 (the human checklist) + `playbooks/.shipped.json` (all 19 at
+`version: 1`, hashes sealed) + each playbook's own header. All 19 are `active: false`; the two stencils
 (`parameterised: true`) may **never** be `active: true` (ADR-018) — they are cloned per controller and the
 clone enters this list. Common preconditions for every flip, before the per-row items:
 
@@ -187,6 +190,10 @@ clone enters this list. Common preconditions for every flip, before the per-row 
 | `loeschung.rocketreach` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20); Art.-27 rep VeraSafe IE | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`) | [ ] | | |
 | `loeschung.hireright` | 1 | ERASURE_ART17 | email → web_form | not declared; refusal-only escalation (`onDeadlineExpiry: NONE`) | false | OQ-17 (per file header); controller-vs-processor per case (template `:16`); endpoints (`:18–19`); §7.4 screening-limits framing | [ ] | | |
 | `explanation.hirevue` | 1 | ACCESS_ART15 | email only | not declared; refusal-only escalation (US vendor) | false | **OQ-22 (blocking per ADR §3)**; OQ-17 (per file header); DSAR intake / EU representative (`:17`); controller = employer vs vendor per case | [ ] | | |
+| `provenance.crif` | 1 | ACCESS_ART15_SOURCE | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-25 (blocking)**: the shipped postal address is in München (BayLDA), while `docs/07:22` and `CLAUDE.md` put CRIF's venue at LfDI BW — confirm the registered seat and correct one of the two; endpoints (`:32–33`); OQ-10 | [ ] | | |
+| `loeschung-herkunft.schufa` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: HBDI` | false | **OQ-23 (blocking)**: the Art. 17(1)(d) partial-erasure framing at a bureau + Art. 12(5) chaining; **OQ-24**: the shipped address is the Kormoranweg street address, not the Postfach used by `datenkopie.schufa`/`provenance.schufa` — confirm which is correct for an Einwurf-Einschreiben; OQ-10 | [ ] | | |
+| `loeschung-herkunft.infoscore` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-23**; endpoints (`:41–42`); OQ-10; the chain is reachable only after `provenance.infoscore` — confirm that dependency is intended and lawful | [ ] | | |
+| `loeschung-herkunft.crif` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-23**; **OQ-25** (same venue/address tension as `provenance.crif`); endpoints (`:29–30`); OQ-10 | [ ] | | |
 | `explanation.retorio` | 1 | ACCESS_ART15 | email only (upgrade path in header) | to be set: `seatDpa: BAYLDA` on activation (header `:4–7`) | false | **OQ-22**; OQ-17; pre-activation bundle `:4`: verify Munich postal address, add registered postal fallback, switch `onDeadlineExpiry: DRAFT_ART77`, note Art. 9 (biometric) exposure; DSAR intake (`:18`) | [ ] | | |
 
 The remaining ADR §4 items that are not per-playbook (provider contracts, DPIA, EU residency
@@ -290,3 +297,90 @@ escalation — which one goes first is a product+counsel choice, not resolved he
 | 7. EU hosting + inference confirmed in writing | [ ] | | |
 | 8. DPIA signed, DPO appointed | [ ] | | |
 | 9. First playbook flipped, sign-off recorded against version | [ ] | | |
+
+---
+
+## 8. Port wave 4 — the leverage-ladder tranche
+
+Source: `docs/port-plan-from-A.md` (wave 4) + `ARCHITECTURE-DECISIONS.md` ADR-036. This is the first
+section of the packet that concerns the port from the pre-audit line, so it says what it is: the
+pre-audit line holds 45 playbooks written against a state machine in which an **email** starts the
+statutory clock. None of them was carried over as written. Four were refitted (§3/§4 above); the rest
+are listed here, with the ones that need a decision separated from the ones that do not.
+
+### 8a. What was ported, and the one legal capability it adds
+
+The chain `provenance.* → the bureau names a Datenlieferant → Art. 17(1)(d) partial erasure at that
+bureau` now exists end to end. `templates/art17-loeschung-herkunft.de.md` is the only new legal wording
+in this wave and it is the whole of the legal review here — the three playbooks bound to it differ only
+in addressee and venue.
+
+Two properties of that letter counsel should test deliberately, because both are enforced in code and
+would be expensive to discover are wrong later:
+
+1. **The demand is bounded by the controller's own answer.** The category list and the named source are
+   not free text: they are derived from the stored Art. 15(1)(g) reply, and the source name is
+   re-derived from the playbook's counsel-authored `brokerWatchlist` rather than lifted from the
+   controller's letter. The engine **refuses to render** the letter if that scope is absent
+   (`packages/core/src/provenance/erasure-scope.ts`), because an unsupplied list rendered as nothing and
+   turned "Löschung ausschließlich der folgenden Datenkategorien" into an unbounded erasure demand at a
+   credit bureau — the instrument `docs/07` forbids — with no error anywhere.
+2. **It is unreachable as a user-initiated request.** A plain `ERASURE_ART17` against a credit bureau is
+   refused by the router (`INSTRUMENT_NOT_AVAILABLE_FOR_CONTROLLER`). The only path to this letter is a
+   human confirming a follow-up proposal derived from a stored provenance answer.
+
+| # | Question | Owner | Blocks | Sign-off | Datum | Notizen |
+|---|---|---|---|---|---|---|
+| OQ-23 | Is Art. 17 Abs. 1 lit. d the right instrument for a **partial** erasure at an Auskunftei, scoped to the categories the Auskunftei itself attributed to a Datenlieferant? And does chaining it directly after an Art. 15 request risk being deemed "exzessiv" under Art. 12 Abs. 5? | **counsel** | All three `loeschung-herkunft.*` playbooks | [ ] | | |
+| OQ-24 | Is an **Einwurf-Einschreiben deliverable to a Postfach**? `datenkopie.schufa` and `provenance.schufa` declare a registered postal channel against `Postfach 10 34 41, 50474 Köln`; the wave-4 playbook uses the Wiesbaden street address instead. One controller now has two postal endpoints in the corpus. Which is correct, and does the answer invalidate the registered channel on the two sealed playbooks? | **counsel + ops** | The provable clock on 3 SCHUFA playbooks | [ ] | | |
+| OQ-25 | **CRIF's Art. 77 venue.** `docs/07:22` and `CLAUDE.md` (pivot focus) both place CRIF at LfDI Baden-Württemberg, and the stated benefit of targeting CRIF is that its escalations pool with infoscore's at one authority. The verified postal address is `Leopoldstraße 244, 80807 München` — Bavaria, i.e. BayLDA. Confirm the registered seat; if it is Munich, `seatDpa: LFDI_BW` on both CRIF playbooks is a misroute and the pooling rationale does not hold. | **counsel** | `provenance.crif`, `loeschung-herkunft.crif` | [ ] | | |
+| OQ-26 | The deferred silence-escalation set — see §8b. | **counsel** | 12 pre-audit playbooks, not ported | [ ] | | |
+
+### 8b. OQ-26 — the playbooks that were deliberately NOT converted
+
+**The question, in one sentence:** for a controller that offers only a web form and no German postal
+address, should a request that goes unanswered be escalated to an Art. 77 complaint, given that we can
+prove we *sent* it but not that they *received* it?
+
+**Why this is a decision and not a conversion.** `CLAUDE.md` §6 and `docs/05` §6 fix the rule that only a
+provable send — a registered postal delivery anchored with a qualified timestamp — starts the Art. 12(3)
+clock, and that **no path into an escalation may rest on a provisional clock**. All 45 pre-audit
+playbooks declare `escalation.onDeadlineExpiry: DRAFT_ART77`. For 12 of them there is no postal channel
+at all, so no provable send is reachable and the asserted deadline was never legally established.
+Converting them would have been a one-character change to the escalation field and a change of legal
+posture; they are listed instead.
+
+Note what is NOT in question: escalating on a **refusal** or an **incomplete answer** needs no provable
+send, because the controller's own reply proves receipt. That path stays open for all 12 (this line
+already uses it for the US/UK brokers under ADR-024, `onDeadlineExpiry: NONE` + `onRefusal: DRAFT_ART77`).
+The only thing deferred is escalation on **silence**.
+
+| Controller | Pre-audit playbooks affected | Channel available | Why no provable send |
+|---|---|---|---|
+| `11880` | `datenkopie`, `loeschung`, `werbewiderspruch` | web form only | no postal address in the census or the playbook |
+| `dasoertliche` | `datenkopie`, `loeschung`, `werbewiderspruch` | web form only | as above |
+| `dastelefonbuch` | `datenkopie`, `loeschung`, `werbewiderspruch` | web form only | as above |
+| `google-eu-delisting` | `datenkopie`, `loeschung`, `werbewiderspruch` | web form only | as above |
+
+Three sub-questions, each of which changes what the product should build:
+
+1. **Is `onDeadlineExpiry: NONE` the right posture** for a controller reachable only by web form — i.e.
+   the user is told plainly that silence cannot be escalated, only a refusal can?
+2. **Or is a standalone complaint the right answer** — an Art. 77 complaint founded on the transparency
+   or lawfulness breach itself, rather than on the non-answer to a letter whose receipt we cannot prove?
+   That is a different instrument with a different evidence pack, and it is not built.
+3. **Or is a postal address obtainable** for these controllers (Impressum / Handelsregister), making
+   them ordinary postal-fallback playbooks? If so, this is a research task, not a legal one.
+
+A fourth consideration is product, not legal, and is recorded so counsel is not asked to rule on it:
+`docs/08` treats a directory-listing suppression as a **Tier-1 self-serve** action, and `docs/07` has
+already retargeted away from the directory framing. On that reading these 12 belong in the
+`SelfServeRoute` directory rather than in `playbooks/` at all, and OQ-26 would be moot for them. The
+question is nonetheless real for any future web-form-only controller that is not a directory.
+
+| Step | Done | Datum | Notizen |
+|---|---|---|---|
+| OQ-23 answered (partial-erasure framing) | [ ] | | |
+| OQ-24 answered (Einwurf to a Postfach; the SCHUFA address) | [ ] | | |
+| OQ-25 answered (CRIF seat and venue) | [ ] | | |
+| OQ-26 answered (silence posture without a provable channel) | [ ] | | |

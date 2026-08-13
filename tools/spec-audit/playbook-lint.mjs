@@ -52,6 +52,22 @@ const SUBJECT_TO_TPLVAR = {
 };
 const IDENTITY_VARS = new Set(['legalName', 'dateOfBirth', 'primaryAddress', 'additionalAddresses']);
 
+/**
+ * Variables the engine fills from a REQUEST-SCOPED fact rather than from the identity — today only the
+ * Art. 17(1)(d) partial-erasure scope, supplied by `deriveErasureScope`. `subjectFields` can never bind
+ * them (they are not identity fields), so the binding declaration is `scopeSource`.
+ */
+const SCOPE_VARS = { PROVENANCE_ANSWER: ['categories', 'sourceNames'] };
+const ALL_SCOPE_VARS = new Set(Object.values(SCOPE_VARS).flat());
+
+/**
+ * A postal recipient that is a note-to-self rather than an address. The schema cannot catch these: they
+ * are ordinary strings over 10 characters with no `__PARAM__` in them, so `"TODO(counsel): verify"`
+ * validates cleanly — and on a playbook whose registered postal channel is what starts the Art. 12(3)
+ * clock, that is a provable channel that does not exist.
+ */
+const ADDRESS_PLACEHOLDER = /TODO|TBD|FIXME|XXX|\bverify\b|\bunknown\b|\bunbekannt\b|<[^>]*>/i;
+
 /** Flags the ENGINE derives at render time — never declarable in a playbook (audit C6). */
 export const ENGINE_DERIVED_FLAGS = {
   identityProofEnclosed:
@@ -67,7 +83,12 @@ function readTemplate(name) {
     (m[1] === '#' || m[1] === '/' ? blocks : vars).add(m[2]);
   }
   const ifFlags = [...stripped.matchAll(/\{\{#if\s+([A-Za-z0-9_]+)\s*\}\}/g)].map((m) => m[1]);
-  return { vars: [...vars], blocks: [...blocks], ifFlags };
+  // The loop above stops at the first whitespace, so `{{#each additionalAddresses}}` registers as the
+  // block "each" and the LIST NAME is lost — which quietly made every check below blind to anything
+  // rendered only through an #each. That is the one construct `render()` treats as empty rather than
+  // an error when unbound, so it is precisely where a silently under-filled letter comes from.
+  const eachLists = [...stripped.matchAll(/\{\{#each\s+([A-Za-z0-9_]+)\s*\}\}/g)].map((m) => m[1]);
+  return { vars: [...vars], blocks: [...blocks], eachLists, ifFlags };
 }
 
 /**
@@ -118,7 +139,7 @@ export function lintPlaybook(pb, opts = {}) {
       E('TPL-MISSING', `references template "${pb.template}" but templates/${pb.template}.md does not exist`);
     } else {
       const provided = new Set((pb.subjectFields || []).flatMap((s) => SUBJECT_TO_TPLVAR[s] || []));
-      for (const v of new Set([...t.vars, ...t.blocks].filter((v) => IDENTITY_VARS.has(v)))) {
+      for (const v of new Set([...t.vars, ...t.blocks, ...t.eachLists].filter((v) => IDENTITY_VARS.has(v)))) {
         if (!provided.has(v)) {
           E('SUBJECT-FIELD',
             `template "${pb.template}" renders {{${v}}} but subjectFields ${JSON.stringify(pb.subjectFields)} does not supply it — the letter would go out with an empty field`);
@@ -149,6 +170,42 @@ export function lintPlaybook(pb, opts = {}) {
   }
   if (typeof pb.channel?.registered === 'boolean') {
     E('CHANNEL-REGISTERED', 'channel.registered is a bare boolean — it must be per-channel ({primary, fallback}), since Einwurf-Einschreiben is postal-only (audit H2)');
+  }
+
+  // --- 4b. A REGISTERED postal channel is the only thing that starts the Art. 12(3) clock, so its
+  //         address has to be an address. Found while running A's corpus through this gate: 38 of its
+  //         45 playbooks carry `postal: "TODO(counsel): verify"`, which the schema accepts, and 17 of
+  //         those also escalate on silence. Declaring `registered: true` over a placeholder asserts a
+  //         provable channel that does not exist — the C1 defect wearing the corrected shape.
+  const registeredChannels = ['primary', 'fallback'].filter(
+    (w) => pb.channel?.[w] === 'postal' && pb.channel?.registered?.[w] === true,
+  );
+  if (registeredChannels.length && ADDRESS_PLACEHOLDER.test(String(pb.recipient?.postal ?? ''))) {
+    E('POSTAL-PLACEHOLDER',
+      `channel.registered.${registeredChannels.join('/')} is true, but recipient.postal is a placeholder (${JSON.stringify(pb.recipient?.postal)}) rather than an address. A registered send is the ONLY thing that starts the Art. 12(3) clock (CLAUDE.md §6) — declaring one against a note-to-self asserts a provable channel that does not exist`);
+  }
+
+  // --- 5b. Scope binding: does the letter state a bounded scope the playbook can actually fill?
+  //         `{{#each categories}}` over an unsupplied list renders NOTHING (template/render.ts:63), so
+  //         the failure is silent and the letter becomes an unbounded erasure demand at a bureau.
+  if (opts.templates !== false && pb.template) {
+    const t = readTemplate(pb.template);
+    if (t) {
+      const rendered = new Set([...t.vars, ...t.blocks, ...t.eachLists].filter((v) => ALL_SCOPE_VARS.has(v)));
+      const declared = pb.scopeSource ? SCOPE_VARS[pb.scopeSource] ?? [] : [];
+      for (const v of rendered) {
+        if (!declared.includes(v)) {
+          E('SCOPE-BINDING',
+            `template "${pb.template}" renders {{${v}}}, a request-scoped value, but the playbook declares no scopeSource that supplies it. subjectFields cannot bind it (it is not an identity field), so the letter would state a scope it cannot fill`);
+        }
+      }
+      for (const v of declared) {
+        if (!rendered.has(v)) {
+          W('SCOPE-BINDING',
+            `declares scopeSource: ${pb.scopeSource}, which supplies {{${v}}}, but template "${pb.template}" never renders it — the scope is derived and then discarded`);
+        }
+      }
+    }
   }
 
   // --- 5. identityProof minimisation (the "required:false + a real document" direction; the schema

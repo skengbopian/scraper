@@ -1,0 +1,8 @@
+# Next.js build output. Committed by mistake in port wave 2b, which made the wave-4 merge collide on
+# ~70 generated paths (webpack packs, chunk hashes, build manifests) while only two real files
+# actually conflicted. Build output is derived state: it belongs in the working tree, never in git.
+/.next/
+/.next-dev/
+/out/
+next-env.d.ts
+*.tsbuildinfo

@@ -1,0 +1,70 @@
+# Art. 17(1)(d) PARTIAL erasure at SCHUFA Holding AG, scoped to the data categories whose source
+# SCHUFA ITSELF named in its Art. 15(1)(g) answer — the "Datenlieferanten" channel its Art. 14 notice
+# §2.3 discloses without defining.
+#
+# The last link of the Provenance chain: provenance.schufa asks who supplied each category -> the
+# answer names a watchlisted broker -> packages/core/src/provenance/ledger.ts proposes this erasure ->
+# this playbook executes it. NOT a request to delete a credit file (docs/07); the scope is bounded by
+# the answer, and `scopeSource: PROVENANCE_ANSWER` makes the engine refuse to render without it.
+#
+# Reachable only via cause PROVENANCE_CHAIN. Lineage: the pre-audit line's loeschung-herkunft.schufa
+# v2 (ADR-030 wave 4); version restarts at 1 here because the content differs materially.
+#
+# TODO(counsel): confirm the Art. 17(1)(d) framing for a partial erasure at a bureau, and that
+# chaining it after an access request is not "excessive" under Art. 12 Abs. 5. Tracked as OQ-23.
+slug: loeschung-herkunft.schufa
+kind: RIGHTS_REQUEST
+controller: schufa
+requestType: ERASURE_ART17
+version: 1
+active: false
+legalBasis: "DSGVO Art. 17 Abs. 1 lit. d"
+scopeSource: PROVENANCE_ANSWER        # categories + source names come from SCHUFA's own answer
+channel:
+  primary: postal
+  fallback: email
+  registered:
+    primary: true                     # escalates on silence, so the send must be provable (CLAUDE.md §6)
+    fallback: false                   # email cannot be registered, and never starts the clock
+recipient:
+  # The STREET address, deliberately not the Postfach 10 34 41 that datenkopie.schufa and
+  # provenance.schufa use: this channel is registered, and an Einwurf-Einschreiben is delivered into a
+  # letterbox. Whether Deutsche Post delivers Einwurf-Einschreiben to a Postfach at all is OQ-24 — the
+  # two existing playbooks are flagged there rather than edited, since their versions are sealed.
+  # Source: the repo's datenanfragen snapshot (CC0, quality "verified").
+  postal: "SCHUFA Holding AG, Datenschutz, Kormoranweg 5, 65201 Wiesbaden"   # TODO(counsel): verify
+  email: "datenschutz@schufa.de"                                             # TODO(counsel): verify
+template: art17-loeschung-herkunft.de
+identityProof:
+  required: true                      # the bureau matches the demand against the file it holds
+  accepts: [redacted_id]
+subjectFields:
+  - legalName
+  - dateOfBirth
+  - addresses
+deadlineDays: 30
+validation:
+  compliedIf:
+    anyOf:
+      - structured.erased: true
+      - responseContains: ["wurden gelöscht", "haben wir gelöscht", "Löschung wurde durchgeführt"]
+  # Art. 18 restriction is what this letter asks for HILFSWEISE — granting it is a partial answer, not
+  # a refusal. Recording it as a refusal corrupts the per-controller statistics (ADR-014).
+  incompleteIf:
+    anyOf:
+      - responseContains: ["Einschränkung der Verarbeitung", "teilweise gelöscht", "eingeschränkt"]
+      - structured.partiallyErased: true
+  refusedIf:
+    anyOf:
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "Aufbewahrungspflicht", "nicht möglich"]
+  humanReviewIfConfidenceBelow: 0.8   # a bureau letter about a credit file → higher bar
+escalation:
+  onDeadlineExpiry: DRAFT_ART77
+  onRefusal: DRAFT_ART77
+seatDpa: HBDI                         # Hessischer Beauftragter für Datenschutz (Wiesbaden seat)
+notes: >
+  Do NOT widen the demand. SCHUFA is the anchor controller and a blanket erasure request against it is
+  both wrong (docs/07) and counter-productive for the user, whose file also carries contract data they
+  may need. The value here is narrow and evidenced: the layer SCHUFA itself attributed to a
+  Datenlieferant. A refusal that will not name the legal basis per category is Art. 77 material —
+  drafted for a human, never auto-sent.

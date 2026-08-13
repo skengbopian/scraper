@@ -1,11 +1,14 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import {
   assertNoCredential,
+  CONTROLLER_TYPES,
   TERMINAL_STATES,
   type MandateSnapshot,
   type OpenRequestRef,
   type RequestSnapshot,
   type RequestTypeStatutory,
+  type ControllerRef,
+  type ProvenanceEntry,
   type SelfServeRoute,
   type TransitionResult,
   type LeverageActionRow,
@@ -38,9 +41,83 @@ const TERMINAL = [...TERMINAL_STATES] as ('COMPLIED' | 'CLOSED_FAILED' | 'WITHDR
 export class PrismaRequestsRepository implements RequestsRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  async findControllerIdBySlug(slug: string): Promise<string | null> {
-    const c = await this.db.controller.findUnique({ where: { slug: slug.trim().toLowerCase() }, select: { id: true } });
-    return c?.id ?? null;
+  async findControllerBySlug(slug: string): Promise<ControllerRef | null> {
+    const c = await this.db.controller.findUnique({
+      where: { slug: slug.trim().toLowerCase() },
+      select: { id: true, type: true },
+    });
+    // The census type drives the high-harm bypass (ADR-036). An unrecognised value reads as
+    // unclassified rather than as some default — guessing would either escalate every unknown
+    // controller to artillery or, worse, let a bureau look like an ordinary shop.
+    if (!c) return null;
+    return { id: c.id, type: (CONTROLLER_TYPES as readonly string[]).includes(c.type) ? (c.type as ControllerRef['type']) : null };
+  }
+
+  async findControllerSlugById(controllerId: string): Promise<string | null> {
+    const c = await this.db.controller.findUnique({ where: { id: controllerId }, select: { slug: true } });
+    return c?.slug ?? null;
+  }
+
+  /**
+   * Persist the per-category rows a provenance answer yielded. One ledger per request (the model's
+   * `rightsRequestId` is UNIQUE), so a re-ingest replaces its entries rather than accreting a second
+   * set — two ledgers for one answer would double every follow-up proposal derived from it.
+   */
+  async saveProvenanceEntries(args: {
+    readonly requestId: string;
+    readonly userId: string;
+    readonly controllerId: string;
+    readonly entries: readonly ProvenanceEntry[];
+  }): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      const ledger = await tx.provenanceLedger.upsert({
+        where: { rightsRequestId: args.requestId },
+        create: { userId: args.userId, controllerId: args.controllerId, rightsRequestId: args.requestId },
+        update: {},
+        select: { id: true },
+      });
+      await tx.provenanceEntry.deleteMany({ where: { ledgerId: ledger.id } });
+      await tx.provenanceEntry.createMany({
+        data: args.entries.map((e) => ({
+          ledgerId: ledger.id,
+          dataCategory: e.dataCategory,
+          statedSource: e.statedSource,
+          statedLegalBasis: e.statedLegalBasis,
+          isBroker: e.isBroker,
+          matchedWatchlistSlug: e.matchedWatchlistSlug,
+          confidence: e.confidence,
+        })),
+      });
+    });
+  }
+
+  async loadProvenanceEntries(requestId: string): Promise<readonly ProvenanceEntry[]> {
+    const ledger = await this.db.provenanceLedger.findUnique({
+      where: { rightsRequestId: requestId },
+      select: { entries: true },
+    });
+    return (ledger?.entries ?? []).map((e) => ({
+      dataCategory: e.dataCategory,
+      statedSource: e.statedSource,
+      statedLegalBasis: e.statedLegalBasis,
+      isBroker: e.isBroker,
+      matchedWatchlistSlug: e.matchedWatchlistSlug,
+      confidence: e.confidence,
+    }));
+  }
+
+  /**
+   * Mechanisms this user already tried against this controller that did not deliver (ADR-036).
+   * TODO(product): no writer books `outcome: 'FAILED'` yet, so this is correct and currently always
+   * empty — see the ADR. The gap is the confirmation endpoint, not this query.
+   */
+  async findExhaustedMechanisms(userId: string, controllerId: string): Promise<readonly string[]> {
+    const rows = await this.db.leverageAction.findMany({
+      where: { userId, controllerId, outcome: 'FAILED' },
+      select: { mechanism: true },
+      distinct: ['mechanism'],
+    });
+    return rows.map((r) => r.mechanism);
   }
 
   async findSelfServeRoutes(controllerSlug: string): Promise<readonly SelfServeRoute[]> {
@@ -161,6 +238,7 @@ export class PrismaRequestsRepository implements RequestsRepository {
         mechanism: row.mechanism,
         costCents: row.costCents,
         outcome: row.outcome,
+        ...(row.routingDecision ? { routingDecision: row.routingDecision as Prisma.InputJsonValue } : {}),
       },
     });
   }

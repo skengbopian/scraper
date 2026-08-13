@@ -53,6 +53,38 @@ for (const f of pbFiles) {
   if (!errs.length) O(`${f} passes the full validation gate (schema + semantic lints)`);
 }
 
+// ---------- 2b. Corpus-level: a scoped playbook needs the request that produces its scope ----------
+// `scopeSource: PROVENANCE_ANSWER` means the letter's category list comes from THIS controller's own
+// Art. 15(1)(g) answer. Without a sibling ACCESS_ART15_SOURCE playbook for the same controller there is
+// no way to obtain one, so the erasure is unreachable — a playbook that looks like a capability and is
+// not. Cross-file, so neither the schema nor the per-file lint can see it.
+// The sibling must ALSO carry a broker watchlist. `deriveErasureScope` refuses outright without one
+// (there is no closed set to validate a named source against, so no source name may reach a letter),
+// and the schema deliberately does not require `brokerWatchlist` on every ACCESS_ART15_SOURCE — a
+// watchlist-less provenance request is a legitimate standalone instrument, since an incomplete source
+// list is an Art. 77 lever on its own. So "a sibling exists" is not the same condition as "a scope can
+// be derived", and only this corpus-level check can tell the difference.
+const watchlistedSourceControllers = new Set(
+  Object.values(playbooks)
+    .filter((p) => p?.requestType === 'ACCESS_ART15_SOURCE' && (p?.provenance?.brokerWatchlist ?? []).length > 0)
+    .map((p) => p.controller),
+);
+const anySourceControllers = new Set(
+  Object.values(playbooks).filter((p) => p?.requestType === 'ACCESS_ART15_SOURCE').map((p) => p.controller),
+);
+for (const [f, pb] of Object.entries(playbooks)) {
+  if (pb?.scopeSource !== 'PROVENANCE_ANSWER') continue;
+  if (!anySourceControllers.has(pb.controller)) {
+    F('SCOPE-UNREACHABLE',
+      `${f}: declares scopeSource: PROVENANCE_ANSWER but no ACCESS_ART15_SOURCE playbook exists for controller "${pb.controller}", so its scope can never be derived and the request can never be rendered`);
+  } else if (!watchlistedSourceControllers.has(pb.controller)) {
+    F('SCOPE-UNREACHABLE',
+      `${f}: declares scopeSource: PROVENANCE_ANSWER and controller "${pb.controller}" has a provenance playbook, but that playbook declares no provenance.brokerWatchlist — deriveErasureScope refuses without one, so the scope can never be derived for ANY answer`);
+  } else {
+    O(`${f} has a watchlisted provenance source playbook for "${pb.controller}" — its scope is derivable`);
+  }
+}
+
 // ---------- 3. Template existence + orphans ----------
 const tplDir = path.join(ROOT, 'templates');
 const tplNames = fs.readdirSync(tplDir).filter((t) => t.endsWith('.md')).map((t) => t.replace(/\.md$/, ''));
@@ -91,7 +123,25 @@ const seed = fs.readFileSync(path.join(ROOT, 'docs/07-controllers-seed.md'), 'ut
 for (const m of seed.matchAll(/^\|\s*([a-z0-9][a-z0-9-]*)\s*\|/gm)) censusSlugs.add(m[1]);
 const pivot = fs.readFileSync(path.join(ROOT, 'docs/09-pivot-modules.md'), 'utf8');
 
+// A slug the census keeps only as an ALIAS. docs/07 keeps `boniversum` so historical references
+// resolve, and says in the same row: "do not write a playbook against it" (it merged into infoscore in
+// Sep 2025). The CENSUS check below cannot catch that — the row exists, so a playbook against it looks
+// clean — and prose is not a gate. A playbook against a merged-away controller books permanent
+// non-compliance against a name that is not a controller, files its Art. 77 complaint at a dead
+// addressee, and (because idempotency keys on controllerId, ADR-013) lets the SAME follow-up be raised
+// twice under two slugs, which is the Art. 12(5) "excessive" exposure CLAUDE.md §8 exists to prevent.
+const aliasedSlugs = new Set(
+  [...seed.matchAll(/^\|\s*([a-z0-9][a-z0-9-]*)\s*\|[^\n]*$/gm)]
+    .filter((m) => /do not write a playbook against it/i.test(m[0]))
+    .map((m) => m[1]),
+);
+for (const s of aliasedSlugs) O(`docs/07 marks "${s}" as an alias only — no playbook may target it`);
+
 for (const [f, pb] of Object.entries(playbooks)) {
+  if (pb.controller && aliasedSlugs.has(pb.controller)) {
+    F('CENSUS-ALIAS',
+      `${f}: controller "${pb.controller}" is kept in docs/07 as a slug ALIAS only ("do not write a playbook against it") — route the request to the surviving controller instead`);
+  }
   if (pb.controller && pb.controller !== '__PARAM__' && !censusSlugs.has(pb.controller)) {
     W('CENSUS', `${f}: controller "${pb.controller}" has no slug row in docs/07-controllers-seed.md`);
   }

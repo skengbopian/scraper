@@ -20,6 +20,7 @@ import {
   type RequestTypeStatutory,
 } from '../state-machine/guards.js';
 import { planRequestCreation, type LeverageActionDraft, type StatutoryRequestType } from '../leverage/routing.js';
+import type { ControllerType } from '../leverage/ladder.js';
 import type { SelfServeRoute } from '../leverage/self-serve.js';
 
 export interface LeverageActionRow extends LeverageActionDraft {
@@ -28,8 +29,15 @@ export interface LeverageActionRow extends LeverageActionDraft {
 }
 
 /** The persistence port the creation flow needs. A DB adapter (or a fake, in tests) implements it. */
+/** What the pipeline needs to know about the target controller. `type` drives the high-harm bypass. */
+export interface ControllerRef {
+  readonly id: string;
+  /** Census classification. `null` = unclassified — never guessed into a high-harm default. */
+  readonly type: ControllerType | null;
+}
+
 export interface CreateRequestPort {
-  findControllerIdBySlug(slug: string): Promise<string | null>;
+  findControllerBySlug(slug: string): Promise<ControllerRef | null>;
   // TODO(safety): the DB/JSON adapter implementing this MUST pass every route through
   // `assertNoCredential` before returning it — that is the ingestion seam the guardrail was written for
   // (docs/08 guardrail 1). Today routes are code-seeded and the type + source-scan test forbid a
@@ -39,6 +47,16 @@ export interface CreateRequestPort {
   findLivemandates(userId: string): Promise<readonly MandateSnapshot[]>;
   findNonTerminalSiblings(userId: string, controllerId: string, requestType: string): Promise<readonly OpenRequestRef[]>;
   countTerminalPredecessors(userId: string, controllerId: string, requestType: string): Promise<number>;
+  /**
+   * Leverage mechanisms this user already took against this controller that did NOT deliver. Read from
+   * the LeverageAction ledger. This is what opens the next rung without a support ticket: a user who
+   * completed the broker's own removal form and is still listed reaches the legal rung by carrying on.
+   *
+   * TODO(product): nothing WRITES `outcome: 'FAILED'` yet — routing only ever books PENDING or
+   * UNVERIFIABLE, and the docs/08 §2 "did it work?" confirmation that would book a failure is not an
+   * endpoint yet. Until it is, this correctly returns nothing and the next rung stays closed (ADR-036).
+   */
+  findExhaustedMechanisms(userId: string, controllerId: string): Promise<readonly string[]>;
   insert(row: Record<string, unknown>): Promise<{ id: string }>;
   recordLeverageAction(row: LeverageActionRow): Promise<void>;
 }
@@ -83,8 +101,9 @@ export async function createRequest(
   input: CreateRequestInput,
   opts: CreateRequestOpts,
 ): Promise<CreateRequestResult> {
-  const controllerId = await port.findControllerIdBySlug(input.controllerSlug);
-  if (!controllerId) return { kind: 'CONTROLLER_NOT_FOUND', controllerSlug: input.controllerSlug };
+  const controller = await port.findControllerBySlug(input.controllerSlug);
+  if (!controller) return { kind: 'CONTROLLER_NOT_FOUND', controllerSlug: input.controllerSlug };
+  const controllerId = controller.id;
 
   // Anti-stalker keystone: the endpoint verifies status==VERIFIED but not that the identity belongs to
   // THIS user. runGuards re-checks it on the legal path; the short-circuit paths do not run guards, so
@@ -96,6 +115,11 @@ export async function createRequest(
     controllerSlug: input.controllerSlug,
     selfServeRoutes: await port.findSelfServeRoutes(input.controllerSlug),
     legalPlaybookAvailable: await port.hasLegalPlaybook(input.controllerSlug, input.requestType),
+    // `cause` is what distinguishes a user-initiated erasure from the bounded Art. 17(1)(d) demand the
+    // provenance chain raises — two different outcomes, and only the second is lawful at a bureau.
+    cause: input.cause,
+    ...(controller.type !== null ? { controllerType: controller.type } : {}),
+    exhaustedMechanisms: await port.findExhaustedMechanisms(input.userId, controllerId),
   });
 
   if (plan.kind === 'PREFER_SELF_SERVE') {
