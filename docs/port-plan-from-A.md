@@ -47,7 +47,7 @@ contradiction ADR-012 exists to remove.
 | 2b | the Next.js shell (`apps/web-next`): shell + start/firmen/firmen[slug]/vorgaenge/vorgaenge[id] on the two-clock contract; served-app axe gate | REFIT (XL) | **partly done** — core loop live |
 | 2c | Akte (the BYO-Datenkopie flagship) + Wissen; structural tests widened from pages to all components | REFIT (L) | **done** |
 | 2d | auth screens (register → secret → login → TOTP) + konto + the identity gate explained; session as an httpOnly cookie | REFIT (M) | **done** — wave 2 complete |
-| 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | |
+| 3 | auth policy: step-up guard, idle timeout, TOTP replay defence, recovery codes, durable throttling, revoke-everywhere | REFIT (L) | **done** — ADR-035, migration `0008_auth_policy` |
 | 4 | leverage: A's ladder-ordered `chooseRung` (better than B's scalar `preferRoute`) minus its cost model; playbooks in tranches, starting with the `loeschung-herkunft` family | REFIT (L) | |
 | 5 | ops, worker, dispatch — **re-derived** against B's transition table, plus A's engine factory (ADR-031) | REBUILD (XL) | |
 
@@ -118,6 +118,22 @@ the bureau, and B has neither the playbook nor the template to execute it — th
 chain stops there. A's `templates/art17-loeschung-herkunft.de.md` plus the four
 `loeschung-herkunft.{boniversum,crif,infoscore,schufa}.yaml` close it. Highest value per file in the
 whole port.
+
+### Wave-3 outcome — the substrate had to come first
+The wave landed as ADR-035. Two corrections to what this plan implied:
+
+1. **A's step-up guard is not the port; it is the last 23 lines of it.** The guard reads
+   `request.stepUp` and nothing in this line set that flag, so porting the file alone would have
+   produced a guard that cannot fire — and, because the flag would be `undefined`, one whose failure
+   mode depends on whether the check is truthiness or strict equality. The session columns, the
+   `/auth/step-up` route, the middleware that resolves the flag and a strict `!== true` all had to
+   land first.
+2. **The TOTP duplicate was the real hazard, not the missing replay defence.** This line already had
+   a working TOTP implementation in `apps/api/src/auth/crypto.ts` returning a bare boolean. Adding
+   A's replay-defended one beside it would have left two implementations disagreeing about whether a
+   spent code is still valid — so that file now re-exports the core one and the boolean signature
+   is gone. That is a breaking change to an internal API, made deliberately: a boolean cannot carry
+   the counter, and without the counter there is no replay defence.
 
 ## Refuse list — do not port these
 

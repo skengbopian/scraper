@@ -16,7 +16,14 @@ function apiBase(): string {
   return '/api';
 }
 
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  /**
+   * `reason` is the API's machine-readable code (e.g. STEP_UP_REQUIRED, IDENTITY_NOT_VERIFIED).
+   * Two different 403s need two different next actions, and deciding that by matching on translated
+   * prose would break the moment the copy changed register — which it does on every page (ADR-034).
+   */
+  | { ok: false; status: number; message: string; reason?: string };
 
 function registerHeaders(register: Register): Record<string, string> {
   return {
@@ -25,15 +32,19 @@ function registerHeaders(register: Register): Record<string, string> {
   };
 }
 
-async function readMessage(res: Response): Promise<string> {
+async function readError(res: Response): Promise<{ message: string; reason?: string }> {
   try {
-    const body = (await res.json()) as { message?: string | string[] };
-    if (Array.isArray(body.message)) return body.message.join('; ');
-    if (typeof body.message === 'string') return body.message;
+    const body = (await res.json()) as { message?: string | string[]; reason?: string };
+    const message = Array.isArray(body.message)
+      ? body.message.join('; ')
+      : typeof body.message === 'string'
+        ? body.message
+        : `HTTP ${res.status}`;
+    return typeof body.reason === 'string' ? { message, reason: body.reason } : { message };
   } catch {
-    /* fall through — a non-JSON error body is still an error */
+    /* a non-JSON error body is still an error */
   }
-  return `HTTP ${res.status}`;
+  return { message: `HTTP ${res.status}` };
 }
 
 /**
@@ -61,7 +72,7 @@ async function call<T>(path: string, register: Register, init?: RequestInit): Pr
       },
       cache: 'no-store',
     });
-    if (!res.ok) return { ok: false, status: res.status, message: await readMessage(res) };
+    if (!res.ok) return { ok: false, status: res.status, ...(await readError(res)) };
     return { ok: true, data: (await res.json()) as T };
   } catch (error: unknown) {
     // A dead API must not render as an empty list — the caller decides what to show, but it is told.
@@ -131,6 +142,8 @@ export interface RegisterResult {
   readonly userId: string;
   readonly totpSecret: string;
   readonly totpProvisioningUri: string;
+  /** Shown ONCE. The API stores only hashes, so there is no endpoint that can return these again. */
+  readonly recoveryCodes: readonly string[];
 }
 
 export function registerAccount(email: string, password: string, register: Register): Promise<ApiResult<RegisterResult>> {
@@ -147,6 +160,25 @@ export function login(email: string, password: string, register: Register): Prom
 /** Step 2. The token from step 1 travels in the cookie, so `call()` attaches it. */
 export function verifyTotp(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true }>> {
   return call<{ mfaVerified: true }>('/auth/totp', register, { method: 'POST', body: JSON.stringify({ code }) });
+}
+
+/**
+ * Re-confirm the second factor before high-sensitivity content is released (docs/06 C2).
+ * A different endpoint from `verifyTotp`: signing in and opening the credit file are different acts.
+ */
+export function stepUp(code: string, register: Register): Promise<ApiResult<{ stepUp: true; expiresInSeconds: number }>> {
+  return call<{ stepUp: true; expiresInSeconds: number }>('/auth/step-up', register, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** Redeem a recovery code in place of the TOTP challenge. Completes MFA; never grants step-up. */
+export function redeemRecoveryCode(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true; remainingCodes: number }>> {
+  return call<{ mfaVerified: true; remainingCodes: number }>('/auth/recovery', register, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
 }
 
 export function logout(register: Register): Promise<ApiResult<unknown>> {

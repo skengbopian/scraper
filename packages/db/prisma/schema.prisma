@@ -155,6 +155,20 @@ model User {
   wrappedDek            Bytes?
   kekRef                String?
 
+  /// --- Auth policy (port wave 3, ADR-035) ---------------------------------------------------
+  /// When the second factor was enrolled. Null = enrolled but never confirmed.
+  totpEnrolledAt        DateTime?
+  /// The last TOTP counter accepted for this user. THE replay defence: a code at or below this is
+  /// refused. Monotonic by trigger (0008) — rewinding it re-opens every code in between.
+  totpLastCounter       BigInt?
+  /// Password and second-factor throttle budgets are SEPARATE on purpose. A password lockout is
+  /// triggerable by anyone who knows the email; sharing one budget would let a stranger lock the
+  /// account holder out of their own authenticator. See packages/core/src/auth/session.ts.
+  failedLoginCount      Int      @default(0)
+  lastFailedLoginAt     DateTime?
+  failedMfaCount        Int      @default(0)
+  lastFailedMfaAt       DateTime?
+
   identity              Identity?
   mandates              Mandate[]
   rightsRequests        RightsRequest[]
@@ -163,6 +177,7 @@ model User {
   provenanceLedgers     ProvenanceLedger[]
   authCredential        AuthCredential?
   sessions              Session[]
+  recoveryCodes         RecoveryCode[]
   creditFileSnapshots   CreditFileSnapshot[]
 }
 
@@ -562,10 +577,37 @@ model Session {
   tokenHash   String    @unique
   userId      String
   /// False until the TOTP step succeeds; guarded routes require a fully-verified session.
+  /// Kept in step with `mfaCompletedAt` by CHECK session_mfa_flags_agree (0008).
   mfaVerified Boolean   @default(false)
   createdAt   DateTime  @default(now())
+  /// Last request this session made. The idle timeout (30 min) decides on THIS, not on createdAt —
+  /// absolute TTL alone cannot express "a tab left open on a shared laptop stops being signed in".
+  lastSeenAt  DateTime  @default(now())
+  /// When the second factor was presented. A timestamp, not a flag, because the policy is about
+  /// freshness. NULL = the session is authenticated for nothing but completing the challenge.
+  mfaCompletedAt DateTime?
+  /// When the second factor was RE-confirmed to open high-sensitivity data (docs/06 C2). Guarded by
+  /// CHECK session_stepup_requires_mfa: step-up without MFA is unrepresentable.
+  stepUpAt    DateTime?
   expiresAt   DateTime
   revokedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Single-use MFA recovery codes (docs/06 C2, ADR-035). Shown ONCE at enrolment, stored hashed.
+/// Single use is enforced by the `recovery_code_single_use` trigger (0008), not by application
+/// discipline: an "if (code.usedAt) reject" is one early return away from being wrong, and a
+/// concurrent double-submit would spend one code twice.
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  /// sha256 hex of the normalised code. The plaintext is never persisted anywhere.
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

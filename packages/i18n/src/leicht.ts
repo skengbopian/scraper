@@ -73,7 +73,18 @@ export const LEICHT: DeepPartial<AppStrings> = {
     signInSub: 'Geben Sie E-Mail und Passwort ein. Danach kommt Ihr Code.',
     registerSub: 'Sie brauchen: eine E-Mail, ein Passwort und eine Authenticator-App.',
     totpSub: 'Öffnen Sie die Authenticator-App. Geben Sie die 6 Zahlen ein.',
+    passwordHint: 'Das Passwort braucht mindestens 12 Zeichen. Nehmen Sie einen kurzen Satz.',
     secretOnce: 'Wir zeigen den Schlüssel nur einmal. Bitte jetzt aufschreiben.',
+    recoveryBody: 'Sie können Ihr Handy verlieren. Dann helfen diese Codes. Jeder Code geht nur ein Mal.',
+    recoveryOnce: 'Wir zeigen die Codes nur ein Mal. Bitte jetzt aufschreiben. Legen Sie den Zettel an einen sicheren Ort.',
+    recoveryPrompt: 'Sie haben Ihr Handy nicht da? Dann nehmen Sie einen Ersatz-Code.',
+    replayedTotp: 'Diesen Code haben Sie schon benutzt. Warten Sie kurz. Dann zeigt die App einen neuen Code.',
+    lockedOut: 'Das waren zu viele Versuche. Bitte warten Sie ein paar Minuten.',
+  },
+  stepUp: {
+    sub: 'Bitte geben Sie noch ein Mal den Code aus der App ein.',
+    why: 'Diese Daten sind besonders wichtig. Darum fragen wir noch ein Mal.',
+    expiresNote: 'Die Bestätigung gilt 10 Minuten.',
   },
   account: {
     identityNote: 'Erst nach der Prüfung können Sie Anfragen stellen. Ihren Namen nehmen wir aus der Prüfung.',

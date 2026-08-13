@@ -669,6 +669,132 @@ line's `AppStrings` + its copy tests; docs/09 §4.
   full ICU library invites plurals/dates/selects — logic — into a layer that counsel reviews and the
   copy tests treat as leaves.
 
+### ADR-035 · The pre-audit line's auth POLICY is adopted; its session schema and its subject module are not
+**Status:** ACCEPTED · **Decided:** 2026-08-13 · **Port wave 3** (ADR-030) · **Source:** the pre-audit
+line's `packages/core/src/auth/{session,totp}.ts`; `docs/06` C1/C2.
+
+This line shipped real auth in wave 2d — email + password + TOTP, sessions as hashed bearer tokens,
+the secret envelope-encrypted. What it did not have was a POLICY: no idle timeout, no step-up, no
+replay defence, no recovery codes, and a throttle that lived in a `Map` in one process. `docs/06` C2
+requires step-up to view the dossier and this repo had none — one `grep` for "step.up" returned a
+single TODO pointing at this wave.
+
+**Adopted, refitted:**
+
+- **`packages/core/src/auth/session.ts` — pure policy, zero imports.** `evaluateSession` with a typed
+  `SessionRejection` union, `isStepUpFresh`, the constants (12h TTL, 30min idle, 10min step-up).
+  Purity is a constraint, not a style note: these are the rules that decide whether a person may see
+  their own credit file, every one of them is a boundary, and a rule tested only through an HTTP
+  suite is tested at one point in the middle of its range. A test asserts the file still imports
+  nothing.
+- **`USER_ERASED` is checked first.** A user who exercised their own Art. 17 right must not be told
+  "your session expired": the account is gone, and any other answer is both wrong and a disclosure.
+  The column does not exist yet (self-service erasure is unbuilt), so the field is structurally null
+  and carries a `TODO(safety)` — the rejection exists the day the column does.
+- **TOTP replay defence, and the reason the signature had to change.** The previous implementation
+  returned a bare boolean, so a code read over a shoulder stayed valid for the rest of its ±30s
+  window and could simply be presented again. `verifyTotp` now returns the matching counter;
+  `User.totpLastCounter` persists it and anything at or below is refused as `REPLAYED` — a distinct
+  reason from `MISMATCH`, because a spent code and a wrong code are different events and a throttle
+  that cannot tell them apart cannot alert on the one that means "somebody captured a code". A
+  boolean cannot express any of that.
+- **ONE TOTP implementation.** This repo had its own in `apps/api/src/auth/crypto.ts`. Two
+  implementations that disagree about replay is worse than either, so that file now re-exports the
+  core one and keeps only the password and session-token primitives.
+- **Durable throttling, with the two budgets kept APART.** The counters moved from an in-process
+  `Map` to columns. The separation is the security decision: a password lockout is triggerable by
+  anyone who knows the email address, so if the second factor shared that budget, a stranger with
+  only the victim's email could spray passwords until the account stopped accepting the victim's own
+  authenticator codes — locking them out of the account that holds their credit file. The MFA budget
+  can only be moved by someone who already passed the password step, and is tighter (5 vs 8) for
+  exactly that reason.
+- **Recovery codes, and why they matter more here.** The TOTP secret is envelope-encrypted under the
+  user's own DEK (CLAUDE.md §4), so no operator can read it and reset it for them. A lost phone with
+  no code written down is a permanently unreachable account — one that may hold the evidence pack for
+  a legal action in progress. Ten single-use codes, shown once, stored hashed, in an alphabet without
+  the characters people misread off paper.
+- **Migration `0008_auth_policy`**, with six invariants registered in `tools/spec-audit/db-invariants.mjs`
+  and each proved to REJECT in `apps/api/test/db-invariants.test.ts`. Two are worth naming:
+  `session_stepup_requires_mfa` makes "step-up without a second factor" unrepresentable, and
+  `totp_counter_monotonic` refuses a counter that moves backwards — which is not hypothetical, since
+  two concurrent MFA submissions would do it with the older counter landing last, silently re-opening
+  every code in between.
+
+**The order this was built in, because the reverse is the trap.** The pre-audit line's step-up guard
+is 23 lines that read one flag, `request.stepUp`. Ported on its own it is a guard
+that can never fire — every request either denied, or worse, allowed by an `undefined` read as
+truthy. So the column, the route that writes it, the middleware that reads it and the strict `!== true`
+check all landed before the guard did. It is applied to `GET /credit-file/findings`, the route that
+RELEASES content; upload is deliberately not gated, because writing a document you already hold
+discloses nothing.
+
+**Deliberately NOT adopted:**
+
+- **A's `verified-subject` module** (already on the port plan's refuse list). Its
+  `deriveSubjectSnapshot()` returns an unbranded plain object, so importing it would create a second
+  subject constructor and defeat ADR-019's unforgeable brand. `packages/core/src/identity/subject.ts` stays the only one.
+- **The pre-audit line's session SCHEMA.** Its columns encode a different model; this line keeps
+  `mfaVerified` (the middleware and existing suites read it) and adds `mfaCompletedAt` for the
+  freshness the policy needs, with a CHECK making the two unable to disagree rather than leaving it
+  to discipline.
+
+**What this does NOT deliver, stated plainly so the ADR cannot be read as claiming it.** CLAUDE.md's
+high-sensitivity rule has two halves: content is released only after step-up, AND high-sensitivity
+items only to the **verified postal address**. This wave delivers the first half. The second is not
+implemented anywhere in this repo, and the pre-audit line does not satisfy it either — its own
+its own DSR service says so. `TODO(safety)` sits on `StepUpGuard`. Nothing here should be read as meeting
+that rule.
+
+Also unchanged and deliberately so: the dev fixture still fills only a true vacuum, and now stands in
+for step-up as well — without that, the alpha's own Akte screen would 403 with no session to
+re-confirm against. The moment a real Bearer token exists that branch does not run, so a real session
+must still earn step-up.
+
+**Review-driven refinements (adversarial pass, 2026-08-13 — 22 findings, 11 confirmed after independent
+refutation).** Recorded because most of them were in the FIRST CUT OF THIS WAVE, not in inherited code:
+
+- **Both throttle budgets were bypassable by parallelism.** They were a read, a `nextThrottleState()`
+  and a write of the resulting ABSOLUTE value — so N concurrent failures all read the same count and
+  all wrote count+1, costing one unit of budget for N guesses. The lockout scaled with the attacker's
+  concurrency instead of bounding it, which defeats the exact control the separation above argues for.
+  Now one atomic SQL statement per bump, with the window-reset expressed as a CASE under the row lock.
+  A DB test proves the SQL and the pure policy agree; the e2e tests fire 12 simultaneous failures and
+  fail against the old implementation.
+- **The replay defence had the same race.** Reading `totpLastCounter` and then writing it let two
+  requests presenting the SAME code both verify — the real-time relay case. The write is now
+  conditional (`WHERE totpLastCounter IS NULL OR < N`) and a zero row count is reported as REPLAYED,
+  so the database arbitrates. The monotonic trigger cannot do this job: it permits an equal write by
+  design, because an equal write is not a rewind.
+- **Recovery codes were 50 bits behind an unsalted SHA-256.** Unsalted is deliberate (lookup by hash),
+  but it means ONE offline sweep tests every candidate against every user's row at once — hours of GPU
+  time for a second-factor bypass across the whole user base. Raised to 80 bits (16 characters); the
+  defence is the keyspace, not the hash speed.
+- **The new error shape made the new copy unreachable.** Throwing `{ error, reason }` with no
+  `message` meant the web client fell back to rendering `HTTP 401` — including on the replayed-code
+  path, which the ordinary sign-in → open-Akte journey hits every time. An `AuthErrorFilter` now
+  translates the reason into the caller's register, so the service stays register-agnostic and the
+  screen never shows a raw status line.
+- **Recovery codes were generated, displayed and unusable.** `POST /auth/recovery` existed; no UI
+  reached it, so a lost phone was still a permanent lockout while looking solved. The challenge screen
+  now offers redemption.
+- **An open redirect on the step-up screen.** The `next` validator `^\/[A-Za-z0-9\-_/]*$` accepts
+  `//evil.example` — `/` is inside the character class, so protocol-relative URLs pass. On the screen
+  that has just asked for a one-time code, that is a phishing gift. `isSafeNextPath` now rejects a
+  second leading slash or backslash.
+- **`register()` created the User row outside its own transaction**, so a failure in the window left an
+  account with no credential: permanently EMAIL_TAKEN and permanently unable to sign in, with no
+  self-service route out. One interactive transaction now, and the TOTP secret is sealed with the key
+  material already in scope rather than by a lookup the transaction cannot see.
+- **The unknown-email path skipped scrypt**, returning in microseconds instead of ~100ms — a clean
+  account-existence oracle. It now always pays the KDF against a fixed decoy hash.
+
+One finding was accepted rather than fixed, deliberately: a locked-out account answers 403
+`RATE_LIMITED` while an unknown address answers 401, which discloses that the address is registered.
+Removing that would mean either dropping the per-account lockout or refusing to tell a real user why
+they cannot sign in — and the usability gate (docs/09: every failure names the next action) makes the
+second unacceptable. The residual is recorded here rather than silently accepted; the timing half of
+the oracle is closed.
+
 ---
 
 ## 2. Provisional defaults (in force, revisit before first real send)

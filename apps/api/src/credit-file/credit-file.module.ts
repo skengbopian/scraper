@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { StepUpGuard } from '../auth/step-up.guard.js';
 import { IdentityVerifiedGuard } from '../common/identity-verified.guard.js';
 import { isPrismaMode } from '../db/db.module.js';
 import { CreditFileController } from './credit-file.controller.js';
@@ -12,6 +13,10 @@ export const CREDIT_FILE_STORE = Symbol('CreditFileStore');
   controllers: [CreditFileController],
   providers: [
     IdentityVerifiedGuard,
+    // Provided here rather than imported from AuthModule: this module is mounted in BOTH repository
+    // modes, and AuthModule only exists in DB mode. The guard has no dependencies, so a second
+    // instance is free and keeps memory mode bootable.
+    StepUpGuard,
     isPrismaMode()
       ? { provide: CREDIT_FILE_STORE, useFactory: (db: PrismaClient) => new PrismaCreditFileStore(db), inject: [PrismaClient] }
       : { provide: CREDIT_FILE_STORE, useFactory: () => new InMemoryCreditFileStore() },

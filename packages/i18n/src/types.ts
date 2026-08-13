@@ -157,6 +157,31 @@ export interface AppStrings {
     toRegister: string;
     badCredentials: string;
     badTotp: string;
+    /** Wave 3: the code was correct but already spent — a different event from a wrong code. */
+    replayedTotp: string;
+    /** Wave 3: too many attempts. The password and second-factor budgets are separate. */
+    lockedOut: string;
+    /** Shown ONCE after registration, beside the TOTP secret — the way back in without the phone. */
+    recoveryHeading: string;
+    recoveryBody: string;
+    recoveryOnce: string;
+    recoveryCta: string;
+    recoveryPrompt: string;
+    recoveryCode: string;
+    badRecoveryCode: string;
+  };
+  /**
+   * Step-up (docs/06 C2): re-confirming the second factor before high-sensitivity content is
+   * released. Its own block, not part of `auth`, because it is not a sign-in — the user is already
+   * signed in, and copy that says "anmelden" here would read as a session that silently expired.
+   */
+  stepUp: {
+    heading: string;
+    sub: string;
+    why: string;
+    cta: string;
+    expiresNote: string;
+    required: string;
   };
   /** The account screen: who am I, is my identity verified, and how do I leave. */
   account: {

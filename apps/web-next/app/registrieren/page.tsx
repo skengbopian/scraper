@@ -19,6 +19,10 @@ export default function RegisterPage() {
           secretHeading: s.auth.secretHeading,
           secretBody: s.auth.secretBody,
           secretOnce: s.auth.secretOnce,
+          recoveryHeading: s.auth.recoveryHeading,
+          recoveryBody: s.auth.recoveryBody,
+          recoveryOnce: s.auth.recoveryOnce,
+          recoveryCta: s.auth.recoveryCta,
           toSignIn: s.auth.signIn,
         }}
       />

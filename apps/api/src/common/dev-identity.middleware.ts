@@ -23,6 +23,12 @@ export class DevIdentityMiddleware implements NestMiddleware {
     if (devFixturesEnabled() && req.userId === undefined && !hasBearer) {
       req.userId = DEV_USER_ID;
       req.identity = DEV_IDENTITY;
+      // The fixture stands in for the whole auth flow, so it must stand in for step-up too (port
+      // wave 3). Without this the alpha's own Akte screen would 403 at StepUpGuard with no way to
+      // clear it — there is no session to re-confirm against. It is granted ONLY on the same true
+      // vacuum as the identity: the moment a real Bearer token exists this branch does not run, so a
+      // real session must still earn step-up at POST /auth/step-up.
+      req.stepUp = true;
     }
     next();
   }

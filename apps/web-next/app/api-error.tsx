@@ -11,7 +11,32 @@ import type { AppStrings } from '@scraper/i18n';
  * The API already answers in the caller's register (ADR-034), so its own message is preferred over
  * a local guess wherever it sends one.
  */
-export function ApiError({ status, message, s }: { status: number; message: string; s: AppStrings }) {
+export function ApiError({
+  status,
+  message,
+  reason,
+  s,
+  next,
+}: {
+  status: number;
+  message: string;
+  reason?: string;
+  s: AppStrings;
+  /** Where to come back to once the second factor is confirmed. */
+  next?: string;
+}) {
+  // Two different 403s, two different next actions. Routed on the API's machine-readable `reason`,
+  // never on the prose — the prose changes with the register on every page (ADR-034).
+  if (status === 403 && reason === 'STEP_UP_REQUIRED') {
+    return (
+      <>
+        <p className="err" role="alert">{message || s.stepUp.required}</p>
+        <div className="btnrow">
+          <a className="btn primary" href={`/bestaetigen${next ? `?next=${encodeURIComponent(next)}` : ''}`}>{s.stepUp.cta}</a>
+        </div>
+      </>
+    );
+  }
   if (status === 403) {
     return (
       <>

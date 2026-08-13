@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/akte":{},"/anmelden/code":{},"/anmelden":{},"/firmen/[slug]":{},"/firmen":{},"/konto":{},"/":{},"/registrieren":{},"/vorgaenge/[id]":{},"/vorgaenge":{},"/wissen":{}}}
+{"version":1,"functions":{"/bestaetigen":{},"/anmelden":{},"/konto":{},"/firmen":{},"/":{},"/vorgaenge":{},"/wissen":{},"/firmen/[slug]":{},"/registrieren":{},"/vorgaenge/[id]":{},"/akte":{},"/anmelden/code":{}}}

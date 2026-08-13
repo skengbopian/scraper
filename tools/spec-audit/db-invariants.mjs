@@ -54,6 +54,20 @@ const REQUIRED = {
     'docs/08 guardrail 1: a login-gated route stays a guided handoff, so it must carry the steps the USER follows — we never log in for them.',
   raw_document_requires_purge_date:
     'CLAUDE.md §4: keep the normalised record and hashed evidence, not the raw dump. A retained raw reference with no purge date is an open-ended retention.',
+
+  // --- Auth policy (port wave 3, ADR-035) ------------------------------------------------------
+  session_mfa_flags_agree:
+    'ADR-035: mfaVerified and mfaCompletedAt describe one fact. Two columns that can disagree is the shape that drifts — and the disagreement that matters is a session the middleware treats as verified while the policy sees no second factor.',
+  session_stepup_requires_mfa:
+    'docs/06 C2: step-up is a RE-confirmation of the second factor. stepUpAt without mfaCompletedAt is a session that skipped the factor and then re-confirmed it — the path a half-authenticated session would take to the credit file.',
+  totp_counter_monotonic:
+    'ADR-035: totpLastCounter IS the TOTP replay defence. Rewinding or clearing it re-opens every code in between — which two concurrent MFA submissions would otherwise do, with the older counter landing last.',
+  recovery_code_single_use:
+    'docs/06 C2: a recovery code is a credential. Redeeming one twice, or un-using one, restores access an attacker may already have spent — and an application-level check is one early return, or one concurrent double-submit, away from being wrong.',
+  user_failure_counts_non_negative:
+    'ADR-035: a negative failure count silently disables the lockout it is supposed to drive.',
+  session_expiry_sweep:
+    'ADR-035: the expiry sweep must have an index matching the query it runs, partial on live sessions — otherwise session cleanup degrades exactly as the table grows.',
 };
 
 const dirs = readdirSync(MIGRATIONS, { withFileTypes: true })

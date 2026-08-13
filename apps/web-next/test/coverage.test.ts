@@ -82,3 +82,19 @@ describe('failures are explained, never flattened to "offline"', () => {
     }
   });
 });
+
+describe('step-up redirect safety (ADR-035)', () => {
+  it('rejects the protocol-relative forms a naive path regex lets through', async () => {
+    const { isSafeNextPath } = await import('../src/lib/session');
+    // These all start with "/" and contain only characters a `[A-Za-z0-9\-_/]` class allows, which is
+    // why the obvious regex accepts them — and browsers resolve every one to a different ORIGIN.
+    for (const hostile of ['//evil.example', '//16909060', '//localhost', '/\\evil.example', '//']) {
+      expect(isSafeNextPath(hostile), hostile).toBe(false);
+    }
+    for (const ok of ['/akte', '/vorgaenge/req_123', '/']) {
+      expect(isSafeNextPath(ok), ok).toBe(true);
+    }
+    // An open redirect on the screen that just asked for a one-time code is a phishing gift.
+    expect(isSafeNextPath('https://evil.example')).toBe(false);
+  });
+});

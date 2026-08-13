@@ -22,3 +22,15 @@ export function sessionToken(): string | undefined {
 export function isSignedIn(): boolean {
   return sessionToken() !== undefined;
 }
+
+/**
+ * A same-origin path we are willing to redirect to after step-up.
+ *
+ * The obvious `^\/[A-Za-z0-9\-_/]*$` does NOT do this job: `/` is inside the character class, so it
+ * also accepts `//evil.example` and `//16909060` — protocol-relative URLs that browsers resolve to a
+ * different origin. An open redirect on the screen that has just asked for a one-time code is a
+ * phishing gift, so the second character must not be a slash or a backslash.
+ */
+export function isSafeNextPath(value: string): boolean {
+  return /^\/(?![/\\])[A-Za-z0-9\-_/]*$/.test(value);
+}

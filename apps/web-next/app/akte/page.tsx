@@ -30,7 +30,7 @@ export default async function FilePage() {
       <UploadForm cta={s.file.uploadCta} busy={s.file.uploading} failed={s.file.uploadFailed} note={s.file.identityNote} />
 
       {!result.ok ? (
-        <ApiError status={result.status} message={result.message} s={s} />
+        <ApiError status={result.status} message={result.message} reason={result.reason} s={s} next="/akte" />
       ) : result.data.snapshotId === null ? (
         <div className="callout blocked">
           <div className="kh">{s.file.emptyTitle}</div>

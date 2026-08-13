@@ -12,7 +12,7 @@ import { PrismaClient } from '@prisma/client';
  */
 const url = process.env.DATABASE_URL_TEST;
 
-describe.skipIf(!url)('0005 database invariants', () => {
+describe.skipIf(!url)('database invariants (0005 + 0008)', () => {
   let db: PrismaClient;
   let controllerId: string;
   let userId: string;
@@ -23,7 +23,7 @@ describe.skipIf(!url)('0005 database invariants', () => {
     process.env.SCRAPER_DEV_FIXTURES = '1';
     db = new PrismaClient({ datasources: { db: { url } } });
     await db.$executeRawUnsafe(
-      `TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest","Playbook","SelfServeRoute","LeverageAction","Session","AuthCredential","Mandate","IdentityAddress","Identity","User","Controller" CASCADE`,
+      `TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest","Playbook","SelfServeRoute","LeverageAction","RecoveryCode","Session","AuthCredential","Mandate","IdentityAddress","Identity","User","Controller" CASCADE`,
     );
     const { seed } = await import('../dist/db/seed.js');
     await seed(db);
@@ -148,5 +148,132 @@ describe.skipIf(!url)('0005 database invariants', () => {
       data: { requestId: req.id, receivedAt: new Date(), channel: 'email', structured: { ok: true }, parseConfidence: 0.9 },
     });
     expect(normalisedOnly.rawDocumentRef).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Migration 0008 (port wave 3, ADR-035): the auth policy's invariants.
+  //
+  // Same discipline: every rule is shown REJECTING, and then the adjacent legitimate operation is
+  // shown succeeding, because a constraint that also blocks correct behaviour is its own outage.
+  // -------------------------------------------------------------------------------------------
+
+  const liveSession = (over: Record<string, unknown> = {}) => ({
+    tokenHash: `t_${Math.random().toString(36).slice(2)}_${Date.now()}`,
+    userId,
+    expiresAt: new Date(Date.now() + 3_600_000),
+    ...over,
+  });
+
+  it('(0008-1) refuses a session whose mfaVerified and mfaCompletedAt disagree', async () => {
+    // Verified with no timestamp: the middleware would treat it as signed in while the policy sees
+    // no second factor at all.
+    await expect(db.session.create({ data: liveSession({ mfaVerified: true, mfaCompletedAt: null }) })).rejects.toThrow();
+    // And the inverse — a timestamp with the flag off — is equally a disagreement.
+    await expect(db.session.create({ data: liveSession({ mfaVerified: false, mfaCompletedAt: new Date() }) })).rejects.toThrow();
+
+    const ok = await db.session.create({ data: liveSession({ mfaVerified: true, mfaCompletedAt: new Date() }) });
+    expect(ok.mfaVerified).toBe(true);
+    const halfAuthenticated = await db.session.create({ data: liveSession({ mfaVerified: false, mfaCompletedAt: null }) });
+    expect(halfAuthenticated.mfaCompletedAt).toBeNull();
+  });
+
+  it('(0008-2) refuses step-up on a session that never completed MFA', async () => {
+    await expect(
+      db.session.create({ data: liveSession({ mfaVerified: false, mfaCompletedAt: null, stepUpAt: new Date() }) }),
+    ).rejects.toThrow();
+
+    // Nor can it be reached by updating afterwards — the CHECK is evaluated on the new row either way.
+    const half = await db.session.create({ data: liveSession({ mfaVerified: false, mfaCompletedAt: null }) });
+    await expect(db.session.update({ where: { id: half.id }, data: { stepUpAt: new Date() } })).rejects.toThrow();
+
+    const verified = await db.session.create({ data: liveSession({ mfaVerified: true, mfaCompletedAt: new Date() }) });
+    const stepped = await db.session.update({ where: { id: verified.id }, data: { stepUpAt: new Date() } });
+    expect(stepped.stepUpAt).not.toBeNull();
+  });
+
+  it('(0008-3) refuses a TOTP replay counter that moves backwards or is cleared', async () => {
+    await db.user.update({ where: { id: userId }, data: { totpLastCounter: BigInt(1000) } });
+
+    // Rewinding re-opens every code in between — exactly what two racing MFA submissions would do.
+    await expect(db.user.update({ where: { id: userId }, data: { totpLastCounter: BigInt(999) } })).rejects.toThrow();
+    // Clearing it disables replay defence entirely.
+    await expect(db.user.update({ where: { id: userId }, data: { totpLastCounter: null } })).rejects.toThrow();
+
+    const forward = await db.user.update({ where: { id: userId }, data: { totpLastCounter: BigInt(1001) } });
+    expect(forward.totpLastCounter).toBe(BigInt(1001));
+    // Re-accepting the SAME counter is refused by the application (verifyTotp returns REPLAYED); the
+    // trigger's job is only to stop the value going down, so an equal write stays legal here.
+    const same = await db.user.update({ where: { id: userId }, data: { totpLastCounter: BigInt(1001) } });
+    expect(same.totpLastCounter).toBe(BigInt(1001));
+  });
+
+  it('(0008-4) refuses redeeming a recovery code twice, un-using one, or re-pointing it', async () => {
+    const code = await db.recoveryCode.create({ data: { userId, codeHash: `h_${Date.now()}` } });
+
+    const used = await db.recoveryCode.update({ where: { id: code.id }, data: { usedAt: new Date() } });
+    expect(used.usedAt).not.toBeNull();
+
+    // The second redemption — the one a concurrent double-submit would attempt.
+    await expect(db.recoveryCode.update({ where: { id: code.id }, data: { usedAt: new Date() } })).rejects.toThrow();
+    // Un-using it would silently restore a credential an attacker may already have spent.
+    await expect(db.recoveryCode.update({ where: { id: code.id }, data: { usedAt: null } })).rejects.toThrow();
+
+    // The code and its owner are immutable: re-pointing a spent code at another user would hand them
+    // a credential. (Checked on a FRESH code, since the used one is already frozen above.)
+    const other = await db.recoveryCode.create({ data: { userId, codeHash: `h2_${Date.now()}` } });
+    await expect(db.recoveryCode.update({ where: { id: other.id }, data: { codeHash: 'rewritten' } })).rejects.toThrow();
+  });
+
+  it('(0008-5) refuses negative failure counters, which would disable the lockout they drive', async () => {
+    await expect(db.user.update({ where: { id: userId }, data: { failedLoginCount: -1 } })).rejects.toThrow();
+    await expect(db.user.update({ where: { id: userId }, data: { failedMfaCount: -1 } })).rejects.toThrow();
+
+    const ok = await db.user.update({ where: { id: userId }, data: { failedLoginCount: 3, failedMfaCount: 2 } });
+    expect(ok.failedLoginCount).toBe(3);
+    // The two budgets are independent columns — that separation IS the control (ADR-035).
+    expect(ok.failedMfaCount).toBe(2);
+    await db.user.update({ where: { id: userId }, data: { failedLoginCount: 0, failedMfaCount: 0 } });
+  });
+
+  it('(0008-6) keeps the partial expiry-sweep index the session cleanup depends on', async () => {
+    const rows = await db.$queryRawUnsafe<{ indexdef: string }[]>(
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'session_expiry_sweep'`,
+    );
+    expect(rows).toHaveLength(1);
+    // Partial on live sessions: an index that also carries revoked rows grows without bound.
+    expect(rows[0]!.indexdef).toMatch(/WHERE .*"?revokedAt"? IS NULL/i);
+  });
+
+  it('(0008-7) the atomic throttle SQL agrees with the pure policy it duplicates', async () => {
+    // `AuthService.bumpThrottle` expresses nextThrottleState's FAILURE branch in SQL so the counter
+    // can move under a row lock (a read-then-write loses N-1 of N concurrent failures). Two
+    // expressions of one rule is exactly the shape that drifts, so compare them directly.
+    const { nextThrottleState, LOGIN_THROTTLE } = await import('@scraper/core');
+    const bump = async (count: number, at: Date | null, now: Date): Promise<{ n: number; at: Date | null }> => {
+      await db.user.update({ where: { id: userId }, data: { failedLoginCount: count, lastFailedLoginAt: at } });
+      await db.$executeRawUnsafe(
+        `UPDATE "User"
+            SET "failedLoginCount" = CASE
+                  WHEN "lastFailedLoginAt" IS NOT NULL AND $2::timestamp - "lastFailedLoginAt" >= make_interval(mins => $3::int)
+                  THEN 1 ELSE "failedLoginCount" + 1 END,
+                "lastFailedLoginAt" = $2::timestamp
+          WHERE "id" = $1`,
+        userId, now, LOGIN_THROTTLE.lockoutMinutes,
+      );
+      const u = await db.user.findUniqueOrThrow({ where: { id: userId } });
+      return { n: u.failedLoginCount, at: u.lastFailedLoginAt };
+    };
+
+    const now = new Date('2026-08-13T12:00:00Z');
+    const fresh = new Date(now.getTime() - 60_000);                                     // inside the window
+    const stale = new Date(now.getTime() - (LOGIN_THROTTLE.lockoutMinutes + 1) * 60_000); // window expired
+
+    for (const [count, at] of [[3, fresh], [3, stale], [0, null]] as [number, Date | null][]) {
+      const sql = await bump(count, at, now);
+      const policy = nextThrottleState({ failedCount: count, lastFailedAt: at }, 'FAILURE', LOGIN_THROTTLE, now);
+      expect(sql.n, `count=${count} at=${String(at)}`).toBe(policy.failedCount);
+      expect(sql.at?.toISOString()).toBe(policy.lastFailedAt?.toISOString());
+    }
+    await db.user.update({ where: { id: userId }, data: { failedLoginCount: 0, lastFailedLoginAt: null } });
   });
 });

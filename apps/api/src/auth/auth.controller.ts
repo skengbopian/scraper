@@ -1,4 +1,5 @@
-import { Body, Controller, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Headers, Post, UseFilters } from '@nestjs/common';
+import { AuthErrorFilter } from './auth-error.filter.js';
 import { AuthService } from './auth.service.js';
 
 class RegisterDto {
@@ -12,6 +13,9 @@ class LoginDto {
 class TotpDto {
   readonly code!: string;
 }
+class RecoveryDto {
+  readonly code!: string;
+}
 
 /**
  * Auth surface (DB mode only — the module is not mounted in in-memory mode).
@@ -20,6 +24,9 @@ class TotpDto {
  * identity shell, and verification belongs to the ident-provider flow, not to auth.
  */
 @Controller('auth')
+// Every failure on this surface is something a user has to read and act on, so the machine-readable
+// reason is translated into their register on the way out — see the filter.
+@UseFilters(AuthErrorFilter)
 export class AuthController {
   constructor(private readonly service: AuthService) {}
 
@@ -36,6 +43,32 @@ export class AuthController {
   @Post('totp')
   totp(@Headers('authorization') auth: string | undefined, @Body() dto: TotpDto) {
     return this.service.verifyTotpStep(bearer(auth), String(dto.code ?? ''));
+  }
+
+  /**
+   * Re-confirm the second factor to open high-sensitivity data (docs/06 C2).
+   *
+   * A separate route from `/auth/totp` on purpose: signing in and re-confirming to open a credit file
+   * are different acts, and one endpoint doing both would mean every sign-in silently granted step-up.
+   */
+  @Post('step-up')
+  stepUp(@Headers('authorization') auth: string | undefined, @Body() dto: TotpDto) {
+    return this.service.stepUp(bearer(auth), String(dto.code ?? ''));
+  }
+
+  /**
+   * Redeem a recovery code instead of the TOTP challenge. Completes MFA but deliberately does NOT
+   * grant step-up — someone signing in from a code found on paper should not thereby open the file.
+   */
+  @Post('recovery')
+  recovery(@Headers('authorization') auth: string | undefined, @Body() dto: RecoveryDto) {
+    return this.service.redeemRecoveryCode(bearer(auth), String(dto.code ?? ''));
+  }
+
+  /** Sign out everywhere, including this session — see the service for why it includes the caller. */
+  @Post('revoke-all')
+  revokeAll(@Headers('authorization') auth: string | undefined) {
+    return this.service.revokeAllSessions(bearer(auth));
   }
 
   @Post('logout')

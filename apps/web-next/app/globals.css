@@ -183,3 +183,15 @@ details.card > summary::marker { color: var(--accent); }
 
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Recovery codes, shown once at enrolment (port wave 3). Monospaced and widely spaced because they
+   are transcribed by hand, onto paper, by someone who is about to need them. */
+.codes {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.4rem 1rem;
+}
+.codes .secret { margin: 0; }

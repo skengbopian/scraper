@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { VerifiedIdentity } from '@scraper/core';
+import { StepUpGuard } from '../auth/step-up.guard.js';
 import { IdentityVerifiedGuard } from '../common/identity-verified.guard.js';
 import { CreditFileService } from './credit-file.service.js';
 
@@ -27,7 +28,14 @@ export class CreditFileController {
     return this.service.upload(req.userId, req.identity, bytes);
   }
 
+  /**
+   * The RELEASE route, and therefore the one behind step-up (docs/06 C1: "content returned by
+   * controllers is released only after step-up auth"). Upload is deliberately NOT gated: writing a
+   * document you already hold discloses nothing, and gating it would push users to skip the ingest
+   * that makes the rest of the product useful.
+   */
   @Get('findings')
+  @UseGuards(StepUpGuard)
   findings(@Req() req: AuthedRequest) {
     return this.service.findings(req.userId);
   }
