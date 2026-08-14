@@ -4,6 +4,7 @@ import type {
   CreateRequestResult,
   CreditFileView,
   InboundDocumentView,
+  AnomalyEventView,
   OpsQueueItem,
   RequestType,
   RequestView,
@@ -165,25 +166,35 @@ export function login(email: string, password: string, register: Register): Prom
   });
 }
 
-/** Step 2. The token from step 1 travels in the cookie, so `call()` attaches it. */
-export function verifyTotp(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true }>> {
-  return call<{ mfaVerified: true }>('/auth/totp', register, { method: 'POST', body: JSON.stringify({ code }) });
+/**
+ * Step 2. The token from step 1 travels in the cookie, so `call()` attaches it.
+ *
+ * The response carries a NEW token (audit L2): the API rotates the session at MFA completion rather
+ * than upgrading the bearer the password bought, so the caller MUST store what comes back. Keeping
+ * the old cookie would sign the user straight back out — the old row is revoked in the same
+ * transaction — which is exactly the loud failure this shape should have if anyone forgets.
+ */
+export function verifyTotp(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true; token: string }>> {
+  return call<{ mfaVerified: true; token: string }>('/auth/totp', register, { method: 'POST', body: JSON.stringify({ code }) });
 }
 
 /**
  * Re-confirm the second factor before high-sensitivity content is released (docs/06 C2).
  * A different endpoint from `verifyTotp`: signing in and opening the credit file are different acts.
  */
-export function stepUp(code: string, register: Register): Promise<ApiResult<{ stepUp: true; expiresInSeconds: number }>> {
-  return call<{ stepUp: true; expiresInSeconds: number }>('/auth/step-up', register, {
+export function stepUp(code: string, register: Register): Promise<ApiResult<{ stepUp: true; expiresInSeconds: number; token: string }>> {
+  return call<{ stepUp: true; expiresInSeconds: number; token: string }>('/auth/step-up', register, {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
 }
 
 /** Redeem a recovery code in place of the TOTP challenge. Completes MFA; never grants step-up. */
-export function redeemRecoveryCode(code: string, register: Register): Promise<ApiResult<{ mfaVerified: true; remainingCodes: number }>> {
-  return call<{ mfaVerified: true; remainingCodes: number }>('/auth/recovery', register, {
+export function redeemRecoveryCode(
+  code: string,
+  register: Register,
+): Promise<ApiResult<{ mfaVerified: true; remainingCodes: number; token: string }>> {
+  return call<{ mfaVerified: true; remainingCodes: number; token: string }>('/auth/recovery', register, {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
@@ -223,6 +234,11 @@ export function getHealth(register: Register): Promise<ApiResult<{ ok: true; dev
  */
 export function getOpsQueue(register: Register): Promise<ApiResult<OpsQueueItem[]>> {
   return call<OpsQueueItem[]>('/ops/queue', register);
+}
+
+/** The abuse-review log (audit M3/D7). Behind the ops role, like everything else in /ops. */
+export function getOpsAnomalies(register: Register): Promise<ApiResult<AnomalyEventView[]>> {
+  return call<AnomalyEventView[]>('/ops/anomalies', register);
 }
 
 export function getOpsInbox(register: Register): Promise<ApiResult<InboundDocumentView[]>> {

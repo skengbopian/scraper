@@ -135,7 +135,7 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     const guarded = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
     expect(guarded.status).toBe(403);
 
-    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL } }, orderBy: { createdAt: 'desc' } });
+    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL }, revokedAt: null }, orderBy: { lastSeenAt: 'desc' } });
     expect(row.mfaVerified).toBe(false);
     expect(row.mfaCompletedAt).toBeNull();
     expect(row.stepUpAt).toBeNull();
@@ -147,14 +147,17 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     const { token } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
     const ok = await post('/auth/totp', { code: await currentCode(totpSecret) }, token);
     expect(ok.status).toBe(201);
+    // The bearer is REPLACED at MFA completion (audit L2), so everything below uses the new one.
+    // Holding on to the pre-MFA token here would 401 — which is the defence working, not a fixture bug.
+    const mfaToken = String(((await json(ok)) as { token?: string }).token);
 
-    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL } }, orderBy: { createdAt: 'desc' } });
+    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL }, revokedAt: null }, orderBy: { lastSeenAt: 'desc' } });
     expect(row.mfaCompletedAt).not.toBeNull();
     // Signing in and re-confirming to open a credit file are different acts. If this were granted at
     // sign-in the whole gate would be ornamental.
     expect(row.stepUpAt).toBeNull();
 
-    const denied = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
+    const denied = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${mfaToken}` } });
     expect(denied.status).toBe(403);
     const body = await json(denied);
     expect(body.reason).toBe('STEP_UP_REQUIRED');
@@ -162,16 +165,49 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     expect(body.nextAction).toBe('CONFIRM_SECOND_FACTOR');
   });
 
+  /**
+   * L2 — the pre-MFA token must DIE at MFA completion.
+   *
+   * This is the regression for the audit finding: `/auth/totp` used to upgrade the same bearer in
+   * place, so a token captured in the window between password and code — the window where a token
+   * is freshest and most exposed — became a fully privileged session the moment the VICTIM completed
+   * their own challenge. The attacker supplied nothing. They waited.
+   */
+  it('L2 — the token the password bought is revoked once MFA completes, and the new one is different', async () => {
+    await resetReplayCounter();
+    await verifyIdentity();
+    const { token: preMfa } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
+
+    const upgraded = await post('/auth/totp', { code: await currentCode(totpSecret) }, preMfa);
+    expect(upgraded.status).toBe(201);
+    const rotated = String(((await json(upgraded)) as { token?: string }).token);
+    expect(rotated).not.toBe(preMfa);
+
+    // The captured token is worth exactly what it was worth when it was taken: nothing.
+    const stolen = await fetch(`${base}/requests`, { headers: { authorization: `Bearer ${preMfa}` } });
+    expect(stolen.status).toBe(403);
+    // ...and the new one works.
+    expect((await fetch(`${base}/requests`, { headers: { authorization: `Bearer ${rotated}` } })).status).toBe(200);
+
+    // Rotation re-issues an IDENTIFIER; it must not restart the absolute lifetime, or a session
+    // could be kept alive indefinitely by re-confirming.
+    const rows = await db.session.findMany({ where: { user: { email: EMAIL } }, orderBy: { lastSeenAt: 'desc' }, take: 2 });
+    expect(rows[0]!.expiresAt.getTime()).toBe(rows[1]!.expiresAt.getTime());
+    expect(rows.find((r) => r.revokedAt !== null)).toBeDefined();
+  });
+
   it('REFUSES a replayed code — the same one that just worked', async () => {
     // NOTE: no resetReplayCounter() here. This is the test the defence exists for.
     await resetReplayCounter();
     const { token } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
     const code = await currentCode(totpSecret);
-    expect((await post('/auth/totp', { code }, token)).status).toBe(201);
+    const upgraded = await post('/auth/totp', { code }, token);
+    expect(upgraded.status).toBe(201);
+    const mfaToken = String(((await json(upgraded)) as { token?: string }).token);
 
     // Present the very same code again, inside its window. Before wave 3 this succeeded, so a code
     // read over a shoulder stayed a working credential for up to a minute.
-    const replay = await post('/auth/step-up', { code }, token);
+    const replay = await post('/auth/step-up', { code }, mfaToken);
     expect(replay.status).toBe(401);
     expect((await json(replay)).reason).toBe('REPLAYED');
 
@@ -183,34 +219,46 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     await resetReplayCounter();
     await verifyIdentity();
     const { token } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
-    await post('/auth/totp', { code: await currentCode(totpSecret) }, token);
+    const mfaToken = String(
+      ((await json(await post('/auth/totp', { code: await currentCode(totpSecret) }, token))) as { token?: string }).token,
+    );
 
     // Still shut: MFA is done, step-up is not.
-    const before = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
+    const before = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${mfaToken}` } });
     expect(before.status).toBe(403);
     expect((await json(before)).reason).toBe('STEP_UP_REQUIRED');
 
     // A code from the NEXT window — a fresh credential, not the one sign-in already spent.
     await resetReplayCounter();
-    const stepped = await post('/auth/step-up', { code: await currentCode(totpSecret) }, token);
+    const stepped = await post('/auth/step-up', { code: await currentCode(totpSecret) }, mfaToken);
     expect(stepped.status).toBe(201);
-    expect((await json(stepped)).stepUp).toBe(true);
+    const steppedBody = (await json(stepped)) as { stepUp?: boolean; token?: string };
+    expect(steppedBody.stepUp).toBe(true);
 
-    const opened = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
+    // Step-up rotates too, and it is the ONE token that opens the credit file. The pre-step-up
+    // bearer must be worthless afterwards — that is the point of rotating at all.
+    const stale = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${mfaToken}` } });
+    expect(stale.status).toBe(403);
+
+    const opened = await fetch(`${base}/credit-file/findings`, {
+      headers: { authorization: `Bearer ${String(steppedBody.token)}` },
+    });
     expect(opened.status).toBe(200);
   });
 
   it('a session dies of IDLENESS even while its absolute TTL is still valid', async () => {
     await resetReplayCounter();
     const { token } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
-    expect((await post('/auth/totp', { code: await currentCode(totpSecret) }, token)).status).toBe(201);
+    const idleToken = String(
+      ((await json(await post('/auth/totp', { code: await currentCode(totpSecret) }, token))) as { token?: string }).token,
+    );
 
-    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL } }, orderBy: { createdAt: 'desc' } });
+    const row = await db.session.findFirstOrThrow({ where: { user: { email: EMAIL }, revokedAt: null }, orderBy: { lastSeenAt: 'desc' } });
     expect(row.expiresAt.getTime()).toBeGreaterThan(Date.now()); // 12h TTL: nowhere near expiry
     // Backdate the activity past the 30-minute idle window — the tab left open on a shared laptop.
     await db.session.update({ where: { id: row.id }, data: { lastSeenAt: new Date(Date.now() - 31 * 60_000) } });
 
-    const after = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
+    const after = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${idleToken}` } });
     expect(after.status).toBe(403); // attaches nothing → the identity guard refuses first
     const stillLive = await db.session.findUniqueOrThrow({ where: { id: row.id } });
     expect(stillLive.revokedAt).toBeNull(); // idle is a POLICY verdict, not a mutation
@@ -248,10 +296,13 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     const code = recoveryCodes[0]!;
     const used = await post('/auth/recovery', { code }, token);
     expect(used.status).toBe(201);
-    expect((await json(used)).remainingCodes).toBe(9);
+    const usedBody = (await json(used)) as { remainingCodes?: number; token?: string };
+    expect(usedBody.remainingCodes).toBe(9);
+    // Redeeming a recovery code completes MFA, so it rotates the session too (audit L2).
+    const recoveredToken = String(usedBody.token);
 
     // Signing in from a code found on paper must not thereby open the credit file.
-    const denied = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${token}` } });
+    const denied = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${recoveredToken}` } });
     expect(denied.status).toBe(403);
     expect((await json(denied)).reason).toBe('STEP_UP_REQUIRED');
 
@@ -265,14 +316,16 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
   it('revoke-everywhere kills every session INCLUDING the caller', async () => {
     await resetReplayCounter();
     const a = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
-    expect((await post('/auth/totp', { code: await currentCode(totpSecret) }, a.token)).status).toBe(201);
+    const upgraded = await post('/auth/totp', { code: await currentCode(totpSecret) }, a.token);
+    expect(upgraded.status).toBe(201);
+    const caller = String(((await json(upgraded)) as { token?: string }).token);
 
-    const revoked = await json(await post('/auth/revoke-all', undefined, a.token));
+    const revoked = await json(await post('/auth/revoke-all', undefined, caller));
     expect(Number(revoked.revoked)).toBeGreaterThanOrEqual(1);
 
     // "Sign out everywhere" that leaves the caller signed in is not what the words mean — and if the
     // caller IS the attacker, theirs is the one session that matters.
-    const after = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${a.token}` } });
+    const after = await fetch(`${base}/credit-file/findings`, { headers: { authorization: `Bearer ${caller}` } });
     expect(after.status).toBe(403);
     const live = await db.session.count({ where: { user: { email: EMAIL }, revokedAt: null } });
     expect(live).toBe(0);
@@ -358,11 +411,11 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     await resetReplayCounter();
     const { token } = (await json(await post('/auth/login', { email: EMAIL, password: PASSWORD }))) as { token: string };
     const code = await currentCode(totpSecret);
-    await post('/auth/totp', { code }, token);
+    const mfaToken = String(((await json(await post('/auth/totp', { code }, token))) as { token?: string }).token);
 
     const replay = await fetch(`${base}/auth/step-up`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, 'accept-language': 'de' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${mfaToken}`, 'accept-language': 'de' },
       body: JSON.stringify({ code }),
     });
     const body = await json(replay);

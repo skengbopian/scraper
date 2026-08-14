@@ -39,6 +39,11 @@ export async function signIn(_prev: string | null, form: FormData): Promise<stri
 export async function submitTotp(_prev: string | null, form: FormData): Promise<string | null> {
   const result = await verifyTotp(String(form.get('code') ?? ''), readRegister());
   if (!result.ok) return result.message;
+  // ROTATION (audit L2). The API revokes the pre-MFA session and issues a new one, so the cookie
+  // must be replaced rather than left alone: the token this browser holds is now revoked. Storing
+  // the new one here is the whole reason the rotation is contained — the cookie is httpOnly and set
+  // by this server action, so no client code has to learn anything about it.
+  storeSession(result.data.token);
   revalidatePath('/', 'layout');
   redirect('/konto');
 }
@@ -67,6 +72,8 @@ export async function createAccount(
 export async function confirmStepUp(_prev: string | null, form: FormData): Promise<string | null> {
   const result = await stepUp(String(form.get('code') ?? ''), readRegister());
   if (!result.ok) return result.message;
+  // Step-up rotates too, and this is the token that opens the credit file — see the API's rotateSession.
+  storeSession(result.data.token);
   const requested = String(form.get('next') ?? '');
   const next = isSafeNextPath(requested) ? requested : '/akte';
   revalidatePath('/', 'layout');
@@ -83,6 +90,7 @@ export async function confirmStepUp(_prev: string | null, form: FormData): Promi
 export async function submitRecoveryCode(_prev: string | null, form: FormData): Promise<string | null> {
   const result = await redeemRecoveryCode(String(form.get('code') ?? ''), readRegister());
   if (!result.ok) return result.message;
+  storeSession(result.data.token);
   revalidatePath('/', 'layout');
   redirect('/konto');
 }

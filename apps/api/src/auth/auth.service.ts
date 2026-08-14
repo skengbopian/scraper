@@ -191,23 +191,37 @@ export class AuthService {
     return { token, mfaRequired: true };
   }
 
-  /** Step 2: TOTP. Upgrades the session; guarded routes only accept MFA-verified sessions. */
-  async verifyTotpStep(token: string, code: string): Promise<{ mfaVerified: true }> {
+  /**
+   * Step 2: TOTP. Issues a NEW session token and revokes the one the password bought.
+   *
+   * THE ROTATION, and why it is not a nicety (audit L2). This used to upgrade the same bearer in
+   * place: `UPDATE Session SET mfaVerified = true WHERE id = <the token the caller already holds>`.
+   * So a token captured while it was still worthless — the window between `/auth/login` and
+   * `/auth/totp`, which is where a token is most exposed because it has just been minted, logged,
+   * proxied and put in a cookie for the first time — became a fully privileged session the moment the
+   * VICTIM completed their own challenge. The attacker needed no code. They needed only to wait.
+   *
+   * Rotation closes it structurally: privilege is never attached to an identifier that existed before
+   * the second factor was proven. What comes back is a different secret, and the old one is revoked
+   * in the same transaction, so the captured token is worth exactly what it was worth when it was
+   * taken — nothing.
+   *
+   * What is deliberately CARRIED OVER rather than refreshed: `createdAt` and `expiresAt`. Rotation
+   * must not be a lifetime-extension primitive — otherwise a session could be kept alive forever by
+   * re-confirming, and the absolute TTL would stop meaning anything.
+   */
+  async verifyTotpStep(token: string, code: string): Promise<{ mfaVerified: true; token: string }> {
     const now = new Date();
     const session = await this.loadSessionForChallenge(token, now);
     await this.consumeTotp(session.userId, code, now);
-    await this.db.session.update({
-      where: { id: session.id },
-      data: {
-        mfaVerified: true,
-        mfaCompletedAt: now,
-        lastSeenAt: now,
-        // Note what is NOT set: stepUpAt. Completing the challenge at sign-in and re-confirming it to
-        // open a credit file are different acts; treating the first as the second would make the gate
-        // ornamental (docs/06 C2).
-      },
+    const rotated = await this.rotateSession(session, now, {
+      mfaVerified: true,
+      mfaCompletedAt: now,
+      // Note what is NOT set: stepUpAt. Completing the challenge at sign-in and re-confirming it to
+      // open a credit file are different acts; treating the first as the second would make the gate
+      // ornamental (docs/06 C2).
     });
-    return { mfaVerified: true };
+    return { mfaVerified: true, token: rotated };
   }
 
   /**
@@ -217,15 +231,58 @@ export class AuthService {
    * the sign-in challenge, and the DB refuses the other order anyway (session_stepup_requires_mfa).
    * The same replay defence applies — a captured code cannot be replayed into step-up either.
    */
-  async stepUp(token: string, code: string): Promise<{ stepUp: true; expiresInSeconds: number }> {
+  async stepUp(token: string, code: string): Promise<{ stepUp: true; expiresInSeconds: number; token: string }> {
     const now = new Date();
     const session = await this.db.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
     const verdict = evaluateSession(session ? toSessionState(session) : null, now);
     if (!verdict.ok) throw sessionRejection(verdict.reason);
 
     await this.consumeTotp(session!.userId, code, now);
-    await this.db.session.update({ where: { id: session!.id }, data: { stepUpAt: now, lastSeenAt: now } });
-    return { stepUp: true, expiresInSeconds: STEP_UP_TTL_MINUTES * 60 };
+    // Rotated for the same reason as the sign-in challenge (audit L2), and the stakes are higher
+    // here: a step-up token opens the credit file. Any copy of the pre-step-up bearer — in a proxy
+    // log, a browser extension, a shared machine's cookie jar — must not become a credit-file key
+    // because the account holder later confirmed a code for their own reasons.
+    const rotated = await this.rotateSession(
+      { id: session!.id, userId: session!.userId, createdAt: session!.createdAt, expiresAt: session!.expiresAt },
+      now,
+      { mfaVerified: true, mfaCompletedAt: session!.mfaCompletedAt, stepUpAt: now },
+    );
+    return { stepUp: true, expiresInSeconds: STEP_UP_TTL_MINUTES * 60, token: rotated };
+  }
+
+  /**
+   * Issue a new session token carrying `grants`, and revoke the old row — atomically.
+   *
+   * ATOMIC is the whole contract. Two rows both live for an instant would be a second usable
+   * credential; neither row live would sign the user out mid-challenge, which is the failure mode
+   * that makes people turn a security control off. One transaction gives the caller exactly one
+   * working token at every observable moment.
+   *
+   * `createdAt` and `expiresAt` are inherited, never recomputed: rotation re-issues an identifier, it
+   * does not restart the clock on the session's absolute lifetime.
+   */
+  private async rotateSession(
+    old: { id: string; userId: string; createdAt: Date; expiresAt: Date },
+    now: Date,
+    grants: { mfaVerified: boolean; mfaCompletedAt: Date | null; stepUpAt?: Date },
+  ): Promise<string> {
+    const { token, tokenHash } = newSessionToken();
+    await this.db.$transaction([
+      this.db.session.update({ where: { id: old.id }, data: { revokedAt: now } }),
+      this.db.session.create({
+        data: {
+          tokenHash,
+          userId: old.userId,
+          mfaVerified: grants.mfaVerified,
+          mfaCompletedAt: grants.mfaCompletedAt,
+          ...(grants.stepUpAt ? { stepUpAt: grants.stepUpAt } : {}),
+          createdAt: old.createdAt,
+          lastSeenAt: now,
+          expiresAt: old.expiresAt,
+        },
+      }),
+    ]);
+    return token;
   }
 
   /**
@@ -236,7 +293,7 @@ export class AuthService {
    * does NOT grant step-up — someone signing in from a code they found on paper should not thereby
    * open the credit file.
    */
-  async redeemRecoveryCode(token: string, code: string): Promise<{ mfaVerified: true; remainingCodes: number }> {
+  async redeemRecoveryCode(token: string, code: string): Promise<{ mfaVerified: true; remainingCodes: number; token: string }> {
     const now = new Date();
     const session = await this.loadSessionForChallenge(token, now);
     await this.assertMfaBudget(session.userId, now);
@@ -247,13 +304,30 @@ export class AuthService {
       await this.bumpMfaThrottle(session.userId, 'FAILURE', now);
       throw new UnauthorizedException({ error: 'BAD_RECOVERY_CODE', reason: 'BAD_RECOVERY_CODE' });
     }
+    // Rotated like the TOTP path (audit L2) — this route completes MFA too, so leaving the pre-MFA
+    // bearer usable here would just move the hole rather than close it. Spending the code and
+    // issuing the new session stay in ONE transaction: a code burned without a session to show for
+    // it costs the user one of a small, unreplaceable set of papers.
+    const { token: rotated, tokenHash } = newSessionToken();
     await this.db.$transaction([
       this.db.recoveryCode.update({ where: { codeHash: match }, data: { usedAt: now } }),
-      this.db.session.update({ where: { id: session.id }, data: { mfaVerified: true, mfaCompletedAt: now, lastSeenAt: now } }),
+      this.db.session.update({ where: { id: session.id }, data: { revokedAt: now } }),
+      this.db.session.create({
+        data: {
+          tokenHash,
+          userId: session.userId,
+          mfaVerified: true,
+          mfaCompletedAt: now,
+          // Still no stepUpAt: a code found on paper completes sign-in and does not open the file.
+          createdAt: session.createdAt,
+          lastSeenAt: now,
+          expiresAt: session.expiresAt,
+        },
+      }),
     ]);
     await this.bumpMfaThrottle(session.userId, 'SUCCESS', now);
     const remainingCodes = await this.db.recoveryCode.count({ where: { userId: session.userId, usedAt: null } });
-    return { mfaVerified: true, remainingCodes };
+    return { mfaVerified: true, remainingCodes, token: rotated };
   }
 
   async logout(token: string): Promise<void> {
