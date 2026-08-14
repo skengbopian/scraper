@@ -20,6 +20,15 @@ is also exactly how a stalker locates a victim. Therefore, **non-negotiably**:
 - If you are about to implement a feature that lets a user act on data about a **third party**, STOP
   and flag it. That feature does not belong in this product without a dedicated safety design.
 
+**Decentralisation does not relax this rule; it moves its anchor** (launch posture is decentralised —
+read `docs/14-decentralised-deployment.md`). Each node runs its own identity gate on infrastructure
+its operator controls, so the guarantees above bind a node's *users* and cannot bind the node's
+*operator*. Never compensate with features: no cross-node subject lookup, no shared identity
+registry, no central census of people, no aggregation of anyone's answers. The load-bearing residual
+control is that the product stays useless as a search tool **even to its own operator** — that is a
+property of what we refuse to build, and it is the one property a fork cannot inherit its way out of
+our refusing.
+
 If any task appears to weaken identity binding, treat it as a blocker and say so.
 
 ## Non-negotiable guardrails
@@ -93,13 +102,16 @@ If any task appears to weaken identity binding, treat it as a blocker and say so
 - **No secrets in the repo.** `.env.example` only.
 - Keep German legal wording in `templates/` reviewed by counsel; never inline legal prose in code.
 
-## Pivot focus (read `docs/09-pivot-modules.md`)
+## Pivot focus (read `docs/09-pivot-modules.md` — and `docs/14-decentralised-deployment.md` for the operating model)
 
 The product is three modules on this engine: **Provenance** (Art. 15(1)(g) source requests → purge
 broker-sourced bureau data), **Fraud Shield** (keep identity fraud off the Schufa file), **File Fixer**
 (automate data copies, disputes, deadlines). Do NOT build "scraping defence improves your Schufa" — it is
 false (report §5). Primary targets are the bureaus that buy broker data (infoscore/Experian, CRIF) plus
-Schufa's undefined "Datenlieferanten" clause; escalation venue for infoscore + CRIF is LfDI BW.
+Schufa's undefined "Datenlieferanten" clause; escalation venue for infoscore + CRIF is LfDI BW. **The launch posture is decentralised** (2026-08-14): self-hosted and
+community nodes through which EU citizens exercise their own rights — not a central service. Posture
+definitions, what that simplifies (self-representation) and what it weakens (the identity gate's
+trust anchor) live in `docs/14-decentralised-deployment.md`; the legal fork is `docs/05` §2.
 
 ## Usability is a launch gate (equal weight to the security gates)
 

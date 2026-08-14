@@ -26,6 +26,15 @@ deemed excessive. Individualised, user-driven requests are the design defence; k
 - **Japan (future):** the 非弁 rule can make even *sending* a request "on behalf of" a user unlawful for a
   non-lawyer. Japan is enterable only as **user-initiated software** + a law-firm partner. Do not port the
   German "agent" model there.
+- **The decentralised launch posture forks this whole section** (`docs/14-decentralised-deployment.md`).
+  On a self-hosted node (posture A) the sender and the subject are the same person: the letters in
+  `templates/` are already first-person and signed by the subject, so there is no agent, no Vollmacht
+  to construct, and self-representation engages no RDG analysis — `TODO(counsel):` confirm, OQ-24.
+  The `Mandate` object survives as the user's recorded, revocable authorisation of their own node (an
+  audit artefact and kill switch), not as an agency claim. **Operated nodes (posture B) engage this
+  section in full**, and everything above about Botendienst vs Rechtsdienstleistung is written for
+  them. The Japan note becomes *easier* under posture A — user-initiated software is exactly what it
+  demands.
 
 ## 3. No promised outcomes (ever)
 
@@ -96,9 +105,20 @@ When built, publish only **verifiable, self-evidenced facts** from the timestamp
 ("responded in 34 days against a 30-day statutory clock"), never letter grades or editorialised
 "worst offender" labels. Documented methodology + right of reply + legal sign-off.
 
+Under the decentralised posture these duties fall on **whoever publishes** — and today nobody can:
+statistics stay in each node's own database, no aggregation exists, and building one would be a new
+processing activity with a provenance problem (nodes can lie, and a poisoned feed defames a
+controller with evidence the aggregator does not hold). See `docs/14-decentralised-deployment.md` §6
+and OQ-25. The outcome vocabulary and the `NO_PROVABLE_CLOCK` exclusion stay exactly as specified so
+any future, deliberately-designed aggregation has honest inputs.
+
 ## Counsel checklist (surface to the human operator)
 - [ ] Templates in `templates/` reviewed and approved.
 - [ ] RDG structure chosen (Inkasso vs lawyer-partner) and implemented as a routing boundary.
 - [ ] Mandate/QES flow reviewed; messenger-service vs legal-service line documented.
 - [ ] DPIA complete, DPO appointed, EU hosting + EU inference confirmed.
 - [ ] Marketing copy reviewed for outcome-promise / UWG risk.
+- [ ] Deployment postures reviewed (`docs/14-decentralised-deployment.md`): posture-A GDPR
+      applicability and self-representation (OQ-23/24); what upstream corpus sign-off means for
+      nodes we never meet, and the activation-responsibility disclaimer (OQ-25); posture-B safety
+      floor (OQ-26).

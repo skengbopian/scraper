@@ -24,9 +24,20 @@ handling and hostile-document parsing are not launchable (see `pnpm readiness`)
 and are deferred to an amendment. Amending a DPIA as processing expands is
 routine; describing hypothetical processing is not useful to anyone.
 
-- Controller: Scraper (entity **[COUNSEL]** — GmbH/UG not yet formed)
-- DPO: **[COUNSEL]** — not appointed. See §9.
-- Version 0.1 · 2026-08-05 · owner: founder + counsel jointly
+- Controller: **per deployment posture** — see the note below. (The original draft assumed a
+  central Scraper entity, **[COUNSEL]** GmbH/UG; that is no longer the launch plan.)
+- DPO: **[COUNSEL]** — per operating entity. See §9.
+- Version 0.2 · 2026-08-14 · owner: project + counsel jointly
+
+> **Deployment postures (2026-08-14 pivot — normative record in `docs/14-decentralised-deployment.md`):**
+> the launch plan is a **decentralised service**. Posture **A** is a data subject self-hosting to
+> exercise their own rights; posture **B** is a node operated for others; posture **C** is a hosted
+> central instance (the original assumption, retained as written but no longer the plan). This DPIA
+> **binds whoever operates a posture-B or posture-C node** — each such operator is the controller for
+> their node and owes their own assessment, for which this document is the template. Whether posture A
+> is regulated processing at all is Art. 2(2)(c) territory and is deliberately left to counsel
+> (OQ-23); for posture A this document serves as engineering documentation of what the software does,
+> which is worth having regardless of the legal answer.
 
 ---
 
@@ -104,20 +115,50 @@ the balancing test at §7. Confirm both.
 
 ## 4. Data flows and recipients
 
-- **Hosting:** Scaleway, `fr-par` (ADR D22). EU-owned, EU-operated. No US
-  parent, therefore no Chapter V transfer to argue.
-- **Mail:** Scaleway TEM, both directions.
-- **Key management:** Scaleway KMS; the KEK never leaves it.
-- **Recipients outside Scraper:** (a) companies the user chooses to give an
-  alias to — their choice, not ours; (b) suppression programme operators (DDV),
-  receiving name + address for server-submitted enrolments only.
-- **No US-region inference on personal data.** The model provider is an
-  interface defaulted to EU (docs/06 M11), and the ladder invokes no model at
-  all.
+**Rewritten 2026-08-14 for the decentralised launch posture.** The original section named one
+operator's stack as fact; under the pivot every infrastructure choice below is made **per node, by
+that node's operator**, and the recipients analysis is theirs to instantiate. What this section can
+state as fact is what the *software* does and does not send — those claims are traceable to code and
+hold on every node.
 
-**[COUNSEL]** Scaleway sub-processor list and DPA (Art. 28) to be reviewed and
-filed. The TEM relay is the sensitive one: it necessarily sees who contacts a
-user at their alias.
+### What the software itself guarantees about flows
+
+- **Nothing phones home.** The only network egress is through the provider interfaces
+  (`packages/core/src/providers/index.ts`): mailer, postal provider, timestamper (QTSP), ident
+  provider, model provider — all stubbed until an operator configures real ones. The controller
+  census ships as static data in the repo; playbooks and templates ship in the repo; compliance
+  statistics stay in the node's own database. There is no central telemetry, no update push channel,
+  no install registry, and **no cross-node flow of any kind** — no aggregation of outcomes, no shared
+  subject data, no federation protocol. If any of that is ever built it is a new processing activity
+  requiring its own assessment first (OQ-25).
+- **No US-region inference on personal data.** The model provider is an interface whose region
+  defaults to `eu` (docs/06 M11), and the ladder invokes no model at all.
+- **EU residency is a per-node duty the defaults push toward**: the boot gates refuse unset
+  KEK/CORS postures outside dev, `MODEL_REGION` defaults to `eu`, and the deployment guide must state
+  what software cannot enforce — where the operator hosts.
+
+### Recipients, per node
+
+Each is chosen and contracted by the node operator; on posture B/C each needs that operator's own
+Art. 28 arrangement. On posture A most are optional — the manual delivery-proof route means a
+self-hoster can run with **no** postal or QTSP vendor at all (post at a branch, record the paper
+receipt; the clock then still requires a QTSP anchor and honestly refuses without one).
+
+| Recipient | Sees | When |
+|---|---|---|
+| Mail provider (reference: an EU transactional-mail service) | outbound request letters; inbound replies; for the alias relay, sender↔alias pairings (R3) | if email channel configured |
+| Postal / hybrid-mail provider | letter contents incl. subject identity | if postal channel automated |
+| QTSP (qualified timestamper) | **hashes only** — the anchor covers a chain hash, never content | if statutory clocks are wanted |
+| Ident provider (eID/POSTIDENT) | identity attributes it verifies | at verification |
+| Suppression programme operators (DDV) | name + address | server-submitted enrolments only |
+| Companies the user gives an alias to | the alias address | the user's own choice, not a system flow |
+| The controllers themselves | the letters — subject identity as the request requires | every send; this is the product working |
+
+**Reference deployment (what a posture-C operator was going to run, kept for whoever runs one):**
+Scaleway `fr-par` hosting (EU-owned, no US parent, no Chapter V transfer to argue), Scaleway TEM for
+mail, Scaleway KMS holding the KEK. **[COUNSEL]** for any operated node: that operator's sub-processor
+list and Art. 28 DPAs reviewed and filed; the mail relay remains the sensitive one — it necessarily
+sees who contacts a user at their alias, whichever vendor it is.
 
 ## 5. Risks to data subjects, and what actually mitigates each
 
@@ -142,7 +183,11 @@ The founding risk (CLAUDE.md, docs/06 C1). Someone uses Scraper to act on
 - Guided handoffs transmit nothing at all, so the question does not arise.
 - Lookup rate limiting and an anomaly-review queue (docs/06 C1).
 
-**Residual risk: LOW**, and structurally so rather than procedurally.
+**Residual risk: LOW *within a node, against its users* — and structurally so rather than
+procedurally.** The 2026-08-14 pivot moves the trust anchor: each node runs the identity gate on
+infrastructure its own operator controls, so these controls bind a node's users and **cannot bind the
+node's operator**. That risk is not this row — it is R8, stated on its own rather than blended in to
+keep this row's LOW honest for what it still covers.
 
 ### R2 — Account takeover exposes the map (CRITICAL)
 One account shows which companies hold a person's data and what they asked to
@@ -238,6 +283,33 @@ could invalidate a contract or a claim.
 
 **Residual risk: LOW.**
 
+### R8 — A node operator abuses their own node (decentralised postures) (MEDIUM)
+New with the decentralised launch posture (`docs/14-decentralised-deployment.md` §4). A malicious
+operator controls the database their node's identity gate reads, so they can seed a "verified"
+identity for a person who never consented — the exact shape R1 exists to prevent, attempted from
+above the controls rather than through them.
+
+What actually limits it, stated without flattery:
+
+- **The software contributes no lookup capability** — no cross-node queries, no shared subject
+  registry, no people-search, no central aggregation of anyone's answers. A stalker who forks this
+  repo gains a letter-formatting convenience they already had with a word processor. Keeping the
+  product useless as a search tool *even to its own operator* is the load-bearing control, and it is
+  a property of what the project refuses to build.
+- **The forged act is unlawful independently of the tooling** — impersonating a data subject to a
+  controller — and controllers run their own requester verification, which is why `IdentityPacket`
+  exists at all.
+- **Production posture refuses a stubbed identity gate** (the M2 boot guards). An operator can run
+  dev posture or edit the code; open-source controls bind honest operators and raise effort for
+  dishonest ones, and no more than that should ever be claimed.
+- Anti-bulk architecture holds per node: one subject per account, rate caps, no sweep engine — the
+  abuse does not scale through us.
+
+**Residual risk: MEDIUM, and irreducible below that by software.** It cannot be LOW because no
+program binds its own administrator. **[SAFETY]** OQ-26 (whether posture B demands a verified
+operator identity before any playbook activation) is the one open design lever. **[COUNSEL]** whether
+distribution of the software itself carries any duty here beyond the warnings already shipped.
+
 ## 6. Data minimisation and retention
 
 ### The mechanism: two keys per user, and what destroying one does
@@ -272,6 +344,15 @@ The EVIDENCE window is **three years from the year-end of the erasure** (§ 195
 with § 199(1) BGB). **[COUNSEL]** confirm that window, and whether any claim this
 product could face carries a longer one. The mechanism is not counsel's question;
 the number is.
+
+### Custody under the decentralised posture
+
+Every key in the table above is held **by the node** — `EnvKekResolver` with an operator-held KEK is
+the posture-A reference; a KMS is posture-B/C hygiene. Consequently the Art. 15/17 duties this
+section's retention rows serve are owed **by each node's operator** to that node's users; on posture
+A the erasure endpoint remains meaningful even with one user (a stolen or handed-on machine holds a
+dossier worth shredding), and the backup half of R6 becomes each operator's own discipline — a
+self-hoster's backup retention IS their erasure completeness.
 
 ### The threat model — stated exactly, and no wider
 
@@ -338,7 +419,10 @@ assumption fails.
 
 ## 9. DPO
 
-**[COUNSEL]** Whether Art. 37(1)(b)/(c) or BDSG §38 obliges a designation.
+**Per operating entity.** Posture A has no entity to appoint one for (if OQ-23 lands where §preamble
+suggests); every posture-B/C operator answers this for themselves.
+
+**[COUNSEL]** Whether Art. 37(1)(b)/(c) or BDSG §38 obliges a designation for an operated node.
 
 Engineering constraint, independent of the legal answer: the founder and the
 CTO **cannot** hold the role — a DPO may not supervise processing decisions
@@ -357,11 +441,16 @@ recommended route at this size.
 - [ ] **[COUNSEL]** Consumer copy reviewed for outcome promises (docs/05 §3,
       UWG). The ladder makes no promises today; keep it that way.
 - [ ] **[COUNSEL]** Privacy notice drafted, including the TEM relay (R3).
+- [ ] Deployment posture declared (A/B/C — `docs/14-decentralised-deployment.md`), and for B/C:
+      this DPIA instantiated by that operator with their own stack in §4.
+- [ ] **[COUNSEL]** OQ-23/OQ-24 answered (posture-A GDPR applicability; self-representation vs RDG).
 - [ ] Prior-consultation question settled (§8).
-- [ ] This document signed and dated by controller + DPO.
+- [ ] This document signed and dated by controller + DPO (postures B/C).
 
 ## 11. Review
 
 Re-assess on: any new tier reaching users; the legal pipeline becoming
 launchable (which requires a substantial amendment); any new sub-processor; any
-security incident; otherwise annually.
+security incident; **any change to the deployment/federation model — in particular
+anything that creates a cross-node flow, which §4 currently states does not exist**;
+otherwise annually.

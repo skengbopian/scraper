@@ -9,6 +9,12 @@ captures tamper-evident proof, and escalates on statutory deadlines.
 > It is **not** legal advice. Every legal claim here must be confirmed with German data-protection
 > and RDG counsel before anything ships. See `docs/05-legal-guardrails.md`.
 
+> **Operating model (2026-08-14):** the launch posture is a **decentralised service** — software EU
+> citizens self-host (or run for a community) to exercise their own data rights, not a central
+> business. Nothing phones home; every node holds its own keys, census copy and statistics. What
+> that simplifies, what it weakens, and the open counsel questions it creates are in
+> [`docs/14-decentralised-deployment.md`](docs/14-decentralised-deployment.md).
+
 ## What Phase 0 is (and is not)
 
 > **Scope is governed by [`docs/09-pivot-modules.md`](docs/09-pivot-modules.md).** Research killed the
