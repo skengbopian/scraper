@@ -1,5 +1,6 @@
 import type { AppStrings } from '@scraper/i18n';
 import type { InboundDocumentView } from '@/lib/types';
+import { OpsActionForm } from './action-form';
 import { assignDocument } from './actions';
 
 /**
@@ -25,14 +26,15 @@ export function InboxRow({ doc, s }: { doc: InboundDocumentView; s: AppStrings }
         <time dateTime={doc.receivedAt}>{doc.receivedAt.slice(0, 10)}</time> · {doc.channel}
       </small>
       {doc.assignedRequestId ? null : (
-        <form action={assignDocument} className="btnrow">
-          <input type="hidden" name="documentId" value={doc.id} />
+        <OpsActionForm action={assignDocument} fields={{ documentId: doc.id }} label={s.ops.inboxAssigned}>
           <label>
             <span className="sr-only">{s.ops.inboxHeading}</span>
+            {/* A mistyped case id now says ALREADY_ASSIGNED or "request not found" instead of
+                silently doing nothing — which, on a screen whose whole job is correlating a document
+                to the RIGHT case, was the worst possible failure to hide. */}
             <input name="requestId" type="text" required autoComplete="off" />
           </label>
-          <button className="btn" type="submit">{s.ops.inboxAssigned}</button>
-        </form>
+        </OpsActionForm>
       )}
     </li>
   );

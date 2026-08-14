@@ -1,5 +1,6 @@
 import type { AppStrings } from '@scraper/i18n';
 import type { OpsQueueItem } from '@/lib/types';
+import { OpsActionForm } from './action-form';
 import { discardComplaint, fileComplaint, resolveCase } from './actions';
 
 /**
@@ -43,6 +44,15 @@ export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
           {s.ops.reasonLabel}: {item.reason}
         </small>
       ) : null}
+      {/* The venue, on the drafted row where it is about to be needed (D4). USER_RESIDENCE shows the
+          rule rather than an authority: the payload carries no subject data to resolve it from, and
+          inventing one would be worse than saying which question is open. */}
+      {drafted && item.escalationVenue ? (
+        <small>
+          {s.ops.venueLabel}:{' '}
+          {item.escalationVenue.kind === 'SEAT' ? item.escalationVenue.dpa : s.ops.venueUserResidence}
+        </small>
+      ) : null}
       <small>
         {s.ops.waitingSince}: <time dateTime={item.queuedAt}>{item.queuedAt.slice(0, 10)}</time>
       </small>
@@ -50,14 +60,8 @@ export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
       {drafted ? (
         <div className="btnrow">
           {/* The one route to ESCALATED. It is a human act and the copy says so (ADR-008). */}
-          <form action={fileComplaint}>
-            <input type="hidden" name="id" value={item.id} />
-            <button className="btn primary" type="submit">{s.ops.sendComplaint}</button>
-          </form>
-          <form action={discardComplaint}>
-            <input type="hidden" name="id" value={item.id} />
-            <button className="btn" type="submit">{s.ops.discardComplaint}</button>
-          </form>
+          <OpsActionForm action={fileComplaint} fields={{ id: item.id }} label={s.ops.sendComplaint} className="btn primary" />
+          <OpsActionForm action={discardComplaint} fields={{ id: item.id }} label={s.ops.discardComplaint} />
         </div>
       ) : resolvable ? (
         <div className="btnrow">
@@ -70,11 +74,9 @@ export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
               ['escalate', s.ops.resolveEscalate],
             ] as const
           ).map(([resolution, label]) => (
-            <form action={resolveCase} key={resolution}>
-              <input type="hidden" name="id" value={item.id} />
-              <input type="hidden" name="resolution" value={resolution} />
-              <button className="btn" type="submit">{label}</button>
-            </form>
+            // `escalate` is the one most likely to be refused (invariant 4b needs proven receipt),
+            // and before this it refused SILENTLY — which read as "the button is broken".
+            <OpsActionForm action={resolveCase} fields={{ id: item.id, resolution }} label={label} key={resolution} />
           ))}
         </div>
       ) : (

@@ -24,12 +24,32 @@ import {
 
 const RESOLUTIONS: readonly OpsResolution[] = ['complied', 'incomplete', 'refused', 'resend', 'escalate'];
 
-export async function resolveCase(formData: FormData): Promise<void> {
+/**
+ * WHY EVERY ACTION RETURNS A MESSAGE (audit W7, ops half).
+ *
+ * These used to return `void` and drop the `ApiResult` on the floor. The API answers a refused
+ * transition precisely — STALE_STATE because another reviewer moved the ticket first, GUARD_MANDATE
+ * because the mandate was revoked mid-flight, provenReceipt because nothing establishes the
+ * controller ever received the request — and every one of those sentences was thrown away, leaving a
+ * button that appeared to do something and did nothing. A reviewer's only feedback was the row not
+ * changing, which is indistinguishable from a slow page.
+ *
+ * The consumer side was fixed first (the request screen surfaces the API's answer under the button);
+ * the same rule applies here, and the project rule it comes from is blunt: no screen dead-ends.
+ * The message is already in the caller's register — the API answers in it (ADR-034) — so returning
+ * it is the whole fix.
+ *
+ * Signature note: `(prev, formData)` is the `useFormState` shape, which is why the forms in
+ * queue-row/inbox-row are client components. A plain `action={fn}` cannot render a result.
+ */
+export async function resolveCase(_prev: string | null, formData: FormData): Promise<string | null> {
   const id = String(formData.get('id') ?? '');
   const resolution = String(formData.get('resolution') ?? '');
-  if (!id || !RESOLUTIONS.includes(resolution as OpsResolution)) return;
-  await resolveOpsRequest(id, resolution as OpsResolution, readRegister());
+  if (!id || !RESOLUTIONS.includes(resolution as OpsResolution)) return null;
+  const result = await resolveOpsRequest(id, resolution as OpsResolution, readRegister());
+  if (!result.ok) return result.message;
   revalidatePath('/ops');
+  return null;
 }
 
 /**
@@ -38,25 +58,31 @@ export async function resolveCase(formData: FormData): Promise<void> {
  * The action's name says what it records rather than what it achieves: a HUMAN files the complaint
  * with the authority, and this marks that they did. Nothing here sends anything to a DPA.
  */
-export async function fileComplaint(formData: FormData): Promise<void> {
+export async function fileComplaint(_prev: string | null, formData: FormData): Promise<string | null> {
   const id = String(formData.get('id') ?? '');
-  if (!id) return;
-  await sendOpsEscalation(id, readRegister());
+  if (!id) return null;
+  const result = await sendOpsEscalation(id, readRegister());
+  if (!result.ok) return result.message;
   revalidatePath('/ops');
+  return null;
 }
 
-export async function discardComplaint(formData: FormData): Promise<void> {
+export async function discardComplaint(_prev: string | null, formData: FormData): Promise<string | null> {
   const id = String(formData.get('id') ?? '');
-  if (!id) return;
-  await discardOpsEscalation(id, readRegister());
+  if (!id) return null;
+  const result = await discardOpsEscalation(id, readRegister());
+  if (!result.ok) return result.message;
   revalidatePath('/ops');
+  return null;
 }
 
 /** Correlate a document to a case. The case id is the reviewer's, never the document's. */
-export async function assignDocument(formData: FormData): Promise<void> {
+export async function assignDocument(_prev: string | null, formData: FormData): Promise<string | null> {
   const documentId = String(formData.get('documentId') ?? '');
   const requestId = String(formData.get('requestId') ?? '').trim();
-  if (!documentId || !requestId) return;
-  await assignInboundDocument(documentId, requestId, readRegister());
+  if (!documentId || !requestId) return null;
+  const result = await assignInboundDocument(documentId, requestId, readRegister());
+  if (!result.ok) return result.message;
   revalidatePath('/ops');
+  return null;
 }

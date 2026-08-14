@@ -456,6 +456,65 @@
   "use strict";
   var $ = function(s,r){ return (r||document).querySelector(s); };
 
+  // ---- DOM builders: the render layer never concatenates HTML (audit L5) ----
+  // This is the PUBLISHED single-file alpha, and since initApi() it does not only draw its own
+  // seed data. It draws the controller census from GET /controllers, the request ledger from
+  // GET /requests and the findings from GET /credit-file/findings — controller names, rule
+  // explanations, free-text explanations, raw state codes. Every one of those strings used to be
+  // glued into an HTML string that was then assigned to .innerHTML. A single controller named
+  // `<img src=x onerror=…>` in the census would therefore have executed script inside a page we
+  // publish under our own name, to people we are asking to trust us with their data rights.
+  // Three of those sites were worse still: they interpolated the value into an inline `onclick=`
+  // attribute, i.e. into a JS string literal, inside an HTML attribute, inside an HTML string —
+  // three nested escaping contexts and not one of them escaped. A company whose name contains an
+  // apostrophe already broke that button; a company whose name contains `');…//` owned the page.
+  // The fix is DOM APIs, not a sanitiser: this package is deliberately dependency-free (that is
+  // why the a11y tooling lives in its own package), and textContent/setAttribute cannot be talked
+  // into parsing markup. The rules that hold from here down:
+  //   * text that came off the wire enters as textContent or as a text-node child — never markup;
+  //   * attributes are written with setAttribute, so a value can no longer close the attribute
+  //     and open a tag;
+  //   * handlers are bound with addEventListener over a closure that already holds the id. An
+  //     `on*` attribute built from data is now unrepresentable — mk() throws if you pass one.
+  // Static literals (the spot illustrations, the empty-state art) may still be written as markup,
+  // because no value crosses into them; where that happens it is one assignment onto a detached
+  // node and it says so at the site.
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function fill(n, attrs, kids){
+    if(attrs) Object.keys(attrs).forEach(function(k){
+      var v = attrs[k];
+      if(v === null || v === undefined || v === false) return;
+      // A handler assembled from data is precisely the hole this pass exists to close.
+      if(k.slice(0,2) === "on") throw new Error("bind handlers with addEventListener, never as an attribute");
+      n.setAttribute(k, String(v));
+    });
+    return add(n, kids);
+  }
+  function add(n, kids){
+    if(kids === null || kids === undefined || kids === false) return n;
+    if(Array.isArray(kids)){ kids.forEach(function(k){ add(n, k); }); return n; }
+    n.appendChild(kids.nodeType ? kids : document.createTextNode(String(kids)));
+    return n;
+  }
+  function mk(tag, attrs, kids){ return fill(document.createElement(tag), attrs, kids); }
+  function mkSvg(tag, attrs, kids){ return fill(document.createElementNS(SVGNS, tag), attrs, kids); }
+  function clear(n){ n.textContent = ""; return n; }
+  // The sprite icon used by every list row, pipeline step and callout. The symbol id always comes
+  // from a lookup table in this file (CATGLYPH / STEP_DEFS / FLOW) and never from the API — it is
+  // built as real SVG nodes anyway, so no caller has to know that to stay safe. Pass
+  // {"aria-hidden":null} where the original markup left the attribute off because an ancestor
+  // already carries it.
+  function mkIcon(symbol, attrs){
+    var svg = mkSvg("svg", Object.assign({ viewBox:"0 0 24 24", fill:"currentColor", "aria-hidden":"true" }, attrs||{}));
+    svg.appendChild(mkSvg("use", { href:"#"+symbol }));
+    return svg;
+  }
+  function mkBtn(cls, label, onClick){
+    var b = mk("button", { "class": cls }, label);
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
   // ---- Glossary (one-tap plain German) ----
   var GLOSSARY = {
     auskunftei:{t:"Auskunftei",p:"Eine Firma wie die SCHUFA, die Daten über Ihre Zahlungen sammelt und Banken sagt, ob Sie als kreditwürdig gelten."},
@@ -625,18 +684,30 @@
     function pt(a,rr){ var rad=(a-180)*Math.PI/180; return [cx+rr*Math.cos(rad), cy+rr*Math.sin(rad)]; }
     function arc(a0,a1,rr){ var p0=pt(a0,rr),p1=pt(a1,rr),large=(a1-a0)>180?1:0; return "M"+p0[0].toFixed(1)+" "+p0[1].toFixed(1)+" A"+rr+" "+rr+" 0 "+large+" 1 "+p1[0].toFixed(1)+" "+p1[1].toFixed(1); }
     var segs=[[0,71,"var(--crit)"],[73,125,"var(--warn)"],[127,180,"var(--good)"]];
-    var s="";
-    segs.forEach(function(g){ s+='<path d="'+arc(g[0],g[1],r)+'" stroke="'+g[2]+'" stroke-width="15" fill="none" stroke-linecap="butt" opacity="'+((level==="crit"&&g[2].indexOf("crit")>-1)||(level==="warn"&&g[2].indexOf("warn")>-1)||(level==="good"&&g[2].indexOf("good")>-1)?"1":".28")+'"/>'; });
+    // Built as nodes, not as an SVG string. Nothing here comes off the wire — `score` is computed
+    // in health() from the local FIRMS list — but the gauge is rendered in the same pass as the
+    // API-fed rows below it, and a string-built sibling is exactly how the next hole gets
+    // re-introduced by someone copying the nearest example (audit L5).
+    var svg=mkSvg("svg",{viewBox:"0 0 "+W+" "+H, role:"img", "aria-label":"Daten-Gesundheit "+score+" von 100"});
+    segs.forEach(function(g){
+      var lit=(level==="crit"&&g[2].indexOf("crit")>-1)||(level==="warn"&&g[2].indexOf("warn")>-1)||(level==="good"&&g[2].indexOf("good")>-1);
+      svg.appendChild(mkSvg("path",{d:arc(g[0],g[1],r), stroke:g[2], "stroke-width":"15", fill:"none", "stroke-linecap":"butt", opacity:(lit?"1":".28")}));
+    });
     // ticks
-    for(var i=0;i<=10;i++){ var a=i*18; var o=pt(a,r-9), inn=pt(a,r-14); s+='<line x1="'+o[0].toFixed(1)+'" y1="'+o[1].toFixed(1)+'" x2="'+inn[0].toFixed(1)+'" y2="'+inn[1].toFixed(1)+'" stroke="var(--hair-strong)" stroke-width="1.5"/>'; }
+    for(var i=0;i<=10;i++){ var a=i*18; var o=pt(a,r-9), inn=pt(a,r-14);
+      svg.appendChild(mkSvg("line",{x1:o[0].toFixed(1), y1:o[1].toFixed(1), x2:inn[0].toFixed(1), y2:inn[1].toFixed(1), stroke:"var(--hair-strong)", "stroke-width":"1.5"}));
+    }
     var ang=score/100*180;
     var tip=pt(ang,r-20), tail=pt(ang+180,20);
-    var col = level==="good"?"var(--good)":level==="warn"?"var(--warn)":"var(--crit)";
-    s+='<line id="needle" x1="'+tail[0].toFixed(1)+'" y1="'+tail[1].toFixed(1)+'" x2="'+tip[0].toFixed(1)+'" y2="'+tip[1].toFixed(1)+'" stroke="var(--ink)" stroke-width="3.5" stroke-linecap="round" style="transform-origin:'+cx+'px '+cy+'px"/>';
-    s+='<circle cx="'+cx+'" cy="'+cy+'" r="7" fill="var(--ink)"/><circle cx="'+cx+'" cy="'+cy+'" r="3" fill="var(--surface)"/>';
+    var n=mkSvg("line",{id:"needle", x1:tail[0].toFixed(1), y1:tail[1].toFixed(1), x2:tip[0].toFixed(1), y2:tip[1].toFixed(1),
+      stroke:"var(--ink)", "stroke-width":"3.5", "stroke-linecap":"round", style:"transform-origin:"+cx+"px "+cy+"px"});
+    svg.appendChild(n);
+    svg.appendChild(mkSvg("circle",{cx:cx, cy:cy, r:"7", fill:"var(--ink)"}));
+    svg.appendChild(mkSvg("circle",{cx:cx, cy:cy, r:"3", fill:"var(--surface)"}));
     // Zahl steht als HTML unter dem Zeiger (#scoreNum) – nie mehr im Zeigerweg.
-    $("#dial").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Daten-Gesundheit '+score+' von 100">'+s+'</svg>';
-    var n=$("#needle");
+    clear($("#dial")).appendChild(svg);
+    // `n` is the node we just put in the document, so the needle animation still measures a laid-out
+    // element — the old $("#needle") re-query was only ever a way back to this same line.
     if(n && !matchMedia("(prefers-reduced-motion:reduce)").matches){
       n.style.transform="rotate(-90deg)"; n.getBoundingClientRect();
       n.style.transition="transform .9s cubic-bezier(.2,.9,.2,1)"; requestAnimationFrame(function(){ n.style.transform="rotate(0deg)"; });
@@ -646,27 +717,44 @@
   function renderHealth(){
     var h=health();
     drawDial(h.score,h.level);
-    var sc=$("#scoreNum"); if(sc){ sc.className="score "+h.level; sc.innerHTML='<b>'+h.score+'</b><span> / 100</span>'; }
+    var sc=$("#scoreNum"); if(sc){ sc.className="score "+h.level; add(clear(sc),[mk("b",null,h.score), mk("span",null," / 100")]); }
     var v=$("#verdict"); v.textContent=h.word; v.className="verdict "+h.level;
     $("#verdictWhy").textContent = document.body.classList.contains("ls") ? h.why : h.why;
-    $("#facts").innerHTML = h.reasons.map(function(r){ return '<div class="fact"><span class="dot '+r.t+'"></span><span>'+r.x+'</span></div>'; }).join("");
+    // Reasons are composed in health() from local copy, but they are the same shape as the API-fed
+    // lists further down and are built the same way, so the two never diverge (audit L5).
+    var facts=clear($("#facts"));
+    h.reasons.forEach(function(r){
+      facts.appendChild(mk("div",{"class":"fact"},[mk("span",{"class":"dot "+r.t}), mk("span",null,r.x)]));
+    });
   }
 
   // Kategorie-Glyphe statt Fremdlogo/Monogramm: gleiche Form lehrt dieselbe
   // Kategorie in Liste, Detail und Datenfluss (keine echten Logos: Urheberrecht).
   var CATGLYPH={"Datenhändler":"i-broker","Adress-Broker":"i-mail","Auskunftei":"i-kartei","KI-Bewerbungstool":"i-scan"};
-  function catIcon(f){ return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#'+(CATGLYPH[f.type]||"i-folder")+'"/></svg>'; }
-  var CHECKSVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-check"/></svg>';
+  // Both used to be HTML strings. They are node factories now, so every caller gets a fresh element
+  // (a node can only live in one place) and no caller can splice them into a string any more.
+  function catIcon(f, attrs){ return mkIcon(CATGLYPH[f.type]||"i-folder", attrs); }
+  function checkIcon(attrs){ return mkIcon("i-check", attrs); }
 
+  // Returns an element, not markup (audit L5). After initApi() every field on `f` except `color`
+  // comes from GET /controllers: name, risk, riskLbl, holds, type, slug. `name` used to be
+  // interpolated into an aria-label attribute AND into the row text, and `risk` into a class
+  // attribute — three separate ways for a census row to break out of its quotes and into a tag.
+  // As attributes and text nodes they are inert.
   function firmRow(f, compact){
     var gone=removed[f.slug];
-    var tag = gone? '<span class="tag good">Erledigt</span>' : '<span class="tag '+f.risk+'">'+f.riskLbl+'</span>';
-    var end = gone ? '<span class="firm-check">'+CHECKSVG+'</span>'
-      : '<span class="firm-go"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-chev"/></svg></span>';
-    return '<div class="firm'+(gone?' is-done':'')+'" data-slug="'+f.slug+'"'+(gone?'':' role="button" tabindex="0" aria-label="'+f.name+' – Optionen"')+'>'
-      + '<div class="logo" style="background:'+(gone?'var(--good)':f.color)+'" aria-hidden="true">'+(gone?CHECKSVG:catIcon(f))+'</div>'
-      + '<div class="fn"><b><span class="nm">'+f.name+'</span> '+tag+'</b><small>'+(gone?'Wird nicht mehr geführt':(f.holds||f.type))+'</small></div>'
-      + '<div class="act">'+end+'</div></div>';
+    var row=mk("div",{"class":"firm"+(gone?" is-done":""),"data-slug":f.slug});
+    if(!gone){ row.setAttribute("role","button"); row.setAttribute("tabindex","0"); row.setAttribute("aria-label",f.name+" – Optionen"); }
+    var tag = gone ? mk("span",{"class":"tag good"},"Erledigt") : mk("span",{"class":"tag "+f.risk},f.riskLbl);
+    var end = gone ? mk("span",{"class":"firm-check"},checkIcon()) : mk("span",{"class":"firm-go"},mkIcon("i-chev"));
+    return add(row,[
+      mk("div",{"class":"logo",style:"background:"+(gone?"var(--good)":f.color),"aria-hidden":"true"}, gone?checkIcon():catIcon(f)),
+      mk("div",{"class":"fn"},[
+        mk("b",null,[mk("span",{"class":"nm"},f.name)," ",tag]),
+        mk("small",null, gone?"Wird nicht mehr geführt":(f.holds||f.type))
+      ]),
+      mk("div",{"class":"act"}, end)
+    ]);
   }
 
   function bindFirmRows(root){
@@ -678,69 +766,120 @@
   }
   function find(slug){ return FIRMS.filter(function(f){return f.slug===slug;})[0]; }
 
+  // The all-clear illustration: a fixed literal, no value from anywhere reaches it, so it is
+  // written once as markup onto a detached node instead of forty createElementNS calls.
+  var ALLCLEAR_ART='<svg width="150" height="70" viewBox="0 0 150 70" fill="none" aria-hidden="true">'
+    +'<circle cx="75" cy="33" r="23" fill="var(--good)" opacity=".15"/>'
+    +'<path d="M64 33 72.5 41.5 88 24" stroke="var(--good)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+    +'<path d="M32 19 40 15 39 23Z" fill="var(--good)" opacity=".5"/>'
+    +'<path d="M114 44 122 40 121 48Z" fill="var(--good)" opacity=".5"/>'
+    +'<path d="M108 13 115 10 114 17Z" fill="var(--good)" opacity=".35"/>'
+    +'<path d="M36 50 43 47 42 54Z" fill="var(--good)" opacity=".35"/></svg>';
+
   function renderStart(){
     renderHealth();
-    $("#modules").innerHTML = MODULES.map(function(m){
-      return '<button class="module" data-mod="'+m.key+'"><span class="m-illo" aria-hidden="true">'+m.illo+'</span>'
-        +'<span class="m-tx"><b>'+m.title+'</b><span class="m-sub">'+m.sub+'</span><span class="m-next">'+m.next+' <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" aria-hidden="true"><use href="#i-chev"/></svg></span></span>'
-        +'<span class="m-go"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-chev"/></svg></span></button>';
-    }).join("");
-    Array.prototype.forEach.call($("#modules").querySelectorAll(".module"),function(el){
-      el.addEventListener("click",function(){ openModule(el.getAttribute("data-mod")); });
+    // MODULES is a local constant, but the tile carries m.illo — a raw SVG literal from that same
+    // constant. It is the one place a string still becomes markup here, on a detached span, and it
+    // can never hold a value that came off the wire.
+    var mods=clear($("#modules"));
+    MODULES.forEach(function(m){
+      var illo=mk("span",{"class":"m-illo","aria-hidden":"true"});
+      illo.innerHTML=m.illo; // module-local constant literal, see above
+      var b=mk("button",{"class":"module","data-mod":m.key},[
+        illo,
+        mk("span",{"class":"m-tx"},[
+          mk("b",null,m.title),
+          mk("span",{"class":"m-sub"},m.sub),
+          mk("span",{"class":"m-next"},[m.next+" ", mkIcon("i-chev",{width:"12",height:"12"})])
+        ]),
+        mk("span",{"class":"m-go"}, mkIcon("i-chev"))
+      ]);
+      b.addEventListener("click",function(){ openModule(m.key); });
+      mods.appendChild(b);
     });
     var active=FIRMS.filter(function(f){return !removed[f.slug];});
     $("#firmCount").textContent="("+active.length+")";
-    $("#firmPreview").innerHTML = FIRMS.slice(0,3).map(function(f){return firmRow(f,true);}).join("");
+    var prev=document.createDocumentFragment();
+    FIRMS.slice(0,3).forEach(function(f){ prev.appendChild(firmRow(f,true)); });
+    clear($("#firmPreview")).appendChild(prev);
     bindFirmRows($("#firmPreview"));
   }
   function renderFirmen(){
     var active=FIRMS.filter(function(f){return !removed[f.slug];}).length;
-    var h="";
+    var out=document.createDocumentFragment();
     if(active===0){
-      h+='<div class="allclear" role="status">'
-        +'<svg width="150" height="70" viewBox="0 0 150 70" fill="none" aria-hidden="true">'
-        +'<circle cx="75" cy="33" r="23" fill="var(--good)" opacity=".15"/>'
-        +'<path d="M64 33 72.5 41.5 88 24" stroke="var(--good)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
-        +'<path d="M32 19 40 15 39 23Z" fill="var(--good)" opacity=".5"/>'
-        +'<path d="M114 44 122 40 121 48Z" fill="var(--good)" opacity=".5"/>'
-        +'<path d="M108 13 115 10 114 17Z" fill="var(--good)" opacity=".35"/>'
-        +'<path d="M36 50 43 47 42 54Z" fill="var(--good)" opacity=".35"/></svg>'
-        +'<b data-de="Aufgeräumt!" data-ls="Alles fertig!">Aufgeräumt!</b>'
-        +'<p data-de="Für jede Firma ist Ihr Auftrag erledigt oder unterwegs." data-ls="Alles ist erledigt oder unterwegs.">Für jede Firma ist Ihr Auftrag erledigt oder unterwegs.</p>'
-        +'<span class="tagline">Das Recht auf Vergessen.</span></div>';
+      var ac=mk("div",{"class":"allclear",role:"status"});
+      ac.innerHTML=ALLCLEAR_ART; // constant literal, see above; the copy below is appended after it
+      out.appendChild(add(ac,[
+        mk("b",{"data-de":"Aufgeräumt!","data-ls":"Alles fertig!"},"Aufgeräumt!"),
+        mk("p",{"data-de":"Für jede Firma ist Ihr Auftrag erledigt oder unterwegs.","data-ls":"Alles ist erledigt oder unterwegs."},"Für jede Firma ist Ihr Auftrag erledigt oder unterwegs."),
+        mk("span",{"class":"tagline"},"Das Recht auf Vergessen.")
+      ]));
     }
-    $("#firmList").innerHTML = h + FIRMS.map(function(f){return firmRow(f);}).join("");
+    FIRMS.forEach(function(f){ out.appendChild(firmRow(f)); });
+    clear($("#firmList")).appendChild(out);
     bindFirmRows($("#firmList"));
   }
 
+  // The decision screen. This was the heaviest injection site in the file: f.name appeared six
+  // times, once inside a JS string literal inside an inline onclick, and f.slug was interpolated
+  // into two more handlers. A controller called `Müller's GmbH` already produced a broken button
+  // there; anything hostile produced script. Handlers now close over `f` directly — the slug never
+  // becomes text on the way to the callback, so there is nothing left to quote or to escape.
   function openFirma(f){
-    var body="";
-    body += '<div class="firmhead" style="margin:12px 0 4px"><div class="logo" style="background:'+f.color+'" aria-hidden="true">'+catIcon(f)+'</div>'
-      +'<div><b style="font-size:18px">'+f.name+'</b><br><small class="sub">'+f.type+'</small></div></div>';
-    body += '<p class="lead" style="margin-top:8px">Diese Firma speichert: <b>'+(f.holds||"Daten über Sie")+'</b>.</p>';
+    var body=document.createDocumentFragment();
+    body.appendChild(mk("div",{"class":"firmhead",style:"margin:12px 0 4px"},[
+      mk("div",{"class":"logo",style:"background:"+f.color,"aria-hidden":"true"}, catIcon(f)),
+      mk("div",null,[mk("b",{style:"font-size:18px"},f.name), mk("br"), mk("small",{"class":"sub"},f.type)])
+    ]));
+    body.appendChild(mk("p",{"class":"lead",style:"margin-top:8px"},["Diese Firma speichert: ", mk("b",null,f.holds||"Daten über Sie"), "."]));
 
     if(f.route==="SELF_SERVE"){
-      body += '<h1>Möchten Sie, dass '+f.name+' Ihre Daten löscht?</h1>';
-      body += '<div class="callout route"><div class="kh"><span class="badge">Am einfachsten</span> Eigenes Löschformular</div>'
-        +'<p>'+f.name+' hat eine eigene Seite dafür. Das ist der schnellste Weg – ganz ohne Brief.</p></div>';
-      body += '<ol class="steps">'+f.steps.map(function(s){return '<li>'+s+'</li>';}).join("")+'</ol>';
-      body += '<div class="meta"><span class="pill">'+CHECKSVG+'Echte <button class="term" data-term="loeschung">Löschung</button></span><span class="pill">≈ 10 Minuten</span><span class="pill">Kostenlos</span></div>';
-      body += '<div class="btnrow"><button class="btn primary" onclick="openHandoff(\''+f.slug+'\')">Formular öffnen &amp; erledigen</button>'
-        +'<button class="btn ghost" onclick="go(\'firmen\')">Später</button></div>';
+      body.appendChild(mk("h1",null,"Möchten Sie, dass "+f.name+" Ihre Daten löscht?"));
+      body.appendChild(mk("div",{"class":"callout route"},[
+        mk("div",{"class":"kh"},[mk("span",{"class":"badge"},"Am einfachsten")," Eigenes Löschformular"]),
+        mk("p",null,f.name+" hat eine eigene Seite dafür. Das ist der schnellste Weg – ganz ohne Brief.")
+      ]));
+      // c.selfServe.steps, straight off the census. `|| []` because a SELF_SERVE controller that
+      // arrives without steps used to throw here, and the throw happened before the assignment —
+      // leaving the PREVIOUS company's screen on display under this company's heading.
+      var steps=mk("ol",{"class":"steps"});
+      (f.steps||[]).forEach(function(s){ steps.appendChild(mk("li",null,s)); });
+      body.appendChild(steps);
+      body.appendChild(mk("div",{"class":"meta"},[
+        mk("span",{"class":"pill"},[checkIcon(),"Echte ", mk("button",{"class":"term","data-term":"loeschung"},"Löschung")]),
+        mk("span",{"class":"pill"},"≈ 10 Minuten"),
+        mk("span",{"class":"pill"},"Kostenlos")
+      ]));
+      body.appendChild(mk("div",{"class":"btnrow"},[
+        mkBtn("btn primary","Formular öffnen & erledigen",function(){ openHandoff(f.slug); }),
+        mkBtn("btn ghost","Später",function(){ go("firmen"); })
+      ]));
     } else if(f.route==="LEGAL"){
-      body += '<h1>Wir stellen die Anfrage für Sie</h1>';
-      body += '<div class="callout legal"><div class="kh"><span class="badge">Rechtlich</span> '+f.letter+'</div>'
-        +'<p>Für diese Firma gibt es kein Formular. Wir bereiten einen rechtssicheren Brief vor – Sie prüfen und geben frei, wir kümmern uns um den Versand und die Frist.</p></div>';
-      body += '<div class="meta"><span class="pill">'+CHECKSVG+'Frist wird überwacht</span><span class="pill">Nachweis inklusive</span></div>';
-      body += '<div class="btnrow"><button class="btn primary" onclick="prepLetter(\''+f.slug+'\')">Anfrage vorbereiten</button>'
-        +'<button class="btn ghost" onclick="go(\'firmen\')">Später</button></div>';
+      body.appendChild(mk("h1",null,"Wir stellen die Anfrage für Sie"));
+      body.appendChild(mk("div",{"class":"callout legal"},[
+        mk("div",{"class":"kh"},[mk("span",{"class":"badge"},"Rechtlich")," ", f.letter]),
+        mk("p",null,"Für diese Firma gibt es kein Formular. Wir bereiten einen rechtssicheren Brief vor – Sie prüfen und geben frei, wir kümmern uns um den Versand und die Frist.")
+      ]));
+      body.appendChild(mk("div",{"class":"meta"},[
+        mk("span",{"class":"pill"},[checkIcon(),"Frist wird überwacht"]),
+        mk("span",{"class":"pill"},"Nachweis inklusive")
+      ]));
+      body.appendChild(mk("div",{"class":"btnrow"},[
+        mkBtn("btn primary","Anfrage vorbereiten",function(){ prepLetter(f.slug); }),
+        mkBtn("btn ghost","Später",function(){ go("firmen"); })
+      ]));
     } else {
-      body += '<h1>Diese Firma kommt bald</h1>';
-      body += '<div class="callout blocked"><div class="kh"><span class="badge">In Arbeit</span> Noch nicht freigeschaltet</div>'
-        +'<p>Wir prüfen den richtigen und sichersten Weg für '+f.name+'. Sie werden benachrichtigt, sobald es möglich ist.</p></div>';
-      body += '<div class="btnrow"><button class="btn ghost" onclick="toast(\'Wir sagen Bescheid, sobald '+f.name+' verfügbar ist.\')">Benachrichtigen, wenn verfügbar</button></div>';
+      body.appendChild(mk("h1",null,"Diese Firma kommt bald"));
+      body.appendChild(mk("div",{"class":"callout blocked"},[
+        mk("div",{"class":"kh"},[mk("span",{"class":"badge"},"In Arbeit")," Noch nicht freigeschaltet"]),
+        mk("p",null,"Wir prüfen den richtigen und sichersten Weg für "+f.name+". Sie werden benachrichtigt, sobald es möglich ist.")
+      ]));
+      body.appendChild(mk("div",{"class":"btnrow"},
+        mkBtn("btn ghost","Benachrichtigen, wenn verfügbar",function(){ toast("Wir sagen Bescheid, sobald "+f.name+" verfügbar ist."); })
+      ));
     }
-    $("#firmaBody").innerHTML=body;
+    clear($("#firmaBody")).appendChild(body);
     localize($("#firmaBody"));
     bindTerms($("#firmaBody"));
     go("firma");
@@ -799,25 +938,38 @@
     {g:"i-kartei", bg:"var(--accent-tint)", cl:"var(--accent)", term:"auskunftei", b:"Auskunftei", s:"infoscore kauft Adressdaten zu und bildet Ihren Score"},
     {g:"i-bank", bg:"var(--good-tint)", cl:"var(--good)", term:"score", b:"Bank / Vermieter", s:"fragt Ihren Score ab – und entscheidet über Kredit oder Wohnung"}
   ];
-  function renderFlow(){
-    var h="";
-    FLOW.forEach(function(n,i){
-      h+='<div class="fnode" data-term="'+n.term+'" role="button" tabindex="0" aria-label="'+n.b+' – erklären"><span class="fi" style="background:'+n.bg+';color:'+n.cl+'"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#'+n.g+'"/></svg></span>'
-        +'<span class="ftx"><b>'+n.b+'</b><small>'+n.s+'</small></span><span class="fq" aria-hidden="true">?</span></div>';
-      if(i<FLOW.length-1) h+='<div class="farrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><use href="#i-chev-down"/></svg><em>verkauft an</em></div>';
-    });
-    // Der Schnitt: unser Eingriff trennt die Broker-Schicht vom Score.
-    h+='<div class="callout legal" style="margin-top:18px"><div class="kh">Hier setzen wir an</div>'
-      +'<div class="cutdiag" aria-hidden="true"><svg viewBox="0 0 230 46" fill="none">'
+  // Der Schnitt: unser Eingriff trennt die Broker-Schicht vom Score. Fixed diagram, no data.
+  var CUT_ART='<svg viewBox="0 0 230 46" fill="none">'
       +'<g fill="var(--crit)"><rect x="4" y="14" width="26" height="6" rx="2"/><rect x="4" y="24" width="26" height="6" rx="2" opacity=".45"/></g>'
       +'<g fill="var(--muted)"><path d="M40 15 49 22 40 29Z"/><path d="M54 15 63 22 54 29Z" opacity=".65"/></g>'
       +'<path d="M92 4 100 12 84 28 76 20Z" fill="var(--accent)"/>'
       +'<path d="M98 18 106 10 107 19Z" fill="var(--crit)"/>'
       +'<path d="M120 15 129 22 120 29Z" fill="var(--muted)" opacity=".25"/>'
       +'<g transform="translate(168,12) scale(1.1)" fill="var(--accent)"><path d="M6.3 1.9 15.1 0.6 15.7 5 6.9 6.3Z" opacity=".45"/><path fill-rule="evenodd" d="M5.3 6H18.7A1.9 1.9 0 0 1 20.6 7.9V14.7A1.9 1.9 0 0 1 18.7 16.6H5.3A1.9 1.9 0 0 1 3.4 14.7V7.9A1.9 1.9 0 0 1 5.3 6ZM9.3 9.6H14.7V11.5H9.3Z"/></g>'
-      +'</svg></div>'
-      +'<p>Wir zwingen die Auskunftei, ihre <button class="term" data-term="herkunft">Herkunft</button> zu nennen – und löschen die zugekaufte Schicht an der Wurzel.</p></div>';
-    $("#flow").innerHTML=h;
+      +'</svg>';
+
+  // FLOW is a local constant — nothing here comes off the wire — but the map is built as nodes
+  // like every other list on the page, so there is no string-concatenating render left for the
+  // next change to copy from (audit L5).
+  function renderFlow(){
+    var out=document.createDocumentFragment();
+    FLOW.forEach(function(n,i){
+      out.appendChild(mk("div",{"class":"fnode","data-term":n.term,role:"button",tabindex:"0","aria-label":n.b+" – erklären"},[
+        mk("span",{"class":"fi",style:"background:"+n.bg+";color:"+n.cl}, mkIcon(n.g)),
+        mk("span",{"class":"ftx"},[mk("b",null,n.b), mk("small",null,n.s)]),
+        mk("span",{"class":"fq","aria-hidden":"true"},"?")
+      ]));
+      // The arrow's own svg carries no aria-hidden: the wrapper already does.
+      if(i<FLOW.length-1) out.appendChild(mk("div",{"class":"farrow","aria-hidden":"true"},[mkIcon("i-chev-down",{"aria-hidden":null}), mk("em",null,"verkauft an")]));
+    });
+    var cut=mk("div",{"class":"cutdiag","aria-hidden":"true"});
+    cut.innerHTML=CUT_ART; // constant literal, see above
+    out.appendChild(mk("div",{"class":"callout legal",style:"margin-top:18px"},[
+      mk("div",{"class":"kh"},"Hier setzen wir an"),
+      cut,
+      mk("p",null,["Wir zwingen die Auskunftei, ihre ", mk("button",{"class":"term","data-term":"herkunft"},"Herkunft"), " zu nennen – und löschen die zugekaufte Schicht an der Wurzel."])
+    ]));
+    clear($("#flow")).appendChild(out);
     bindTerms($("#flow"));
     Array.prototype.forEach.call($("#flow").querySelectorAll(".fnode"),function(el){
       var t=function(){ term(el.getAttribute("data-term")); };
@@ -855,20 +1007,26 @@
     return null;
   }
 
+  // Returns a node or null (it used to return an HTML string, with the request id spliced into the
+  // onclick of every button — the id is a server-generated uuid today, but "today's format is safe"
+  // is not a security property, and the surrounding markup was the real hazard). The payload now
+  // travels in a closure, so nothing is serialised through an attribute at all.
   function simButtons(v){
-    if(!devSim) return "";
-    var b=[]; var id=v.id;
-    if(v.state==="READY") b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'dispatch\',channel:\'email\'})">Versand simulieren (E-Mail)</button>');
+    if(!devSim) return null;
+    var defs=[];
+    if(v.state==="READY") defs.push(["Versand simulieren (E-Mail)",{action:"dispatch",channel:"email"}]);
     if(v.state==="AWAITING_RESPONSE_PROVISIONAL"||v.state==="AWAITING_RESPONSE"){
-      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'complied\'})">Antwort: erledigt</button>');
-      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'incomplete\'})">Antwort: unvollständig</button>');
-      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'respond\',outcome:\'refused\'})">Antwort: abgelehnt</button>');
-      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'expire\'})">Frist ablaufen lassen</button>');
+      defs.push(["Antwort: erledigt",{action:"respond",outcome:"complied"}]);
+      defs.push(["Antwort: unvollständig",{action:"respond",outcome:"incomplete"}]);
+      defs.push(["Antwort: abgelehnt",{action:"respond",outcome:"refused"}]);
+      defs.push(["Frist ablaufen lassen",{action:"expire"}]);
     }
     if(v.state==="INCOMPLETE"||v.state==="REFUSED")
-      b.push('<button class="btn ghost small" onclick="simAct(\''+id+'\',{action:\'escalate\'})">Beschwerde entwerfen</button>');
-    if(!b.length) return "";
-    return '<div class="simbar" aria-label="Demo-Steuerung"><span class="simlab">Demo</span>'+b.join("")+'</div>';
+      defs.push(["Beschwerde entwerfen",{action:"escalate"}]);
+    if(!defs.length) return null;
+    var bar=mk("div",{"class":"simbar","aria-label":"Demo-Steuerung"}, mk("span",{"class":"simlab"},"Demo"));
+    defs.forEach(function(d){ bar.appendChild(mkBtn("btn ghost small", d[0], function(){ simAct(v.id, d[1]); })); });
+    return bar;
   }
 
   function renderVorgang(){
@@ -876,10 +1034,16 @@
     var sec=$("#v-vorgang");
     var ls=document.body.classList.contains("ls");
     if(!VORGAENGE.length){
-      sec.innerHTML='<p class="eyebrow">Ihr Vorgang</p>'
-        +'<div class="allclear" style="background:var(--surface-2);border-color:var(--hair)"><b>Noch kein Vorgang.</b>'
-        +'<p>Starten Sie bei einer Firma mit „Anfrage vorbereiten“.</p></div>'
-        +'<div class="btnrow"><button class="btn primary" onclick="go(\'firmen\')">Zu den Firmen</button></div>';
+      var none=document.createDocumentFragment();
+      add(none,[
+        mk("p",{"class":"eyebrow"},"Ihr Vorgang"),
+        mk("div",{"class":"allclear",style:"background:var(--surface-2);border-color:var(--hair)"},[
+          mk("b",null,"Noch kein Vorgang."),
+          mk("p",null,"Starten Sie bei einer Firma mit „Anfrage vorbereiten“.")
+        ]),
+        mk("div",{"class":"btnrow"}, mkBtn("btn primary","Zu den Firmen",function(){ go("firmen"); }))
+      ]);
+      clear(sec).appendChild(none);
       return;
     }
     var v = VORGAENGE.filter(function(x){return x.id===selectedVorgang;})[0] || VORGAENGE[VORGAENGE.length-1];
@@ -890,45 +1054,67 @@
 
     var steps = STEP_DEFS.map(function(d,i){
       var cls = i<=ui.done ? "step done" : i===ui.active ? "step active" : "step";
-      return '<div class="'+cls+'"><div class="bub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#'+d[0]+'"/></svg></div><small>'+d[1]+'</small></div>';
-    }).join("");
+      return mk("div",{"class":cls},[mk("div",{"class":"bub"}, mkIcon(d[0])), mk("small",null,d[1])]);
+    });
 
-    var h='<p class="eyebrow">Ihr Vorgang</p>';
-    h+='<div class="firmhead"><div class="logo" style="background:'+(TYPE_COLOR[c.type]||"#5A6570")+'" aria-hidden="true">'
-      +'<svg viewBox="0 0 24 24" fill="currentColor"><use href="#'+(CATGLYPH[c.type]||"i-folder")+'"/></svg></div>'
-      +'<div><b style="font-size:17px">'+(c.name||v.controllerId)+'</b><br><small class="sub">'+(LETTER_LABEL[v.requestType]||v.requestType)+'</small></div></div>';
-    h+='<div class="card" style="padding:18px 16px">'
-      +'<div class="pipe"><div class="track"></div><div class="fill" style="width:'+ui.fill+'"></div>'+steps+'</div>';
-    if(ui.note) h+='<p class="sub" style="text-align:center;margin-top:14px">'+(ls&&ui.lsNote?ui.lsNote:ui.note)+'</p>';
+    // Everything below is drawn from GET /requests plus the census. Three of these values are raw
+    // wire strings with no local label behind them — c.name, v.requestType on the fallback path,
+    // and x.state via `xui.note||x.state` — so an unknown state code prints itself as text instead
+    // of being handed to the HTML parser. The section is assembled off-document and swapped in one
+    // move, which is also what the old single innerHTML assignment gave us: a half-built screen is
+    // never on display (audit L5).
+    var out=document.createDocumentFragment();
+    out.appendChild(mk("p",{"class":"eyebrow"},"Ihr Vorgang"));
+    out.appendChild(mk("div",{"class":"firmhead"},[
+      mk("div",{"class":"logo",style:"background:"+(TYPE_COLOR[c.type]||"#5A6570"),"aria-hidden":"true"},
+        mkIcon(CATGLYPH[c.type]||"i-folder",{"aria-hidden":null})),
+      mk("div",null,[
+        mk("b",{style:"font-size:17px"}, c.name||v.controllerId), mk("br"),
+        mk("small",{"class":"sub"}, LETTER_LABEL[v.requestType]||v.requestType)
+      ])
+    ]));
+    var card=mk("div",{"class":"card",style:"padding:18px 16px"},
+      mk("div",{"class":"pipe"},[mk("div",{"class":"track"}), mk("div",{"class":"fill",style:"width:"+ui.fill}), steps]));
+    if(ui.note) card.appendChild(mk("p",{"class":"sub",style:"text-align:center;margin-top:14px"}, ls&&ui.lsNote?ui.lsNote:ui.note));
     if(clock){
-      h+='<div class="countbox'+(clock.warn?'':' statutory')+'"><div class="lab">'+(ls?clock.ls:clock.lab)+'</div>'
-        +'<div class="clock" id="clock">–</div>'
-        +'<div class="note">'+clock.note+'</div></div>';
+      card.appendChild(mk("div",{"class":"countbox"+(clock.warn?"":" statutory")},[
+        mk("div",{"class":"lab"}, ls?clock.ls:clock.lab),
+        mk("div",{"class":"clock",id:"clock"},"–"),
+        mk("div",{"class":"note"}, clock.note)
+      ]));
     }
-    h+='</div>';
+    out.appendChild(card);
     if(v.state==="AWAITING_REGISTERED_RESEND"){
-      h+='<div class="btnrow">'
-        +'<button class="btn primary" onclick="resendConfirm(\''+v.id+'\')">Einschreiben beauftragen</button>'
-        +'<button class="btn ghost" onclick="resendDecline(\''+v.id+'\')">Nicht weiterverfolgen</button></div>';
+      out.appendChild(mk("div",{"class":"btnrow"},[
+        mkBtn("btn primary","Einschreiben beauftragen",function(){ resendConfirm(v.id); }),
+        mkBtn("btn ghost","Nicht weiterverfolgen",function(){ resendDecline(v.id); })
+      ]));
     }
-    h+=simButtons(v);
+    add(out, simButtons(v));
     if(VORGAENGE.length>1){
-      h+='<h2 class="sec">Alle Vorgänge <span class="count">('+VORGAENGE.length+')</span></h2><div class="list">';
+      out.appendChild(mk("h2",{"class":"sec"},["Alle Vorgänge ", mk("span",{"class":"count"},"("+VORGAENGE.length+")")]));
+      var list=mk("div",{"class":"list"});
       VORGAENGE.forEach(function(x){
         var xc=CTRL_BY_ID[x.controllerId]||{};
         var xui=STATE_UI[x.state]||{};
-        var tag = x.state==="COMPLIED" ? '<span class="tag good">Erledigt</span>'
-          : x.state==="CLOSED_FAILED"||x.state==="WITHDRAWN" ? '<span class="tag mut">Beendet</span>'
-          : '<span class="tag warn">Läuft</span>';
-        h+='<div class="firm'+(x.id===v.id?' is-done':'')+'" role="button" tabindex="0" data-vid="'+x.id+'" aria-label="'+(xc.name||"Vorgang")+' anzeigen">'
-          +'<div class="logo" style="background:'+(TYPE_COLOR[xc.type]||"#5A6570")+'" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><use href="#'+(CATGLYPH[xc.type]||"i-folder")+'"/></svg></div>'
-          +'<div class="fn"><b><span class="nm">'+(xc.name||x.controllerId)+'</span> '+tag+'</b><small>'+(xui.note||x.state)+'</small></div>'
-          +'<div class="act"><span class="firm-go"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><use href="#i-chev"/></svg></span></div></div>';
+        var tag = x.state==="COMPLIED" ? mk("span",{"class":"tag good"},"Erledigt")
+          : x.state==="CLOSED_FAILED"||x.state==="WITHDRAWN" ? mk("span",{"class":"tag mut"},"Beendet")
+          : mk("span",{"class":"tag warn"},"Läuft");
+        list.appendChild(mk("div",{"class":"firm"+(x.id===v.id?" is-done":""),role:"button",tabindex:"0","data-vid":x.id,"aria-label":(xc.name||"Vorgang")+" anzeigen"},[
+          mk("div",{"class":"logo",style:"background:"+(TYPE_COLOR[xc.type]||"#5A6570"),"aria-hidden":"true"},
+            mkIcon(CATGLYPH[xc.type]||"i-folder",{"aria-hidden":null})),
+          mk("div",{"class":"fn"},[
+            mk("b",null,[mk("span",{"class":"nm"}, xc.name||x.controllerId), " ", tag]),
+            mk("small",null, xui.note||x.state)
+          ]),
+          mk("div",{"class":"act"}, mk("span",{"class":"firm-go"}, mkIcon("i-chev")))
+        ]));
       });
-      h+='</div>';
+      out.appendChild(list);
     }
-    h+='<div class="btnrow"><button class="btn ghost" onclick="toast(\'Sie werden benachrichtigt, sobald sich etwas ändert.\')">Bei Änderung benachrichtigen</button></div>';
-    sec.innerHTML=h;
+    out.appendChild(mk("div",{"class":"btnrow"},
+      mkBtn("btn ghost","Bei Änderung benachrichtigen",function(){ toast("Sie werden benachrichtigt, sobald sich etwas ändert."); })));
+    clear(sec).appendChild(out);
     Array.prototype.forEach.call(sec.querySelectorAll("[data-vid]"),function(el){
       var pick=function(){ selectedVorgang=el.getAttribute("data-vid"); renderVorgang(); };
       el.addEventListener("click",pick);
@@ -982,44 +1168,64 @@
   function renderAkte(){
     var el=$("#akteBody");
     if(!apiMode){
-      el.innerHTML='<div class="callout blocked"><div class="kh"><span class="badge">Offline</span> Nur im Live-Modus</div>'
-        +'<p>Der Akten-Check braucht die Scraper-Engine. Starten Sie die API und laden Sie die Seite neu.</p></div>';
+      clear(el).appendChild(mk("div",{"class":"callout blocked"},[
+        mk("div",{"class":"kh"},[mk("span",{"class":"badge"},"Offline")," Nur im Live-Modus"]),
+        mk("p",null,"Der Akten-Check braucht die Scraper-Engine. Starten Sie die API und laden Sie die Seite neu.")
+      ]));
       return;
     }
     apiFetch("/credit-file/findings").then(function(res){ return res.json(); }).then(function(d){
-      var h="";
+      // GET /credit-file/findings is the most data-heavy screen in the file: a rule-set version, a
+      // rule id that falls back to its own raw code, a formatted date, and f.explanation — free
+      // text produced by the rule engine from a parsed controller document. That last one is the
+      // single largest wire-sourced string we put on screen, and it used to be concatenated into
+      // markup. All of it is text nodes now (audit L5).
+      var out=document.createDocumentFragment();
       if(d.ruleSet && d.ruleSet.preliminary){
-        h+='<div class="callout blocked" style="margin:0 0 14px"><div class="kh"><span class="badge">Vorläufig</span> Regelwerk '+d.ruleSet.version+'</div>'
-          +'<p data-de="Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung." data-ls="Ein Anwalt prüft die Regeln noch. Das hier ist eine erste Einschätzung.">Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung.</p></div>';
+        out.appendChild(mk("div",{"class":"callout blocked",style:"margin:0 0 14px"},[
+          mk("div",{"class":"kh"},[mk("span",{"class":"badge"},"Vorläufig")," Regelwerk ", d.ruleSet.version]),
+          mk("p",{"data-de":"Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung.","data-ls":"Ein Anwalt prüft die Regeln noch. Das hier ist eine erste Einschätzung."},
+            "Die juristische Freigabe dieses Regelwerks steht noch aus. Die Hinweise sind eine erste Einschätzung, keine Rechtsberatung.")
+        ]));
       }
       if(!d.snapshotId){
-        h+='<div class="allclear" style="background:var(--accent-tint);border-color:color-mix(in srgb,var(--accent) 25%,transparent)">'
-          +'<b data-de="Noch keine Datenkopie hochgeladen." data-ls="Noch keine Datei da.">Noch keine Datenkopie hochgeladen.</b>'
-          +'<p data-de="Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert." data-ls="Laden Sie die PDF hoch. Wir prüfen sie sofort.">Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert.</p></div>'
-          +'<div class="btnrow"><button class="btn primary" onclick="document.getElementById(\'akteFile\').click()">Datenkopie hochladen (PDF)</button></div>';
+        out.appendChild(mk("div",{"class":"allclear",style:"background:var(--accent-tint);border-color:color-mix(in srgb,var(--accent) 25%,transparent)"},[
+          mk("b",{"data-de":"Noch keine Datenkopie hochgeladen.","data-ls":"Noch keine Datei da."},"Noch keine Datenkopie hochgeladen."),
+          mk("p",{"data-de":"Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert.","data-ls":"Laden Sie die PDF hoch. Wir prüfen sie sofort."},
+            "Laden Sie die PDF-Datenkopie Ihrer Auskunftei hoch (Art. 15). Wir prüfen sie sofort – die Datei selbst wird nicht gespeichert.")
+        ]));
+        out.appendChild(mk("div",{"class":"btnrow"}, mkBtn("btn primary","Datenkopie hochladen (PDF)",function(){ $("#akteFile").click(); })));
       } else {
         var counts={OVERDUE:0,UPCOMING:0,INFO:0};
         (d.findings||[]).forEach(function(f){ counts[f.severity]=(counts[f.severity]||0)+1; });
-        h+='<h2 class="sec" style="margin-top:4px">Befunde <span class="count">('+(d.findings||[]).length+')</span></h2>';
-        h+='<div class="list">';
+        out.appendChild(mk("h2",{"class":"sec",style:"margin-top:4px"},["Befunde ", mk("span",{"class":"count"},"("+(d.findings||[]).length+")")]));
+        var list=mk("div",{"class":"list"});
         (d.findings||[]).forEach(function(f){
           var sev=SEV[f.severity]||SEV.INFO;
           var due=f.computedDeadlineAt? new Date(f.computedDeadlineAt).toLocaleDateString("de-DE") : null;
-          h+='<div class="card" style="padding:13px 14px">'
-            +'<b style="font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(RULE_LBL[f.ruleId]||f.ruleId)
-            +' <span class="tag '+sev.tag+'">'+sev.lbl+'</span>'
-            +(f.scoreNegativeWarning?' <span class="tag warn">Score-Achtung</span>':'')+'</b>'
-            +'<p class="sub" style="font-size:13.5px;margin-top:6px">'+f.explanation+'</p>'
-            +(due?'<p class="sub" style="font-size:12.5px;margin-top:6px"><b>Frist: '+due+'</b></p>':'')
-            +(ACTION_LBL[f.recommendedAction]?'<p style="font-size:13px;margin-top:6px;color:var(--accent);font-weight:700">→ '+ACTION_LBL[f.recommendedAction]+'</p>':'')
-            +'</div>';
+          var head=mk("b",{style:"font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"},[
+            RULE_LBL[f.ruleId]||f.ruleId, " ", mk("span",{"class":"tag "+sev.tag}, sev.lbl)
+          ]);
+          if(f.scoreNegativeWarning) add(head,[" ", mk("span",{"class":"tag warn"},"Score-Achtung")]);
+          var card=mk("div",{"class":"card",style:"padding:13px 14px"},[
+            head,
+            mk("p",{"class":"sub",style:"font-size:13.5px;margin-top:6px"}, f.explanation)
+          ]);
+          if(due) card.appendChild(mk("p",{"class":"sub",style:"font-size:12.5px;margin-top:6px"}, mk("b",null,"Frist: "+due)));
+          if(ACTION_LBL[f.recommendedAction]) card.appendChild(mk("p",{style:"font-size:13px;margin-top:6px;color:var(--accent);font-weight:700"},"→ "+ACTION_LBL[f.recommendedAction]));
+          list.appendChild(card);
         });
-        h+='</div>';
-        if(!(d.findings||[]).length) h+='<div class="allclear"><b>Keine Auffälligkeiten gefunden.</b><p>Nach heutigem Regelwerk ist nichts fällig oder falsch.</p></div>';
-        h+='<div class="btnrow"><button class="btn ghost" onclick="document.getElementById(\'akteFile\').click()">Neue Datenkopie hochladen</button></div>';
+        out.appendChild(list);
+        if(!(d.findings||[]).length) out.appendChild(mk("div",{"class":"allclear"},[
+          mk("b",null,"Keine Auffälligkeiten gefunden."),
+          mk("p",null,"Nach heutigem Regelwerk ist nichts fällig oder falsch.")
+        ]));
+        out.appendChild(mk("div",{"class":"btnrow"}, mkBtn("btn ghost","Neue Datenkopie hochladen",function(){ $("#akteFile").click(); })));
       }
-      el.innerHTML=h; localize(el);
-    }).catch(function(){ el.innerHTML='<div class="callout blocked"><p>Keine Verbindung zur Engine.</p></div>'; });
+      clear(el).appendChild(out); localize(el);
+    }).catch(function(){
+      clear(el).appendChild(mk("div",{"class":"callout blocked"}, mk("p",null,"Keine Verbindung zur Engine.")));
+    });
   }
 
   function uploadAkte(file){
@@ -1047,8 +1253,10 @@
   // ---- Sheet + terms ----
   function openSheet(title, body, actions){
     $("#sheetTitle").textContent=title; $("#sheetBody").textContent=body;
-    var wrap=$("#sheetActions"); wrap.innerHTML="";
-    (actions||[]).forEach(function(a){ var b=document.createElement("button"); b.className="btn "+(a.cls||"ghost"); b.textContent=a.label; b.onclick=a.fn; wrap.appendChild(b); });
+    // This function was already the safe pattern in this file — textContent for the copy, real
+    // buttons for the actions — and is what the rest of the render layer now looks like.
+    var wrap=clear($("#sheetActions"));
+    (actions||[]).forEach(function(a){ wrap.appendChild(mkBtn("btn "+(a.cls||"ghost"), a.label, a.fn)); });
     $("#scrim").classList.add("on"); $("#sheet").classList.add("on");
   }
   window.closeSheet=function(){ $("#scrim").classList.remove("on"); $("#sheet").classList.remove("on"); };
@@ -1096,7 +1304,11 @@
     }
     var d=Math.max(0, target-Date.now());
     var days=Math.floor(d/86400000), h=Math.floor(d/3600000)%24, m=Math.floor(d/60000)%60, s=Math.floor(d/1000)%60;
-    var el=$("#clock"); if(el) el.innerHTML=days+'<span> Tage</span> '+String(h).padStart(2,"0")+':'+String(m).padStart(2,"0")+':'+String(s).padStart(2,"0");
+    // Numbers only — but this runs once a second on the same node the state machine's clock copy
+    // sits in, and it is the last innerHTML in the render layer, so it goes too (audit L5).
+    var el=$("#clock");
+    if(el) add(clear(el),[ String(days), mk("span",null," Tage"),
+      " "+String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0") ]);
     var f=$("#pfill"); if(f) f.style.width="26%";
   }
 
