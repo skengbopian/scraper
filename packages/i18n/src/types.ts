@@ -263,6 +263,8 @@ export interface AppStrings {
     sendComplaint: string;
     discardComplaint: string;
     sendNote: string;
+    /** READY rows the dispatcher could not send: informational, no reviewer decision applies. */
+    readyWaiting: string;
     /** Shown when invariant 3b blocks a draft: nothing proves the controller received the request. */
     noProvenReceipt: string;
     forbidden: string;

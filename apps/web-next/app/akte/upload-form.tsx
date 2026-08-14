@@ -4,9 +4,12 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
- * The upload. A client component by necessity: the PDF bytes come from a file input, and posting
- * them through a server action would mean buffering the document in the Next process as well as the
- * API — one more place a hostile PDF sits (CLAUDE.md §2). It goes straight to the sandboxed endpoint.
+ * The upload. A client component by necessity: the PDF bytes come from a file input. It posts to
+ * the SAME-ORIGIN proxy route (`app/akte/upload/route.ts`), which attaches the httpOnly session
+ * bearer server-side — a direct browser→API call carries no Authorization and 403s under real auth
+ * (audit W4). The API's answer is rendered, not collapsed: SUBJECT_MISMATCH, QUALITY_TOO_LOW and
+ * RATE_LIMITED are different problems with different next actions, and the launch gate says no
+ * screen may dead-end.
  */
 export function UploadForm({ cta, busy, failed, note }: { cta: string; busy: string; failed: string; note: string }) {
   const [pending, start] = useTransition();
@@ -28,13 +31,18 @@ export function UploadForm({ cta, busy, failed, note }: { cta: string; busy: str
             setError(null);
             start(async () => {
               const bytes = await file.arrayBuffer();
-              const res = await fetch('/api/credit-file/upload', {
+              const res = await fetch('/akte/upload', {
                 method: 'POST',
                 headers: { 'content-type': 'application/pdf' },
                 body: bytes,
               });
-              if (!res.ok) setError(failed);
-              else router.refresh();
+              if (!res.ok) {
+                const body = (await res.json().catch(() => ({}))) as { message?: string | string[] };
+                const message = Array.isArray(body.message) ? body.message.join(' ') : body.message;
+                setError(message && String(message).trim() ? String(message) : failed);
+              } else {
+                router.refresh();
+              }
             });
           }}
         />

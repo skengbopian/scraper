@@ -1,5 +1,6 @@
 import type { ProvableSendEvidenceId } from '../evidence/provable-send.js';
 import { COUNTS_TOWARD_COMPLIANCE_STATS, isTerminal, type Actor, type Outcome, type RequestState } from './states.js';
+import { statutoryDeadlineAt } from './statutory-clock.js';
 import { TRANSITIONS, WITHDRAW_EVENT, type Transition } from './transitions.js';
 
 /**
@@ -89,6 +90,22 @@ export class GuardViolationError extends Error {
   }
 }
 
+/**
+ * The persistence layer refused a transition because the row's state no longer matches the snapshot
+ * the transition was computed from — another actor moved the request first (worker sweep vs. queued
+ * job, a double-submitted user action, two ops reviewers on one ticket). Every repository MUST
+ * compare-and-swap on the from-state when persisting: a blind write would record a second
+ * READY→SENT in the append-only log and let both racers reach the wire (CLAUDE.md §8 — a duplicate
+ * legal request risks being deemed excessive under Art. 12(5)). The loser surfaces this error and
+ * re-loads; it never overwrites.
+ */
+export class StaleTransitionError extends Error {
+  constructor(public readonly requestId: string, public readonly expectedFrom: RequestState, detail?: string) {
+    super(`Stale transition: request ${requestId} is no longer in ${expectedFrom}${detail ? ` — ${detail}` : ''}`);
+    this.name = 'StaleTransitionError';
+  }
+}
+
 function findEdge(from: RequestState, event: string): Transition | undefined {
   return TRANSITIONS.find((t) => t.from === from && t.event === event);
 }
@@ -100,11 +117,21 @@ export function allowedEvents(from: RequestState): string[] {
 }
 
 /** Outcome implied by arriving at a terminal state via a given event. */
-function outcomeFor(event: string, to: RequestState): Outcome | null {
+function outcomeFor(event: string, to: RequestState, req: RequestSnapshot, now: Date): Outcome | null {
   if (to === 'COMPLIED') return 'COMPLIED';
   if (to === 'WITHDRAWN') return 'WITHDRAWN';
   if (event === 'userDeclinesResend') return 'NO_PROVABLE_CLOCK';
-  if (to === 'CLOSED_FAILED') return 'ABANDONED';
+  if (to === 'CLOSED_FAILED') {
+    // Provable silence must reach the census. A statutory clock that ran out with no controller
+    // reply on file is the worst controller behaviour the two-clock machinery exists to evidence —
+    // and before this branch existed, `NO_RESPONSE` was returned by nothing, so total silence on a
+    // provable month could never be recorded against a controller (audit F2). The discard/failure
+    // of the ESCALATION that silence produced does not change what the controller did.
+    const provableSilence =
+      req.deadlineAt !== null && req.deadlineAt.getTime() <= now.getTime() && !req.hasControllerResponse;
+    if (provableSilence && (event === 'humanDiscard' || event === 'resolved:failed')) return 'NO_RESPONSE';
+    return 'ABANDONED';
+  }
   return null;
 }
 
@@ -155,9 +182,16 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
           'other constructor, and deliberately no simulated one.',
       );
     }
-    if (!ctx.deadlineDays) throw new GuardViolationError('provableSend', 'deadlineDays is required to set the clock');
     patch.provableSendConfirmedAt = ctx.now;
-    patch.deadlineAt = new Date(ctx.now.getTime() + ctx.deadlineDays * 86_400_000);
+    // Art. 12(3) is one CALENDAR month (Reg. 1182/71 / EDPB Guidelines 01/2022 §54): same-numbered
+    // day next month, clamped to month end, extended over Sat/Sun/bundesweite Feiertage, expiring
+    // at Europe/Berlin end of day. `deadlineDays × 24h` fired up to a day early on 31-day months —
+    // an escalation draft alleging silence while the controller legally had time left.
+    // `ctx.deadlineDays` parameterises only the PROVISIONAL hint on the sibling edge.
+    patch.deadlineAt = statutoryDeadlineAt(ctx.now);
+    // The hint is spent: leaving it beside the statutory clock showed a stale provisional date in
+    // the ops queue (audit F7). The UI already prefers the statutory clock; the row should agree.
+    patch.provisionalDeadlineAt = null;
   }
 
   if (event === 'sendAccepted:nonProvable') {
@@ -168,8 +202,11 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
 
   // --- Invariant 5: the parser cannot decide alone. --------------------------------------------
   if (event.startsWith('validated:')) {
-    const belowThreshold =
-      req.parseConfidence !== null && req.parseConfidence < req.humanReviewIfConfidenceBelow;
+    // A non-numeric floor means the playbook document never passed the gate that guarantees one —
+    // fail closed to the strictest floor rather than letting `x < undefined === false` disable the
+    // guard (audit P1).
+    const floor = typeof req.humanReviewIfConfidenceBelow === 'number' ? req.humanReviewIfConfidenceBelow : 1;
+    const belowThreshold = req.parseConfidence !== null && req.parseConfidence < floor;
     if (belowThreshold && !req.reviewedByHuman) {
       throw new GuardViolationError(
         'parserConfidence',
@@ -180,10 +217,10 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
     }
   }
 
-  // --- Invariant 4/3b: escalation rests on proven receipt. --------------------------------------
-  // 3a (silence) is STRUCTURAL: `deadlineExpired` exists only on AWAITING_RESPONSE, which is only
+  // --- Invariant 4: escalation rests on proven receipt. -----------------------------------------
+  // 4a (silence) is STRUCTURAL: `deadlineExpired` exists only on AWAITING_RESPONSE, which is only
   // reachable via provableSendConfirmed. It is deliberately not re-checked here.
-  // 3b is this: humanResolve:escalate is reachable from a sendPermanentlyFailed entry into
+  // 4b is this: humanResolve:escalate is reachable from a sendPermanentlyFailed entry into
   // NEEDS_HUMAN, where nothing proves the controller ever received anything.
   if (event === 'humanResolve:escalate') {
     if (req.provableSendConfirmedAt === null && !req.hasControllerResponse) {
@@ -191,12 +228,12 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
         'provenReceipt',
         'cannot draft an Art. 77 complaint: there is neither a provable send nor a controller response, ' +
           'so nothing establishes that the controller ever received the request. Authorise a registered ' +
-          're-send first (state machine, invariant 3b).',
+          're-send first (state machine, invariant 4b).',
       );
     }
   }
 
-  const outcome = outcomeFor(event, edge.to);
+  const outcome = outcomeFor(event, edge.to, req, ctx.now);
   if (outcome) patch.outcome = outcome;
   if (isTerminal(edge.to)) patch.closedAt = ctx.now;
 

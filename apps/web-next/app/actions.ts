@@ -22,9 +22,22 @@ export async function toggleReadingLevel(): Promise<void> {
   revalidatePath('/', 'layout');
 }
 
-export async function startRequest(slug: string, requestType: RequestType): Promise<void> {
-  await createRequest(slug, requestType, readRegister());
+/**
+ * The API's answer, surfaced instead of swallowed (audit W7): a blocked duplicate, a routed
+ * self-serve handoff and a created request are three different next actions, and the launch gate
+ * says no screen may dead-end. Prose (`message`) is already in the caller's register.
+ */
+export interface StartRequestOutcome {
+  readonly ok: boolean;
+  readonly message?: string;
+  readonly reason?: string;
+}
+
+export async function startRequest(slug: string, requestType: RequestType): Promise<StartRequestOutcome> {
+  const r = await createRequest(slug, requestType, readRegister());
   revalidatePath('/', 'layout');
+  if (!r.ok) return { ok: false, message: r.message, ...(r.reason ? { reason: r.reason } : {}) };
+  return { ok: true };
 }
 
 export async function authoriseRegisteredResend(id: string): Promise<void> {

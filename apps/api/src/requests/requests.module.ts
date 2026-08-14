@@ -72,5 +72,8 @@ function devRepository(): RequestsRepository {
       inject: [REQUESTS_REPOSITORY, SCHEDULER],
     },
   ],
+  // OpsModule injects the same engine so a correlated inbound document is handed to the worker's
+  // ingest pipeline (one engine instance per process — do not build a second PgBossEngine).
+  exports: [SCHEDULER],
 })
 export class RequestsModule {}

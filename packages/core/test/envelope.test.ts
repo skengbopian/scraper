@@ -58,11 +58,16 @@ describe('KEK resolvers', () => {
     expect(() => short.getKek('u')).toThrow(/32 bytes/);
   });
 
-  it('DevKekResolver refuses to run in production', () => {
+  it('DevKekResolver is ALLOW-listed to development/test — production, staging and unset all refuse (audit H1)', () => {
     const prev = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
     try {
-      expect(() => new DevKekResolver().getKek('u1')).toThrow(/never run in production/);
+      for (const env of ['production', 'staging', 'prod', undefined]) {
+        if (env === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = env;
+        expect(() => new DevKekResolver().getKek('u1'), `NODE_ENV=${env ?? 'unset'}`).toThrow(/never run outside development\/test/);
+      }
+      process.env.NODE_ENV = 'test';
+      expect(new DevKekResolver().getKek('u1')).toHaveLength(32);
     } finally {
       process.env.NODE_ENV = prev;
     }

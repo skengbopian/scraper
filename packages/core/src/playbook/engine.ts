@@ -194,7 +194,17 @@ export type ValidationVerdict =
  * because it also happens to contain a matching needle.
  */
 export function validateResponse(pb: Playbook, r: ParsedResponse): ValidationVerdict {
-  const floor = pb.validation.humanReviewIfConfidenceBelow;
+  const floor = pb.validation?.humanReviewIfConfidenceBelow;
+  // Fail CLOSED on a malformed document: `confidence < undefined` is always false, so a playbook
+  // JSON missing or typo-ing the floor (a DB row is not run through the YAML gate — audit P1)
+  // would otherwise let hostile parser output decide at ANY confidence — the exact docs/06 C4
+  // attack this floor exists to stop.
+  if (typeof floor !== 'number') {
+    return {
+      event: 'lowConfidence|ambiguous',
+      reason: 'playbook document declares no numeric humanReviewIfConfidenceBelow — failing closed to human review',
+    };
+  }
   if (r.confidence < floor && !r.reviewedByHuman) {
     return {
       event: 'lowConfidence|ambiguous',

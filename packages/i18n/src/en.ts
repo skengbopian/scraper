@@ -243,6 +243,7 @@ export const EN: AppStrings = {
     resolveResend: 'Send again',
     resolveEscalate: 'Draft a complaint',
     sendComplaint: 'File the complaint yourself',
+    readyWaiting: 'Waiting on the system: playbook activation or a dispatch retry. No decision is needed here.',
     discardComplaint: 'Discard the draft',
     sendNote: 'A person files the draft, not the system. This button records that you did.',
     noProvenReceipt:

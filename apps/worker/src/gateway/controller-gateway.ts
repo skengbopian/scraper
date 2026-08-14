@@ -53,12 +53,18 @@ export interface ControllerGatewayDeps {
   readonly appendEvidenceRecord: (record: EvidenceRecord) => Promise<EvidenceRecord>;
   readonly latestChainHash: (requestId: string) => Promise<string | null>;
   /**
-   * True when an OUTBOUND_COPY already exists for this request+cycle — the at-most-once wire guard.
-   * This is send-level idempotency (state machine §5b) and is emphatically NOT the request-level
-   * guard: it asks "did THIS request already reach the wire", never "has this triple ever been used"
-   * (which would break the lawful second cycle — ADR-013).
+   * True when an OUTBOUND_COPY already exists for this request's CURRENT DISPATCH ATTEMPT — the
+   * at-most-once wire guard. This is send-level idempotency (state machine §5b) and is emphatically
+   * NOT the request-level guard: it asks "did THIS attempt already reach the wire", never "has this
+   * triple ever been used" (which would break the lawful second cycle — ADR-013) and never "has this
+   * request ever been sent" (which would block the registered re-send — the chase path re-dispatches
+   * the same row, so an attempt is scoped by the most recent entry into READY).
    */
   readonly hasOutboundEvidence: (requestId: string) => Promise<boolean>;
+  /** OUTBOUND_COPY count against one controller since `since` — feeds the per-controller flood brake. */
+  readonly countOutboundForControllerSince: (controllerId: string, since: Date) => Promise<number>;
+  /** CLAUDE.md C1: sends per controller per hour beyond this are an anomaly signal, not throughput. */
+  readonly maxSendsPerControllerPerHour: number;
   readonly objectStorePut: (key: string, bytes: string) => Promise<string>;
   readonly idFactory: () => string;
   readonly now: () => Date;
@@ -82,6 +88,21 @@ export class ControllerGateway implements OutboundGateway {
         reason:
           'an OUTBOUND_COPY already exists for this request — an earlier attempt may have reached ' +
           'the wire. Refusing to send again (Art. 12(5) duplicate risk); human review required.',
+      };
+    }
+
+    // (a2) Per-controller flood brake (CLAUDE.md C1: "rate-limit and log all lookups"). Config
+    // validated this cap since wave 5 while nothing consumed it (audit W11). A runaway provenance
+    // chain or a dispatch bug shows up HERE as volume; refusing into the human queue is the correct
+    // failure, because an automatic retry of a flood is the flood.
+    const cap = this.deps.maxSendsPerControllerPerHour;
+    const hourAgo = new Date(this.deps.now().getTime() - 3_600_000);
+    if ((await this.deps.countOutboundForControllerSince(req.controllerId, hourAgo)) >= cap) {
+      return {
+        kind: 'FAILED',
+        reason:
+          `per-controller send cap reached (${cap}/hour for controller ${req.controllerId}) — ` +
+          'this volume is an anomaly signal, not throughput. Human review required (CLAUDE.md C1).',
       };
     }
 

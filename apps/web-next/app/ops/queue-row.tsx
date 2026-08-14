@@ -18,13 +18,22 @@ import { discardComplaint, fileComplaint, resolveCase } from './actions';
  */
 export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
   const drafted = item.state === 'ESCALATION_DRAFTED';
+  // humanResolve:* edges exist ONLY on NEEDS_HUMAN. The queue also lists READY rows the dispatcher
+  // could not send — rendering resolution buttons for those produced five silent 409s per row
+  // (audit W7): a dead end dressed as a decision.
+  const resolvable = item.state === 'NEEDS_HUMAN';
+  // No clock tag when no clock runs: a READY row used to show the provisional tag purely because
+  // `clockIsProvable` was false — there was nothing provisional about it, there was NOTHING.
+  const hasClock = item.statutoryDeadlineAt != null || item.provisionalDeadlineAt != null;
   return (
     <li className="row" style={{ display: 'block', padding: '12px 0' }}>
       <b>
         <span>{s.requestTypeLabel[item.requestType]}</span>
-        <span className={`tag ${item.clockIsProvable ? 'warn' : ''}`}>
-          {item.clockIsProvable ? s.clock.statutoryLabel : s.clock.provisionalLabel}
-        </span>
+        {hasClock ? (
+          <span className={`tag ${item.clockIsProvable ? 'warn' : ''}`}>
+            {item.clockIsProvable ? s.clock.statutoryLabel : s.clock.provisionalLabel}
+          </span>
+        ) : null}
       </b>
       <small>
         {s.ops.controllerLabel}: {item.controllerSlug} · {s.stateLabel[item.state]}
@@ -50,7 +59,7 @@ export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
             <button className="btn" type="submit">{s.ops.discardComplaint}</button>
           </form>
         </div>
-      ) : (
+      ) : resolvable ? (
         <div className="btnrow">
           {(
             [
@@ -68,6 +77,8 @@ export function QueueRow({ item, s }: { item: OpsQueueItem; s: AppStrings }) {
             </form>
           ))}
         </div>
+      ) : (
+        <small>{s.ops.readyWaiting}</small>
       )}
       {drafted ? <small>{s.ops.sendNote}</small> : null}
     </li>

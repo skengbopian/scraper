@@ -34,6 +34,16 @@ const DATE = /(\d{2})\.(\d{2})\.(\d{4})/;
 function iso(m: RegExpMatchArray | null): string | null {
   if (!m) return null;
   const [, dd, mm, yyyy] = m;
+  // Hostile input: "45.13.2024" matches the regex SHAPE. Emitting it produces an Invalid Date that
+  // crashes the match gate with a RangeError (a 500) instead of a clean rejection — so anything
+  // that is not a real calendar date is "no readable date" (audit W15).
+  const day = Number(dd);
+  const month = Number(mm);
+  const year = Number(yyyy);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (candidate.getUTCFullYear() !== year || candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) {
+    return null;
+  }
   return `${yyyy}-${mm}-${dd}T00:00:00.000Z`;
 }
 

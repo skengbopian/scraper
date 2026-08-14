@@ -157,7 +157,8 @@ describe('FLAGSHIP — ACCESS_ART15_SOURCE to infoscore, end to end', () => {
       actor: 'SYSTEM', now: NOW, deadlineDays: pb.deadlineDays!, provableSendEvidenceId: proof.id,
     });
     expect(sent.to).toBe('AWAITING_RESPONSE');
-    expect(sent.patch.deadlineAt).toEqual(new Date('2026-09-06T09:00:00Z'));
+    // One CALENDAR month (Reg. 1182/71): sent 7 Aug → end of Mon 7 Sep, Berlin midnight.
+    expect(sent.patch.deadlineAt).toEqual(new Date('2026-09-07T22:00:00Z'));
   });
 
   it('4. an incomplete source list becomes INCOMPLETE, not REFUSED', () => {

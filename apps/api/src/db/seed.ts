@@ -49,6 +49,18 @@ export async function seed(db: PrismaClient): Promise<void> {
 
   if (!devFixturesEnabled()) return;
 
+  // The env allow-list gates WHEN the fixture may exist; this gates WHERE (audit L6). The fixture
+  // account ships PUBLISHED credentials, a deterministic TOTP secret, a VERIFIED identity and a
+  // live all-scope mandate — NODE_ENV=development pointed at a remote DSN would plant all of that
+  // into whatever database the URL names.
+  const dsn = process.env.DATABASE_URL ?? '';
+  if (dsn !== '' && !/@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(dsn)) {
+    throw new Error(
+      'seed: refusing to plant the dev fixture into a non-localhost DATABASE_URL — the fixture ' +
+        'account has published credentials (dev-fixtures.ts). Seed fixtures only against a local database.',
+    );
+  }
+
   // Envelope key material first: the 0004 trigger refuses a credential without it. Provisioning is
   // idempotent AND repairs a row that predates 0004 — an existing user whose key is still null would
   // otherwise fail at encrypt() with no way back (re-running the seed must fix it, not repeat it).
@@ -149,40 +161,59 @@ export async function seed(db: PrismaClient): Promise<void> {
 }
 
 /**
- * Bumped in port wave 5. The demo document went from a three-key stub to a complete Playbook, and
- * `playbook_freeze` forbids editing v1 in place — exactly as its error message says: "shipped
- * versions are immutable except active — bump the version instead (docs/04)". The rule applies to
- * fixtures too, which is the point of enforcing it at the database rather than by convention.
+ * v2: port wave 5 turned the three-key stub into a complete Playbook document. v3: the audit pass —
+ * the document now passes the SAME schema+lint gate the shipped corpus does (the `demo: true`
+ * marker key violated `additionalProperties: false`, so the "valid" claim below was false and
+ * nothing checked it — audit P1c); the bureau-erasure demo carries the BOUNDED shape (audit P2);
+ * and `document.version` agrees with the row. `playbook_freeze` (0005) forbids editing a shipped
+ * version in place — "bump the version instead (docs/04)" — and that applies to fixtures too.
  */
-const DEMO_PLAYBOOK_VERSION = 2;
+const DEMO_PLAYBOOK_VERSION = 3;
+export { DEMO_PLAYBOOK_VERSION, demoPlaybookDocument };
 
 /**
- * A COMPLETE, valid Playbook document for the demo rows — and `active: false`.
+ * A COMPLETE Playbook document for the demo rows — schema-valid (spec-audit gates it) and
+ * `active: false`.
  *
  * It used to be a three-key stub (`{demo, channel, validation}`), which meant the worker's dispatch
  * failed on "template undefined could not be read" before it ever reached the counsel gate. The
  * fixture was hiding the thing it should have been demonstrating. Now the worker plans a real
  * channel, resolves a real recipient, and is refused for the reason that actually applies.
  *
- * `template` names a file that exists in `templates/`, so the refusal cannot be an artefact of a
+ * The ERASURE_ART17 demo pair targets a BUREAU (infoscore — dev-fixtures), so its document mirrors
+ * the bounded chain shape (`loeschung-herkunft.*`): scope-bound template + `scopeSource:
+ * PROVENANCE_ANSWER`. The generic `art17-loeschung.de` template says in its own header it is NOT
+ * for credit bureaus; a fixture normalising that pairing is one copied starting point away from the
+ * exact letter docs/07 forbids (audit P2).
+ *
+ * `template` names a file that exists in `templates/`, so a refusal cannot be an artefact of a
  * missing file either.
  */
+/** docs/07 venue seed, fixture-only. The REAL venue per controller is counsel-owned (OQ per row). */
+const DEMO_SEAT_DPA: Readonly<Record<string, string>> = {
+  infoscore: 'LFDI_BW',
+  crif: 'LFDI_BW',
+  schufa: 'HBDI',
+  regis24: 'BLNBDI',
+};
+
 function demoPlaybookDocument(slug: string, controllerSlug: string, requestType: string): Prisma.InputJsonValue {
+  const bounded = requestType === 'ERASURE_ART17';
+  const provenance = requestType === 'ACCESS_ART15_SOURCE';
   const template =
     requestType === 'OBJECTION_ART21'
       ? 'art21-werbewiderspruch.de'
-      : requestType === 'ACCESS_ART15_SOURCE'
+      : provenance
         ? 'art15g-herkunft.de'
-        : requestType === 'ERASURE_ART17'
-          ? 'art17-loeschung.de'
+        : bounded
+          ? 'art17-loeschung-herkunft.de'
           : 'art15-datenkopie.de';
   return {
-    demo: true,
     slug,
     kind: 'RIGHTS_REQUEST',
     controller: controllerSlug,
     requestType,
-    version: 1,
+    version: DEMO_PLAYBOOK_VERSION,
     // THE COUNSEL GATE. Never flip this in a fixture: renderRequest() refuses an inactive playbook,
     // and that refusal is the only thing standing between the alpha and a real outbound letter.
     active: false,
@@ -191,6 +222,17 @@ function demoPlaybookDocument(slug: string, controllerSlug: string, requestType:
     template,
     subjectFields: ['legalName', 'dateOfBirth', 'addresses'],
     deadlineDays: 30,
+    // The scope binding makes the unbounded rendering structurally unreachable: renderRequest()
+    // refuses a scoped playbook without a deriveErasureScope()-constructed PartialErasureScope.
+    ...(bounded ? { scopeSource: 'PROVENANCE_ANSWER' } : {}),
+    // The flagship shape requires its extraction contract + venue (schema: ACCESS_ART15_SOURCE ⇒
+    // provenance + seatDpa). Fixture values mirror docs/07's seed rows.
+    ...(provenance
+      ? {
+          provenance: { extractPerCategory: true, brokerWatchlist: ['az-direct'], flagIf: { incompleteSourceList: true } },
+          seatDpa: DEMO_SEAT_DPA[controllerSlug] ?? 'BFDI',
+        }
+      : {}),
     validation: { compliedIf: { responseContains: ['gelöscht', 'widersprochen'] }, humanReviewIfConfidenceBelow: 0.75 },
     escalation: { onDeadlineExpiry: 'NONE', onRefusal: 'DRAFT_ART77' },
   };

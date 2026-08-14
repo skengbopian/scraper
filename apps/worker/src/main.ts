@@ -12,6 +12,7 @@ import { PrismaWorkerRepository } from './repo/prisma-worker.repo.js';
 import { handleDeadlineExpiry, sweepExpiredDeadlines, type DeadlinePayload } from './workflows/deadline.js';
 import { dispatchReadyRequest, type DispatchDeps } from './workflows/dispatch.js';
 import { ingestResponse, reviveIngestJob, type IngestDeps } from './workflows/ingest.js';
+import { sweepDueRawPurges, type PurgeDeps } from './workflows/purge.js';
 
 /**
  * The worker process — port wave 5 (ADR-037).
@@ -60,6 +61,8 @@ function buildDispatchDeps(config: WorkerConfig, repo: PrismaWorkerRepository, r
     appendEvidenceRecord: (record) => repo.appendEvidenceRecord(record),
     latestChainHash: (id) => repo.latestChainHash(id),
     hasOutboundEvidence: (id) => repo.hasOutboundEvidence(id),
+    countOutboundForControllerSince: (controllerId, since) => repo.countOutboundForControllerSince(controllerId, since),
+    maxSendsPerControllerPerHour: config.maxSendsPerControllerPerHour,
     // No object store is configured; the ref is recorded so the chain is well-formed and the
     // artefact's absence is visible rather than implied.
     objectStorePut: async (key) => `unconfigured://${key}`,
@@ -144,13 +147,41 @@ async function main(): Promise<void> {
 
   // The READY sweep: the API creates requests without a queue dependency (docs/02), so the worker
   // picks them up rather than the API pushing. Also the backstop for a lost deadline timer — both
-  // paths re-check state per row, so a sweep can never double-apply what a job already did.
+  // paths re-check state per row, and the repository compare-and-swaps the transition, so a sweep
+  // can never double-apply what a job already did.
+  // CLAUDE.md §4: the raw-document purge, previously a schema promise with no executor (audit M1).
+  // deleteObject is a logged no-op until the S3-EU adapter exists — the refs it sees today are
+  // `unconfigured://`/`sim://` markers, so there is no blob to delete; the tombstone is the real
+  // work. TODO(safety): implement the EU object-store delete alongside the put.
+  const purgeDeps: PurgeDeps = {
+    findDueControllerResponsePurges: (now, limit) => repo.findDueControllerResponsePurges(now, limit),
+    findDueInboundDocumentPurges: (now, limit) => repo.findDueInboundDocumentPurges(now, limit),
+    deleteObject: async (ref) => {
+      if (!ref.includes('://') || ref.startsWith('unconfigured://') || ref.startsWith('sim://')) return;
+      console.warn(`[purge] no object-store adapter — blob NOT deleted, only tombstoned: ${ref}`);
+    },
+    tombstoneControllerResponseRaw: (id) => repo.tombstoneControllerResponseRaw(id),
+    tombstoneInboundDocumentRaw: (id, at) => repo.tombstoneInboundDocumentRaw(id, at),
+    log: (m) => console.log(`[purge] ${m}`),
+    now: () => new Date(),
+  };
+
+  let sweeping = false;
   const sweep = async (): Promise<void> => {
-    for (const id of await repo.findDispatchable(DISPATCH_BATCH)) {
-      console.log(`[dispatch] ${await dispatchReadyRequest(dispatchDeps, id)}`);
-    }
-    for (const note of await sweepExpiredDeadlines(deadlineDeps)) {
-      if (!note.startsWith('skip:')) console.log(`[deadline-sweep] ${note}`);
+    // A pass slower than the interval must not overlap itself: two passes over the same READY rows
+    // are exactly the double-dispatch race the CAS exists to lose safely — better not to run it.
+    if (sweeping) return;
+    sweeping = true;
+    try {
+      for (const id of await repo.findDispatchable(DISPATCH_BATCH)) {
+        console.log(`[dispatch] ${await dispatchReadyRequest(dispatchDeps, id)}`);
+      }
+      for (const note of await sweepExpiredDeadlines(deadlineDeps)) {
+        if (!note.startsWith('skip:')) console.log(`[deadline-sweep] ${note}`);
+      }
+      await sweepDueRawPurges(purgeDeps);
+    } finally {
+      sweeping = false;
     }
   };
   const timer = setInterval(() => void sweep().catch((e) => console.error('[sweep]', e)), 15_000);

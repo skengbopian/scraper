@@ -29,11 +29,21 @@ export interface StoredFindings {
 export interface CreditFileStore {
   saveSnapshot(input: SnapshotInput): Promise<{ snapshotId: string }>;
   latestForUser(userId: string): Promise<StoredFindings | null>;
+  /**
+   * CLAUDE.md C1: anomalies land in a REVIEWABLE store, not a log line (audit M3). `detail` is a
+   * bounded operator note — never document content, never subject data.
+   */
+  recordAnomaly(event: { userId: string | null; kind: string; detail: string }): Promise<void>;
 }
 
 export class InMemoryCreditFileStore implements CreditFileStore {
   private readonly byUser = new Map<string, StoredFindings[]>();
+  private readonly anomalies: { userId: string | null; kind: string; detail: string }[] = [];
   private seq = 0;
+
+  async recordAnomaly(event: { userId: string | null; kind: string; detail: string }): Promise<void> {
+    this.anomalies.push(event);
+  }
 
   async saveSnapshot(input: SnapshotInput): Promise<{ snapshotId: string }> {
     const snapshotId = `snap_${++this.seq}`;
@@ -59,6 +69,12 @@ export class InMemoryCreditFileStore implements CreditFileStore {
 
 export class PrismaCreditFileStore implements CreditFileStore {
   constructor(private readonly db: PrismaClient) {}
+
+  async recordAnomaly(event: { userId: string | null; kind: string; detail: string }): Promise<void> {
+    await this.db.anomalyEvent.create({
+      data: { userId: event.userId, kind: event.kind.slice(0, 100), detail: event.detail.slice(0, 1000) },
+    });
+  }
 
   async saveSnapshot(input: SnapshotInput): Promise<{ snapshotId: string }> {
     // One transaction: snapshot + entries + findings — the 0003 triggers assert the identity

@@ -35,4 +35,13 @@ describe('matchSubjectToIdentity — the anti-third-party gate', () => {
     const unverified = { ...ERIKA, status: 'PENDING' as const };
     expect(matchSubjectToIdentity({ name: 'Erika Mustermann', dateOfBirth: ERIKA.dateOfBirth }, unverified as VerifiedIdentity).match).toBe(false);
   });
+  it('an Invalid Date is a clean "unreadable", never a RangeError (audit W15)', () => {
+    const r = matchSubjectToIdentity({ name: 'Erika Mustermann', dateOfBirth: new Date('2024-13-45') }, ERIKA);
+    expect(r.match).toBe(false);
+    if (!r.match) expect(r.reason).toMatch(/readable date of birth/);
+  });
+  it('a DECOMPOSED umlaut (PDF text extraction) still matches the composed spelling (audit W15)', () => {
+    const decomposed = 'Jörg Müller'.normalize('NFD'); // o/u + combining diaeresis
+    expect(normalizeName(decomposed)).toBe('joerg mueller');
+  });
 });

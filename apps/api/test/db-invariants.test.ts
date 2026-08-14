@@ -22,9 +22,18 @@ describe.skipIf(!url)('database invariants (0005 + 0008)', () => {
     process.env.NODE_ENV = 'test';
     process.env.SCRAPER_DEV_FIXTURES = '1';
     db = new PrismaClient({ datasources: { db: { url } } });
-    await db.$executeRawUnsafe(
-      `TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest","Playbook","SelfServeRoute","LeverageAction","RecoveryCode","Session","AuthCredential","Mandate","IdentityAddress","Identity","User","Controller" CASCADE`,
-    );
+    // 0013 blocks TRUNCATE on the ledgers; a THROWAWAY test database resets them by explicitly
+    // disabling the guard — the visible act the trigger exists to force.
+    await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" DISABLE TRIGGER "request_event_no_truncate"');
+    await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" DISABLE TRIGGER "evidence_record_no_truncate"');
+    try {
+      await db.$executeRawUnsafe(
+        `TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest","Playbook","SelfServeRoute","LeverageAction","RecoveryCode","Session","AuthCredential","Mandate","IdentityAddress","Identity","User","Controller" CASCADE`,
+      );
+    } finally {
+      await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" ENABLE TRIGGER "request_event_no_truncate"');
+      await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" ENABLE TRIGGER "evidence_record_no_truncate"');
+    }
     const { seed } = await import('../dist/db/seed.js');
     await seed(db);
     controllerId = (await db.controller.findFirstOrThrow({ where: { slug: 'schufa' } })).id;
@@ -275,5 +284,10 @@ describe.skipIf(!url)('database invariants (0005 + 0008)', () => {
       expect(sql.at?.toISOString()).toBe(policy.lastFailedAt?.toISOString());
     }
     await db.user.update({ where: { id: userId }, data: { failedLoginCount: 0, lastFailedLoginAt: null } });
+  });
+
+  it('TRUNCATE on the append-only ledgers is refused (0013) — row triggers alone never fired on it', async () => {
+    await expect(db.$executeRawUnsafe('TRUNCATE TABLE "RequestEvent" CASCADE')).rejects.toThrow(/append-only/);
+    await expect(db.$executeRawUnsafe('TRUNCATE TABLE "EvidenceRecord" CASCADE')).rejects.toThrow(/append-only/);
   });
 });

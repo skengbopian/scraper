@@ -3,6 +3,7 @@ import {
   deriveSubject,
   type EvidenceRecord,
   type Playbook,
+  type PostalProvider,
   type RequestSnapshot,
   type TimestampAnchor,
   type Timestamper,
@@ -63,21 +64,36 @@ interface Harness {
   readonly queued: { requestId: string; reason: string }[];
   readonly scheduled: { key: string; at: Date }[];
   readonly evidence: EvidenceRecord[];
+  /** Swap what the next load() returns — the chase path re-dispatches the SAME request row. */
+  readonly setRow: (next: DispatchableRequest) => void;
+  /**
+   * Mirror of a new entry into READY. The wire guard is per dispatch ATTEMPT (state machine §5b),
+   * scoped by the most recent entry into READY — a lifetime check would block the registered
+   * re-send forever (the F1 audit finding).
+   */
+  readonly markReadyEntry: () => void;
 }
 
-function harness(r: DispatchableRequest, timestamper: Timestamper = new SimulatedTimestamper()): Harness {
+function harness(
+  r: DispatchableRequest,
+  timestamper: Timestamper = new SimulatedTimestamper(),
+  postal: PostalProvider = new StubPostalProvider(),
+): Harness {
   const transitions: Harness['transitions'] = [];
   const queued: Harness['queued'] = [];
   const scheduled: Harness['scheduled'] = [];
   const evidence: EvidenceRecord[] = [];
+  const current = { row: r, attemptStart: 0 };
 
   const gateway = new ControllerGateway({
     mailer: new StubMailer(),
-    postal: new StubPostalProvider(),
+    postal,
     timestamper,
     appendEvidenceRecord: async (rec) => { evidence.push(rec); return rec; },
     latestChainHash: async () => evidence.at(-1)?.chainHash ?? null,
-    hasOutboundEvidence: async () => evidence.some((e) => e.kind === 'OUTBOUND_COPY'),
+    hasOutboundEvidence: async () => evidence.slice(current.attemptStart).some((e) => e.kind === 'OUTBOUND_COPY'),
+    countOutboundForControllerSince: async () => evidence.filter((e) => e.kind === 'OUTBOUND_COPY').length,
+    maxSendsPerControllerPerHour: 10,
     objectStorePut: async (key) => `mem://${key}`,
     idFactory: () => `ev_${evidence.length + 1}`,
     now: () => NOW,
@@ -85,8 +101,10 @@ function harness(r: DispatchableRequest, timestamper: Timestamper = new Simulate
 
   return {
     transitions, queued, scheduled, evidence,
+    setRow: (next) => { current.row = next; },
+    markReadyEntry: () => { current.attemptStart = evidence.length; },
     deps: {
-      load: async () => r,
+      load: async () => current.row,
       readTemplate: async () => TEMPLATE,
       gateway,
       applyTransition: async (id, result) => void transitions.push({ id, result }),
@@ -178,6 +196,8 @@ describe('registered dispatch', () => {
       appendEvidenceRecord: async (rec) => { h.evidence.push(rec); return rec; },
       latestChainHash: async () => h.evidence.at(-1)?.chainHash ?? null,
       hasOutboundEvidence: async () => h.evidence.some((e) => e.kind === 'OUTBOUND_COPY'),
+      countOutboundForControllerSince: async () => 0,
+      maxSendsPerControllerPerHour: 10,
       objectStorePut: async (key) => `mem://${key}`,
       idFactory: () => `ev_${h.evidence.length + 1}`,
       now: () => NOW,
@@ -185,11 +205,63 @@ describe('registered dispatch', () => {
     await dispatchReadyRequest({ ...h.deps, gateway }, 'req_1');
 
     expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE']);
-    expect(h.transitions[1]!.result.patch.deadlineAt).toEqual(new Date(NOW.getTime() + 30 * 86_400_000));
+    // One CALENDAR month from 13 Aug: 13 Sep 2026 is a Sunday → end of Mon 14 Sep, Berlin midnight.
+    expect(h.transitions[1]!.result.patch.deadlineAt).toEqual(new Date('2026-09-14T22:00:00Z'));
     expect(h.scheduled[0]!.key).toMatch(/:statutory:/);
     // The id that authorised the clock is the POSTAL_PROOF record's — not the OUTBOUND_COPY's.
     const proof = h.evidence.find((e) => e.kind === 'POSTAL_PROOF');
     expect(proof?.qualifiedTimestamp?.kind).toBe('QUALIFIED');
+  });
+
+  it('the chase path: the registered re-send after an email attempt reaches the wire (§5b is per ATTEMPT)', async () => {
+    // Regression for audit F1: a lifetime-scoped wire guard blocked the same row's second dispatch,
+    // so the user-authorised registered re-send looped FAILED → NEEDS_HUMAN forever and the
+    // Art. 12(3) clock was unreachable after any email send.
+    const qualified: Timestamper = {
+      async anchor(hash): Promise<TimestampAnchor> {
+        return { kind: 'QUALIFIED', tsaRef: `qtsp:${hash.slice(0, 8)}`, signedAt: NOW, algorithm: 'SHA-256' };
+      },
+    };
+    class CarrierPostal extends StubPostalProvider {
+      override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+        const base = await super.send(letter, opts);
+        return base.proof ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const } } : base;
+      }
+    }
+    const pb = playbook({
+      slug: 'test.chase',
+      channel: { primary: 'email', fallback: 'postal', registered: { primary: false, fallback: true } },
+      recipient: { email: 'datenschutz@example.de', postal: 'AZ Direct GmbH, Gütersloh' },
+      escalation: { onDeadlineExpiry: 'DRAFT_ART77', onRefusal: 'DRAFT_ART77' },
+    });
+    const first = row(pb);
+    const h = harness(first, qualified, new CarrierPostal());
+
+    // Attempt 1: email. Captures OUTBOUND_COPY, arms only the provisional clock.
+    await dispatchReadyRequest(h.deps, 'req_1');
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE_PROVISIONAL']);
+    expect(h.evidence.filter((e) => e.kind === 'OUTBOUND_COPY')).toHaveLength(1);
+
+    // Silence → AWAITING_REGISTERED_RESEND → userConfirmsResend → a NEW entry into READY.
+    h.transitions.length = 0;
+    h.scheduled.length = 0;
+    h.markReadyEntry();
+    h.setRow({ ...first, forceRegistered: true });
+
+    const note = await dispatchReadyRequest(h.deps, 'req_1');
+    expect(h.queued).toHaveLength(0);
+    expect(note).toMatch(/provable send confirmed/);
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_RESPONSE']);
+    expect(h.transitions[1]!.result.patch.deadlineAt).not.toBeNull();
+    expect(h.evidence.filter((e) => e.kind === 'OUTBOUND_COPY')).toHaveLength(2);
+    expect(h.scheduled[0]!.key).toMatch(/:statutory:/);
+
+    // Within the SAME attempt, a replayed wire call is still refused — that guard must survive.
+    const replay = await h.deps.gateway.send({
+      requestId: 'req_1', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
+      channel: 'postal', registered: true, recipient: 'x', subject: 's', body: 'b',
+    });
+    expect(replay.kind).toBe('FAILED');
   });
 });
 
@@ -225,6 +297,38 @@ describe('the counsel gate and the human queue', () => {
     const h = harness({ ...r, snapshot: { ...r.snapshot, state: 'AWAITING_RESPONSE_PROVISIONAL' } });
     expect(await dispatchReadyRequest(h.deps, 'req_1')).toMatch(/not READY/);
     expect(h.transitions).toHaveLength(0);
+  });
+});
+
+describe('the per-controller flood brake', () => {
+  it('refuses the wire once the hourly cap is reached (CLAUDE.md C1 — anomaly, not throughput)', async () => {
+    const h = harness(row(playbook()));
+    // The harness counts ALL prior OUTBOUND_COPY records; force the cap to zero remaining.
+    const gateway = h.deps.gateway;
+    const capped = {
+      ...h.deps,
+      gateway: {
+        send: async (r: Parameters<typeof gateway.send>[0]) => {
+          const g = new ControllerGateway({
+            mailer: new StubMailer(), postal: new StubPostalProvider(), timestamper: new SimulatedTimestamper(),
+            appendEvidenceRecord: async (rec) => { h.evidence.push(rec); return rec; },
+            latestChainHash: async () => null,
+            hasOutboundEvidence: async () => false,
+            countOutboundForControllerSince: async () => 10,
+            maxSendsPerControllerPerHour: 10,
+            objectStorePut: async (key) => `mem://${key}`,
+            idFactory: () => 'ev_x',
+            now: () => NOW,
+          });
+          return g.send(r);
+        },
+      },
+    };
+    const note = await dispatchReadyRequest(capped, 'req_1');
+    expect(note).toMatch(/NEEDS_HUMAN/);
+    expect(note).toMatch(/send cap/);
+    // Nothing was captured for the wire: the brake fires before evidence capture.
+    expect(h.evidence.filter((e) => e.kind === 'OUTBOUND_COPY')).toHaveLength(0);
   });
 });
 

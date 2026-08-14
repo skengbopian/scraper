@@ -133,6 +133,9 @@ export interface OpsQueueItem {
   readonly state: RequestState;
   /** Whether the Art. 12(3) clock is genuinely running. NOT a date — see the note in ops/page.tsx. */
   readonly clockIsProvable: boolean;
+  /** Presence only (which clock, if any, runs) — rendering a date stays DeadlineCard's job. */
+  readonly statutoryDeadlineAt: string | null;
+  readonly provisionalDeadlineAt: string | null;
   readonly reason: string | null;
   readonly queuedAt: string;
 }

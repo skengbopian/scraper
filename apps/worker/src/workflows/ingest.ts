@@ -191,11 +191,14 @@ async function decide(
   });
 
   // The snapshot the machine judges against carries the playbook's floor and this parse's
-  // confidence. Without both, invariant 5's guard in `apply()` has nothing to compare.
+  // confidence. Without both, invariant 5's guard in `apply()` has nothing to compare. The floor
+  // read fails CLOSED to 1 on a malformed document (unvalidated DB JSON — audit P1): a missing
+  // floor must send everything to a human, never disable the guard.
+  const declaredFloor = row.playbook.validation?.humanReviewIfConfidenceBelow;
   const judged: RequestSnapshot = {
     ...received,
     parseConfidence: parsed.confidence,
-    humanReviewIfConfidenceBelow: row.playbook.validation.humanReviewIfConfidenceBelow,
+    humanReviewIfConfidenceBelow: typeof declaredFloor === 'number' ? declaredFloor : 1,
   };
 
   if (row.snapshot.requestType === 'ACCESS_ART15_SOURCE') {

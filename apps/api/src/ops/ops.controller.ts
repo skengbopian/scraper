@@ -48,6 +48,12 @@ export class OpsController {
     return this.service.queue();
   }
 
+  /** CLAUDE.md C1: the anomaly review queue (audit M3) — SUBJECT_MISMATCH, rate-cap hits, etc. */
+  @Get('anomalies')
+  async anomalies() {
+    return this.service.anomalies();
+  }
+
   @Post('requests/:id/resolve')
   async resolve(@Param('id') id: string, @Body() dto: ResolveDto) {
     const allowed: readonly OpsResolution[] = ['complied', 'incomplete', 'refused', 'escalate', 'resend'];
@@ -89,12 +95,14 @@ export class OpsController {
     if (!dto.senderRef || !dto.storageRef || !dto.sha256) {
       throw new BadRequestException({ error: 'INVALID_DOCUMENT', message: 'senderRef, storageRef and sha256 are required' });
     }
+    // String() coercion, the auth controllers' pattern (audit W8): there is no global validation
+    // pipe, so `senderRef: 42` would otherwise reach `.slice()` and 500 instead of being handled.
     return this.service.submitInboundDocument({
       channel: dto.channel as (typeof channels)[number],
-      senderRef: dto.senderRef,
-      ...(dto.subjectLine ? { subjectLine: dto.subjectLine } : {}),
-      storageRef: dto.storageRef,
-      sha256: dto.sha256,
+      senderRef: String(dto.senderRef),
+      ...(dto.subjectLine ? { subjectLine: String(dto.subjectLine) } : {}),
+      storageRef: String(dto.storageRef),
+      sha256: String(dto.sha256),
       retentionDays: RAW_RETENTION_DAYS,
     });
   }
@@ -109,6 +117,6 @@ export class OpsController {
   @Post('inbound-documents/:id/assign')
   async assignInbound(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: AssignInboundDto) {
     if (!dto.requestId) throw new BadRequestException({ error: 'INVALID_ASSIGNMENT', message: 'requestId is required' });
-    return this.service.assignInboundDocument(id, dto.requestId, req.userId);
+    return this.service.assignInboundDocument(id, String(dto.requestId), req.userId);
   }
 }

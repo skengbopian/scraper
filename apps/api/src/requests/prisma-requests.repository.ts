@@ -2,6 +2,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import {
   assertNoCredential,
   CONTROLLER_TYPES,
+  StaleTransitionError,
   TERMINAL_STATES,
   type MandateSnapshot,
   type OpenRequestRef,
@@ -16,6 +17,14 @@ import {
 import type { RequestsRepository } from './requests.service.js';
 
 const TERMINAL = [...TERMINAL_STATES] as ('COMPLIED' | 'CLOSED_FAILED' | 'WITHDRAWN')[];
+
+/** The DB unique on idempotencyKey rejected a concurrent duplicate — a conflict, not a fault. */
+export class DuplicateRequestError extends Error {
+  constructor(public readonly idempotencyKey: string) {
+    super(`duplicate request blocked by idempotency key (${idempotencyKey})`);
+    this.name = 'DuplicateRequestError';
+  }
+}
 
 /**
  * The production-shaped repository: Postgres via Prisma (packages/db), replacing the in-memory dev
@@ -169,6 +178,15 @@ export class PrismaRequestsRepository implements RequestsRepository {
     });
   }
 
+  async latestTerminalClosedAt(userId: string, controllerId: string, requestType: string): Promise<Date | null> {
+    const row = await this.db.rightsRequest.findFirst({
+      where: { userId, controllerId, requestType: requestType as never, state: { in: TERMINAL } },
+      orderBy: { closedAt: 'desc' },
+      select: { closedAt: true },
+    });
+    return row?.closedAt ?? null;
+  }
+
   async insert(row: Record<string, unknown>): Promise<{ id: string }> {
     const controllerId = String(row.controllerId);
     const requestType = String(row.requestType);
@@ -179,7 +197,28 @@ export class PrismaRequestsRepository implements RequestsRepository {
       select: { id: true, document: true },
     });
     if (!pb) throw new Error(`insert: no active playbook for (${controllerId}, ${requestType}) — routing said there was one`);
-    const doc = pb.document as { channel?: { primary?: string } } | null;
+    const doc = pb.document as { channel?: { primary?: string }; scopeSource?: string } | null;
+
+    // Scope binding is checked in BOTH directions at the moment the request binds to a playbook
+    // (audit P3). The engine's render-time refusal already exists; this closes the window where an
+    // active-but-unbounded ERASURE_ART17 playbook at a bureau (e.g. a copied fixture) would bind to
+    // a provenance-chain follow-up, whose entire legal theory is the BOUNDED Art. 17(1)(d) demand.
+    const cause = String(row.cause ?? 'USER_INITIATED');
+    if (cause === 'PROVENANCE_CHAIN' && requestType === 'ERASURE_ART17' && doc?.scopeSource !== 'PROVENANCE_ANSWER') {
+      throw new Error(
+        `insert: the provenance-chain erasure for (${controllerId}) resolved to a playbook WITHOUT ` +
+          `scopeSource: PROVENANCE_ANSWER — refusing to bind. An unbounded erasure demand at a bureau ` +
+          'is the letter docs/07 forbids; activate the bounded loeschung-herkunft playbook instead.',
+      );
+    }
+    if (doc?.scopeSource !== undefined && cause !== 'PROVENANCE_CHAIN') {
+      throw new Error(
+        `insert: playbook for (${controllerId}, ${requestType}) declares scopeSource ${doc.scopeSource} ` +
+          `but the request cause is ${cause} — a bounded-scope letter has no scope to be bounded BY ` +
+          'outside the provenance chain.',
+      );
+    }
+
     const channel = (doc?.channel?.primary === 'postal' || doc?.channel?.primary === 'web_form' ? doc.channel.primary : 'email') as
       | 'email'
       | 'postal'
@@ -223,7 +262,9 @@ export class PrismaRequestsRepository implements RequestsRepository {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         // The UNIQUE idempotencyKey closed the concurrent double-insert race (docs/03 §Idempotency).
-        throw new Error(`duplicate request blocked by idempotency key (${row.idempotencyKey})`);
+        // A typed error so the service maps the LOSING racer to the same GUARD_IDEMPOTENCY conflict
+        // the sequential path produces — not a 500 (audit W12).
+        throw new DuplicateRequestError(String(row.idempotencyKey));
       }
       throw e;
     }
@@ -277,9 +318,16 @@ export class PrismaRequestsRepository implements RequestsRepository {
     if (p.outcome !== undefined) data.outcome = p.outcome;
     if (p.closedAt !== undefined) data.closedAt = p.closedAt;
     if (t.event === 'dispatch') data.sentAt = t.at;
-    await this.db.$transaction([
-      this.db.rightsRequest.update({ where: { id }, data: data as never }),
-      this.db.requestEvent.create({
+    await this.db.$transaction(async (tx) => {
+      // Compare-and-swap on the from-state. The snapshot this transition was computed from may be
+      // stale (worker sweep vs. queued job, double-submitted action); a blind write would record a
+      // second READY→SENT in the append-only log and let both racers reach the wire. Losing the
+      // race is an error the caller can see, never a silent overwrite.
+      const updated = await tx.rightsRequest.updateMany({ where: { id, state: t.from as never }, data: data as never });
+      if (updated.count === 0) {
+        throw new StaleTransitionError(id, t.from, `"${t.event}" was computed from a stale snapshot`);
+      }
+      await tx.requestEvent.create({
         data: {
           requestId: id,
           type: t.event,
@@ -290,8 +338,8 @@ export class PrismaRequestsRepository implements RequestsRepository {
           // tickets arrive with an empty explanation (ADR-037).
           payload: { note: t.note ?? null, ...(t.reason ? { reason: t.reason } : {}) },
         },
-      }),
-    ]);
+      });
+    });
   }
 
   private toSnapshot(r: {

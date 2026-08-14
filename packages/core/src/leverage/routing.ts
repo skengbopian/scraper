@@ -94,7 +94,8 @@ export interface LeverageActionDraft {
   /**
    * The typed routing record: which rung was taken and why every other candidate was not. Non-personal
    * by construction (tiers, mechanisms, route refs), so it is safe in an audit row and in a
-   * RequestEvent payload. Persisted to `LeverageAction.routingDecision` (migration 0007).
+   * RequestEvent payload. Persisted to `LeverageAction.routingDecision` (migration 0009 —
+   * numbered 0007 before the wave-4 renumbering; the 0006/0007 gap is intentional).
    */
   readonly routingDecision?: Record<string, unknown>;
 }

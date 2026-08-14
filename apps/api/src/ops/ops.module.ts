@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import type { WorkflowEngine } from '@scraper/core';
+import { RequestsModule, SCHEDULER } from '../requests/requests.module.js';
 import { OpsController } from './ops.controller.js';
 import { OpsRoleGuard } from './ops-role.guard.js';
 import { OpsService } from './ops.service.js';
@@ -13,7 +16,17 @@ import { OpsService } from './ops.service.js';
  * ship the screen at all.
  */
 @Module({
+  imports: [RequestsModule],
   controllers: [OpsController],
-  providers: [OpsService, OpsRoleGuard],
+  providers: [
+    // Factory for the same reason as RequestsService: the scheduler is injected by token, and the
+    // ctor param is an interface with no runtime DI token of its own.
+    {
+      provide: OpsService,
+      useFactory: (db: PrismaClient, scheduler: WorkflowEngine | null) => new OpsService(db, scheduler),
+      inject: [PrismaClient, SCHEDULER],
+    },
+    OpsRoleGuard,
+  ],
 })
 export class OpsModule {}

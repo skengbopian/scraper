@@ -22,6 +22,7 @@ import {
   type ThrottleState,
   type UserKeyResolver,
 } from '@scraper/core';
+import { randomBytes } from 'node:crypto';
 import { generateTotpSecret, hashPassword, hashToken, newSessionToken, totpProvisioningUri, verifyPassword, verifyTotp } from './crypto.js';
 
 /**
@@ -77,8 +78,14 @@ export class AuthService {
       if (e instanceof PasswordPolicyError) throw new BadRequestException({ error: 'WEAK_PASSWORD', reason: e.code });
       throw e;
     }
+    // DPIA R2: no enumeration oracle on ANY auth path. Login pays a decoy KDF for unknown emails;
+    // register previously answered EMAIL_TAKEN — a clean account-existence oracle one route over
+    // (audit M5). A taken address now gets a DECOY registration: same response shape, same crypto
+    // cost, nothing persisted. The real account is untouched (its owner uses the standing
+    // "schon ein Konto? → anmelden" path); the decoy TOTP secret is stored nowhere, so it can
+    // never validate.
     const existing = await this.db.user.findUnique({ where: { email: mail } });
-    if (existing) throw new BadRequestException({ error: 'EMAIL_TAKEN', reason: 'EMAIL_TAKEN' });
+    if (existing) return this.decoyRegistration(mail, password);
 
     const totpSecret = generateTotpSecret();
     // The per-user DEK is provisioned WITH the user, before any credential exists — the 0004 trigger
@@ -102,16 +109,42 @@ export class AuthService {
     // directly produces exactly what `decrypt(userId, …)` will later open.
     const totpSecretEnc = await crypto.encrypt(wrappedDek, kekRef, Buffer.from(totpSecret, 'utf8'));
 
-    const userId = await this.db.$transaction(async (tx) => {
-      const user = await tx.user.create({ data: { email: mail, wrappedDek, kekRef, totpEnrolledAt: new Date() } });
-      await tx.authCredential.create({ data: { userId: user.id, passwordHash, totpSecretEnc } });
-      // The identity record exists from minute one — UNVERIFIED, so every request route 403s until
-      // the ident provider verifies. Auth and identity verification are deliberately separate gates.
-      await tx.identity.create({ data: { userId: user.id, status: 'UNVERIFIED' } });
-      await tx.recoveryCode.createMany({ data: recovery.hashes.map((codeHash) => ({ userId: user.id, codeHash })) });
-      return user.id;
-    });
+    let userId: string;
+    try {
+      userId = await this.db.$transaction(async (tx) => {
+        const user = await tx.user.create({ data: { email: mail, wrappedDek, kekRef, totpEnrolledAt: new Date() } });
+        await tx.authCredential.create({ data: { userId: user.id, passwordHash, totpSecretEnc } });
+        // The identity record exists from minute one — UNVERIFIED, so every request route 403s until
+        // the ident provider verifies. Auth and identity verification are deliberately separate gates.
+        await tx.identity.create({ data: { userId: user.id, status: 'UNVERIFIED' } });
+        await tx.recoveryCode.createMany({ data: recovery.hashes.map((codeHash) => ({ userId: user.id, codeHash })) });
+        return user.id;
+      });
+    } catch (e) {
+      // Concurrent duplicate: the email unique closed the race the `existing` read missed. Same
+      // neutral answer as the sequential path — a 500 here was both an oracle and a fault (W12).
+      if ((e as { code?: string }).code === 'P2002') {
+        return { userId: decoyUserId(), totpSecret, totpProvisioningUri: totpProvisioningUri(mail, totpSecret), recoveryCodes: recovery.codes };
+      }
+      throw e;
+    }
     return { userId, totpSecret, totpProvisioningUri: totpProvisioningUri(mail, totpSecret), recoveryCodes: recovery.codes };
+  }
+
+  /** The decoy path pays the SAME crypto cost as a real registration — timing is the oracle too. */
+  private async decoyRegistration(mail: string, password: string) {
+    const totpSecret = generateTotpSecret();
+    const crypto = new AesGcmEnvelopeCrypto(kekResolver());
+    const { wrappedDek } = await crypto.generateWrappedDek('user');
+    const recovery = generateRecoveryCodes(RECOVERY_CODE_COUNT);
+    await hashPassword(password);
+    await crypto.encrypt(wrappedDek, 'user', Buffer.from(totpSecret, 'utf8'));
+    return {
+      userId: decoyUserId(),
+      totpSecret,
+      totpProvisioningUri: totpProvisioningUri(mail, totpSecret),
+      recoveryCodes: recovery.codes,
+    };
   }
 
   /** Step 1: password. Returns a session that is NOT yet MFA-verified — only /auth/totp upgrades it. */
@@ -376,9 +409,18 @@ export class AuthService {
   }
 }
 
-/** KEKs come from the environment in any deployed setting; the dev resolver refuses under production. */
+/** KEKs come from the environment in any deployed setting; the dev resolver is allow-listed to dev/test. */
 function kekResolver(): EnvKekResolver | DevKekResolver {
   return process.env.SCRAPER_KEK_MODE === 'env' ? new EnvKekResolver() : new DevKekResolver();
+}
+
+/** Shape-compatible with Prisma's cuid default — a decoy id distinguishable by FORMAT is an oracle. */
+function decoyUserId(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = randomBytes(24);
+  let out = 'c';
+  for (let i = 0; i < 24; i++) out += alphabet[bytes[i]! % alphabet.length];
+  return out;
 }
 
 function loginThrottle(user: { failedLoginCount: number; lastFailedLoginAt: Date | null }): ThrottleState {

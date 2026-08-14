@@ -391,4 +391,21 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     expect(created.recoveryCodes).toHaveLength(10);
     await db.$executeRawUnsafe(`DELETE FROM "User" WHERE "email" = $1`, orphanEmail);
   });
+
+  it('registering a TAKEN address is indistinguishable from success and persists nothing (DPIA R2)', async () => {
+    const before = await db.user.count({ where: { email: EMAIL } });
+    const r = await post('/auth/register', { email: EMAIL, password: 'falscher-zweitversuch-vom-angreifer-99' });
+    expect(r.status).toBe(201);
+    const body = await json(r);
+    // Same shape as a real registration: an attacker must not learn the address is taken from the
+    // response, its fields, or the id FORMAT.
+    expect(String(body.totpSecret).length).toBeGreaterThan(10);
+    expect(String(body.userId)).toMatch(/^c[a-z0-9]{24}$/);
+    expect(body.recoveryCodes).toHaveLength(10);
+    // ... and nothing changed: one account, the original credentials still the only ones that work.
+    expect(await db.user.count({ where: { email: EMAIL } })).toBe(before);
+    expect(await db.user.count()).toBeGreaterThan(0);
+    const login = await post('/auth/login', { email: EMAIL, password: PASSWORD });
+    expect(login.status).toBe(201);
+  });
 });

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 // Value import: DI metadata (see ops-role.guard.ts).
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import {
   apply,
   runGuards,
@@ -9,6 +9,7 @@ import {
   type RequestTypeStatutory,
   type TransitionResult,
   type VerifiedIdentity,
+  type WorkflowEngine,
 } from '@scraper/core';
 
 /**
@@ -61,7 +62,11 @@ export interface OpsQueueItem {
 
 @Injectable()
 export class OpsService {
-  constructor(private readonly db: PrismaClient) {}
+  constructor(
+    private readonly db: PrismaClient,
+    /** The same engine the API schedules deadline timers into; null when no scheduler is configured. */
+    private readonly scheduler: WorkflowEngine | null = null,
+  ) {}
 
   /**
    * Everything waiting on a person: NEEDS_HUMAN tickets, drafted complaints awaiting a send
@@ -149,27 +154,30 @@ export class OpsService {
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
-    const last = await this.db.evidenceRecord.findFirst({ where: { requestId }, orderBy: { createdAt: 'desc' }, select: { chainHash: true } });
-
     // TODO(counsel): the complaint document itself is not rendered by this product yet — the
     // drafted state records that one is DUE, and ops attaches the letter it filed. What is chained
     // here is the fact and the actor, which is what invariant 7 requires of a legally-meaningful
     // action. Rendering the Art. 77 text is a counsel-owned template, not code.
     const content = `ART77_SENT requestId=${requestId} by=${opsUserId} draftEvidence=${draft?.id ?? 'none'}`;
     const sha256 = sha256Hex(content);
-    await this.db.evidenceRecord.create({
-      data: {
-        requestId,
-        kind: 'SCREENSHOT',
-        sha256,
-        prevHash: last?.chainHash ?? null,
-        chainHash: sha256Hex(`${last?.chainHash ?? ''}|${sha256}|SCREENSHOT|${requestId}`),
-        storageRef: `ops://escalation/${requestId}/sent.txt`,
-      },
-    });
-
     const result = this.transition(snapshot, 'humanSend', 'HUMAN_OPS');
-    await this.persist(requestId, result, { opsUserId });
+    // Evidence and transition commit ATOMICALLY. The chain is append-only: a record asserting
+    // ART77_SENT for a send whose transition then failed could never be removed, only contradicted.
+    // The chain-head read also lives inside the transaction so a losing concurrent writer cannot
+    // fork the chain.
+    await this.persist(requestId, result, { opsUserId }, async (tx) => {
+      const last = await tx.evidenceRecord.findFirst({ where: { requestId }, orderBy: { createdAt: 'desc' }, select: { chainHash: true } });
+      await tx.evidenceRecord.create({
+        data: {
+          requestId,
+          kind: 'SCREENSHOT',
+          sha256,
+          prevHash: last?.chainHash ?? null,
+          chainHash: sha256Hex(`${last?.chainHash ?? ''}|${sha256}|SCREENSHOT|${requestId}`),
+          storageRef: `ops://escalation/${requestId}/sent.txt`,
+        },
+      });
+    });
     return { state: result.to };
   }
 
@@ -178,6 +186,20 @@ export class OpsService {
     const result = this.transition(snapshot, 'humanDiscard', 'HUMAN_OPS');
     await this.persist(requestId, result, { opsUserId });
     return { state: result.to, outcome: result.patch.outcome ?? null };
+  }
+
+  /**
+   * The anomaly review list (CLAUDE.md C1; audit M3). Rows carry opaque ids and a bounded detail
+   * string — the same no-subject-data discipline as the queue above.
+   */
+  async anomalies(): Promise<
+    readonly { id: string; userId: string | null; kind: string; detail: string; createdAt: Date; reviewedAt: Date | null }[]
+  > {
+    return this.db.anomalyEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { id: true, userId: true, kind: true, detail: true, createdAt: true, reviewedAt: true },
+    });
   }
 
   // --- inbound documents ------------------------------------------------------------------------
@@ -224,8 +246,11 @@ export class OpsService {
    * reference is a hint for the person reading it, not an instruction to the system. `senderRef` and
    * `subjectLine` are stored untrusted and rendered as-is for exactly that reason.
    */
-  async assignInboundDocument(documentId: string, requestId: string, opsUserId: string): Promise<{ assigned: true }> {
-    const doc = await this.db.inboundDocument.findUnique({ where: { id: documentId }, select: { assignedRequestId: true } });
+  async assignInboundDocument(documentId: string, requestId: string, opsUserId: string): Promise<{ assigned: true; ingestQueued: boolean }> {
+    const doc = await this.db.inboundDocument.findUnique({
+      where: { id: documentId },
+      select: { assignedRequestId: true, channel: true, receivedAt: true, storageRef: true },
+    });
     if (!doc) throw new NotFoundException('inbound document not found');
     if (doc.assignedRequestId) {
       throw new ConflictException({
@@ -234,12 +259,49 @@ export class OpsService {
       });
     }
     await this.mustLoad(requestId);
-    await this.db.inboundDocument.update({
-      where: { id: documentId },
-      // All three move together — 0011's inbound_assignment_is_attributed refuses anything else.
-      data: { assignedRequestId: requestId, assignedAt: new Date(), assignedByUserId: opsUserId },
-    });
-    return { assigned: true };
+    try {
+      await this.db.inboundDocument.update({
+        where: { id: documentId },
+        // All three move together — 0011's inbound_assignment_is_attributed refuses anything else.
+        data: { assignedRequestId: requestId, assignedAt: new Date(), assignedByUserId: opsUserId },
+      });
+    } catch (e) {
+      // Two reviewers racing on one document: the 0011 freeze trigger stops the second write. Map
+      // it to the same conflict the sequential path answers, not a raw 500 (audit W12).
+      const now = await this.db.inboundDocument.findUnique({ where: { id: documentId }, select: { assignedRequestId: true } });
+      if (now?.assignedRequestId) {
+        throw new ConflictException({
+          error: 'ALREADY_ASSIGNED',
+          message: `already correlated to ${now.assignedRequestId}; a correction is a new document, not a re-point`,
+        });
+      }
+      throw e;
+    }
+
+    // Correlation without ingestion is bookkeeping only: the request would stay in
+    // AWAITING_RESPONSE(_PROVISIONAL) with a reply on file, and the statutory timer would later
+    // draft an Art. 77 complaint alleging SILENCE — a false assertion. Hand the document to the
+    // worker's ingest pipeline: the job carries the storage reference (never bytes through the
+    // queue); a document the sandbox cannot read fails closed to NEEDS_HUMAN with the
+    // ControllerResponse row — and therefore proven receipt — recorded either way.
+    let ingestQueued = false;
+    if (this.scheduler) {
+      await this.scheduler.schedule(`ingest:${documentId}`, new Date(), {
+        name: 'ingest-response',
+        payload: {
+          requestId,
+          channel: doc.channel,
+          document: {
+            id: doc.storageRef,
+            mimeType: 'application/octet-stream',
+            bytes: [],
+            receivedAt: doc.receivedAt.toISOString(),
+          },
+        },
+      });
+      ingestQueued = true;
+    }
+    return { assigned: true, ingestQueued };
   }
 
   // --- internals --------------------------------------------------------------------------------
@@ -292,19 +354,35 @@ export class OpsService {
     }
   }
 
-  private async persist(id: string, t: TransitionResult, extra?: Record<string, unknown>): Promise<void> {
+  private async persist(
+    id: string,
+    t: TransitionResult,
+    extra?: Record<string, unknown>,
+    alsoInTransaction?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ): Promise<void> {
     const data: Record<string, unknown> = { state: t.to };
     if (t.patch.outcome !== undefined) data.outcome = t.patch.outcome;
     if (t.patch.closedAt !== undefined) data.closedAt = t.patch.closedAt;
-    await this.db.$transaction([
-      this.db.rightsRequest.update({ where: { id }, data: data as never }),
-      this.db.requestEvent.create({
+    await this.db.$transaction(async (tx) => {
+      // Compare-and-swap on the from-state: two reviewers acting on one ticket must yield ONE
+      // transition and ONE event in the append-only log — the loser sees a conflict and re-loads,
+      // it never writes a duplicate humanSend/humanResolve.
+      const updated = await tx.rightsRequest.updateMany({ where: { id, state: t.from as never }, data: data as never });
+      if (updated.count === 0) {
+        throw new ConflictException({
+          error: 'STALE_STATE',
+          message: `request ${id} is no longer in ${t.from} — another actor moved it first`,
+          nextAction: 'VIEW_REQUEST',
+        });
+      }
+      await tx.requestEvent.create({
         data: {
           requestId: id, type: t.event, fromState: t.from, toState: t.to, actor: t.actor,
           payload: { note: t.note ?? null, ...(t.reason ? { reason: t.reason } : {}), ...(extra ?? {}) },
         },
-      }),
-    ]);
+      });
+      if (alsoInTransaction) await alsoInTransaction(tx);
+    });
   }
 
   private async mustLoad(id: string): Promise<RequestSnapshot> {

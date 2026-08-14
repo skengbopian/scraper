@@ -7,6 +7,7 @@ import {
   proposeFollowUps,
   provableSendEvidenceIdOf,
   runGuards,
+  StaleTransitionError,
   UnprovableSendError,
   type CreateRequestPort,
   type FollowUpProposal,
@@ -24,6 +25,7 @@ import {
   simulatedDeliveryProof,
   SIMULATED_TIMESTAMPER,
 } from '../common/dev-fixtures.js';
+import { DuplicateRequestError } from './prisma-requests.repository.js';
 import { createHash } from 'node:crypto';
 import type { WorkflowEngine } from '@scraper/core';
 
@@ -37,6 +39,8 @@ export interface CreateInput {
   readonly controllerSlug: string;
   readonly requestType: StatutoryType;
   readonly cause: 'USER_INITIATED' | 'PROVENANCE_CHAIN' | 'FRAUD_REPAIR';
+  /** The Art. 12(5) cooling confirmation — see create-request.dto.ts. */
+  readonly userExplicitlyReExercised?: boolean;
 }
 
 /**
@@ -103,7 +107,21 @@ export class RequestsService {
       .update(`${input.userId}|${input.controllerSlug}|${input.requestType}|${now.getTime()}`)
       .digest('hex')
       .slice(0, 24)}`;
-    const r = await createRequest(this.repo, input, { now, requestId });
+    let r: Awaited<ReturnType<typeof createRequest>>;
+    try {
+      r = await createRequest(this.repo, input, { now, requestId });
+    } catch (e) {
+      if (e instanceof DuplicateRequestError) {
+        // The DB unique caught a concurrent double-POST after the guard's read — same answer as the
+        // sequential idempotency guard, not a 500 (audit W12).
+        throw new ConflictException({
+          error: 'GUARD_IDEMPOTENCY',
+          message: 'an identical request is already open for this controller',
+          nextAction: 'VIEW_EXISTING_REQUEST',
+        });
+      }
+      throw e;
+    }
     switch (r.kind) {
       case 'CONTROLLER_NOT_FOUND':
         throw new NotFoundException(`unknown controller "${input.controllerSlug}"`);
@@ -116,6 +134,13 @@ export class RequestsService {
           // Usability gate: never a dead end — every failure names the next action.
           nextAction:
             r.failed === 'identity' ? 'START_IDENTITY_VERIFICATION' : r.failed === 'mandate' ? 'SIGN_MANDATE' : 'VIEW_EXISTING_REQUEST',
+        });
+      case 'RE_EXERCISE_CONFIRMATION_REQUIRED':
+        // Not an error: the user is one explicit confirmation away (POST again with reExercise:true).
+        throw new ConflictException({
+          error: 'RE_EXERCISE_CONFIRMATION_REQUIRED',
+          message: r.reason,
+          nextAction: 'CONFIRM_RE_EXERCISE',
         });
       case 'SELF_SERVE':
         return { routed: 'SELF_SERVE' as const, nextAction: 'GUIDED_SELF_SERVE', route: r.route, guided: r.guided, reason: r.reason };
@@ -165,7 +190,7 @@ export class RequestsService {
       });
     }
     const result = apply(r, 'userConfirmsResend:guardsPass', { actor: 'USER', now: new Date() });
-    await this.repo.applyTransition(id, result);
+    await this.persistTransition(id, result);
     return { state: result.to, nextAction: 'AWAIT_DISPATCH' };
   }
 
@@ -173,8 +198,24 @@ export class RequestsService {
     const r = await this.repo.load(id);
     if (!r || r.userId !== userId) throw new NotFoundException();
     const result = apply(r, 'userDeclinesResend', { actor: 'USER', now: new Date() });
-    await this.repo.applyTransition(id, result);
+    await this.persistTransition(id, result);
     return { state: result.to, outcome: result.patch.outcome, nextAction: 'NONE' };
+  }
+
+  /**
+   * All service-level transition writes go through here: the repository compare-and-swaps on the
+   * from-state, and losing that race (a double-submitted confirm vs. decline, a worker acting
+   * between load and write) is a visible conflict for THIS caller — the winning transition stands.
+   */
+  private async persistTransition(id: string, result: TransitionResult): Promise<void> {
+    try {
+      await this.repo.applyTransition(id, result);
+    } catch (e) {
+      if (e instanceof StaleTransitionError) {
+        throw new ConflictException({ error: 'STALE_STATE', message: e.message, nextAction: 'VIEW_REQUEST' });
+      }
+      throw e;
+    }
   }
 
   /**
@@ -195,7 +236,7 @@ export class RequestsService {
       } catch (e) {
         throw new ConflictException({ error: 'ILLEGAL_TRANSITION', message: (e as Error).message });
       }
-      await this.repo.applyTransition(id, result);
+      await this.persistTransition(id, result);
       return result;
     };
 
@@ -362,13 +403,16 @@ export class RequestsService {
   private async scheduleDeadline(id: string): Promise<void> {
     if (!this.scheduler) return;
     const r = await this.mustLoad(id);
+    // The timestamp is part of the key (the worker's convention, audit F7): pg-boss dedupes on the
+    // singleton key, so a re-armed same-kind timer for the same request — a chase re-send — would
+    // otherwise be silently swallowed while the spent key still exists.
     if (r.state === 'AWAITING_RESPONSE_PROVISIONAL' && r.provisionalDeadlineAt) {
-      await this.scheduler.schedule(`deadline:${id}:provisional`, r.provisionalDeadlineAt, {
+      await this.scheduler.schedule(`deadline:${id}:provisional:${r.provisionalDeadlineAt.getTime()}`, r.provisionalDeadlineAt, {
         name: 'deadline-expiry',
         payload: { requestId: id, kind: 'provisional' },
       });
     } else if (r.state === 'AWAITING_RESPONSE' && r.deadlineAt) {
-      await this.scheduler.schedule(`deadline:${id}:statutory`, r.deadlineAt, {
+      await this.scheduler.schedule(`deadline:${id}:statutory:${r.deadlineAt.getTime()}`, r.deadlineAt, {
         name: 'deadline-expiry',
         payload: { requestId: id, kind: 'statutory' },
       });

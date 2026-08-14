@@ -57,7 +57,7 @@ If any task appears to weaken identity binding, treat it as a blocker and say so
      requires a provable send; escalating on a *refusal or an incomplete answer* does not, because the
      controller's own reply proves receipt.
    The state machine encodes this structurally, not by a runtime check — see
-   `schema/request-state-machine.md` §"The clock" and invariants 2 and 3. `CLAUDE.md` §6, `docs/05` §6 and
+   `schema/request-state-machine.md` §"The clock" and invariants 2 and 4. `CLAUDE.md` §6, `docs/05` §6 and
    that file are one normative rule in three places: change all three or change none.
 7. **Cheapest rung first.** Legal requests are expensive artillery reserved for high-harm data. Before
    generating one, check for a Tier 0/1 route achieving the same outcome (the company's own deletion or

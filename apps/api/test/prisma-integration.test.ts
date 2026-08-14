@@ -19,7 +19,15 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
   beforeAll(async () => {
     process.env.SCRAPER_DEV_FIXTURES = '1';
     db = new PrismaClient({ datasources: { db: { url } } });
-    await db.$executeRawUnsafe(`TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","ProvenanceEntry","ProvenanceLedger","RightsRequest","Playbook","SelfServeRoute","LeverageAction","Session","AuthCredential","Mandate","IdentityAddress","IdentityPacket","Identity","SuppressionEnrolment","FraudMarkerFiling","User","Controller" CASCADE`);
+    // 0013 blocks TRUNCATE on the ledgers; the throwaway test DB disables the guard explicitly.
+    await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" DISABLE TRIGGER "request_event_no_truncate"');
+    await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" DISABLE TRIGGER "evidence_record_no_truncate"');
+    try {
+      await db.$executeRawUnsafe(`TRUNCATE TABLE "FileFinding","CreditFileEntry","CreditFileSnapshot","RequestEvent","ControllerResponse","EvidenceRecord","ProvenanceEntry","ProvenanceLedger","RightsRequest","Playbook","SelfServeRoute","LeverageAction","Session","AuthCredential","Mandate","IdentityAddress","IdentityPacket","Identity","SuppressionEnrolment","FraudMarkerFiling","User","Controller" CASCADE`);
+    } finally {
+      await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" ENABLE TRIGGER "request_event_no_truncate"');
+      await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" ENABLE TRIGGER "evidence_record_no_truncate"');
+    }
     const { seed } = await import('../dist/db/seed.js');
     await seed(db);
   });

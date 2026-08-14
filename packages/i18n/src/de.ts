@@ -242,6 +242,8 @@ export const DE: AppStrings = {
     resolveResend: 'Erneut versenden',
     resolveEscalate: 'Beschwerde entwerfen',
     sendComplaint: 'Beschwerde jetzt selbst einreichen',
+    readyWaiting:
+      'Wartet auf das System: Playbook-Freigabe oder erneuter Zustellversuch. Hier ist keine Entscheidung nötig.',
     discardComplaint: 'Entwurf verwerfen',
     sendNote:
       'Den Entwurf reicht ein Mensch ein, nicht das System. Diese Schaltfläche hält fest, dass Sie es getan haben.',

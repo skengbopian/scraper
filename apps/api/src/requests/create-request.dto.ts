@@ -16,6 +16,13 @@ export class CreateRightsRequestDto {
   /** Which right to exercise. Constrained to the four statutory types (docs/03 §ActionType). */
   readonly requestType!: 'OBJECTION_ART21' | 'ACCESS_ART15' | 'ACCESS_ART15_SOURCE' | 'ERASURE_ART17';
 
+  /**
+   * The explicit "yes, I mean to ask AGAIN" for a repeat cycle inside the Art. 12(5) cooling window
+   * (state machine §Idempotency 5a; the API answers RE_EXERCISE_CONFIRMATION_REQUIRED without it).
+   * An ACTION confirmation — it describes nothing about a person.
+   */
+  readonly reExercise?: boolean;
+
   // There is deliberately NO `cause` field.
   //
   // `cause` is a PRIVILEGE, not a description. `PROVENANCE_CHAIN` skips the Art. 12(5) re-exercise

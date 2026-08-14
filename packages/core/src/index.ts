@@ -1,6 +1,7 @@
 export * from './state-machine/states.js';
 export * from './state-machine/transitions.js';
 export * from './state-machine/machine.js';
+export * from './state-machine/statutory-clock.js';
 export * from './state-machine/guards.js';
 export * from './auth/session.js';
 export * from './auth/totp.js';

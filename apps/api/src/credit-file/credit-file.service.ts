@@ -7,7 +7,7 @@ import {
   type CreditFileEntryInput,
   type VerifiedIdentity,
 } from '@scraper/core';
-import { createDatenkopieSandbox, type DatenkopieStructured } from '@scraper/doc-sandbox';
+import { createIsolatedDatenkopieSandbox, type DatenkopieStructured } from '@scraper/doc-sandbox';
 import { CENSUS } from '../census/census.js';
 import type { CreditFileStore } from './credit-file.store.js';
 
@@ -32,14 +32,19 @@ const UPLOADS_PER_HOUR = 5;
 export class CreditFileService {
   private readonly log = new Logger('CreditFile');
   private readonly uploads = new Map<string, { n: number; resetAt: number }>();
-  private readonly sandbox = createDatenkopieSandbox();
+  // PROCESS-isolated (audit H3): pdf.js runs in a scrubbed-env child, never in this process — the
+  // one that holds the PrismaClient. CLAUDE.md §2's "isolated service" was previously a library
+  // import wearing the name.
+  private readonly sandbox = createIsolatedDatenkopieSandbox();
 
   constructor(private readonly store: CreditFileStore) {}
 
-  private throttle(userId: string): void {
+  private async throttle(userId: string): Promise<void> {
     const now = Date.now();
     const u = this.uploads.get(userId);
     if (u && u.resetAt > now && u.n >= UPLOADS_PER_HOUR) {
+      // Hitting the cap is itself an anomaly signal worth a reviewable row, not only a refusal.
+      await this.store.recordAnomaly({ userId, kind: 'UPLOAD_RATE_LIMITED', detail: `>${UPLOADS_PER_HOUR} uploads/hour` });
       throw new ForbiddenException({ error: 'RATE_LIMITED', message: 'Zu viele Uploads. Bitte warten Sie eine Stunde.' });
     }
     this.uploads.set(userId, u && u.resetAt > now ? { n: u.n + 1, resetAt: u.resetAt } : { n: 1, resetAt: now + 3600_000 });
@@ -48,7 +53,7 @@ export class CreditFileService {
   async upload(userId: string, identity: VerifiedIdentity, bytes: Uint8Array) {
     if (!bytes?.length) throw new BadRequestException({ error: 'EMPTY', message: 'Bitte eine PDF-Datei senden (Content-Type application/pdf).' });
     if (bytes.length > MAX_BYTES) throw new BadRequestException({ error: 'TOO_LARGE', message: 'Die Datei ist größer als 8 MB.' });
-    this.throttle(userId);
+    await this.throttle(userId);
     const rawDocumentHash = createHash('sha256').update(bytes).digest('hex');
 
     let parsed;
@@ -75,8 +80,11 @@ export class CreditFileService {
       identity,
     );
     if (!match.match) {
-      // Reject and purge: the parse result leaves scope here; only the anomaly log remains.
+      // Reject and purge: the parse result leaves scope here. The anomaly lands in the REVIEWABLE
+      // store (audit M3) — repeatedly uploading someone else's Datenkopie is the highest-signal
+      // abuse event this product can observe, and a log line nobody queues on is not review.
       this.log.warn(`upload REJECTED (subject mismatch) user=${userId} hash=${rawDocumentHash.slice(0, 12)} reason="${match.reason}"`);
+      await this.store.recordAnomaly({ userId, kind: 'SUBJECT_MISMATCH', detail: `hash=${rawDocumentHash.slice(0, 12)} reason=${match.reason}` });
       throw new ForbiddenException({
         error: 'SUBJECT_MISMATCH',
         message:

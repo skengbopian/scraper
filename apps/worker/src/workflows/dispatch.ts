@@ -1,5 +1,6 @@
 import {
   apply,
+  assertSubjectBelongsTo,
   PlaybookNotSendableError,
   renderRequest,
   type PartialErasureScope,
@@ -78,6 +79,11 @@ export function prepareDispatch(
   templateBody: string,
   now: Date,
 ): PreparedDispatch {
+  // The send-boundary re-assert (ADR-009; audit P8). The adapter derives the subject from the
+  // request owner's own Identity row, so the identity leg is self-referential here — the load-
+  // bearing checks are the BRAND (only deriveSubject mints a RequestSubject) and the user binding.
+  assertSubjectBelongsTo(row.subject, row.snapshot.userId, row.subject.identityId);
+
   let plan: DispatchPlan;
   try {
     plan = planDispatch(row.playbook, { forceRegistered: row.forceRegistered });

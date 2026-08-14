@@ -114,7 +114,9 @@ export const CENSUS: readonly CensusEntry[] = [
   {
     slug: 'acxiom', id: 'c_acxiom', name: 'Acxiom', type: 'Adress-Broker', risk: 'warn',
     riskLbl: 'Werbung', holds: 'Marketingprofile und Adressdaten',
-    defaultRequestType: 'ERASURE_ART17', featured: false,
+    // docs/04 authoring rule: the LEAST-collecting instrument first — for marketing data that is
+    // the unconditional Art. 21(2) objection, not erasure (the ERASURE default here inverted it).
+    defaultRequestType: 'OBJECTION_ART21', featured: false,
   },
   {
     slug: 'deutsche-post-direkt', id: 'c_dpdirekt', name: 'Deutsche Post Direkt', type: 'Adress-Broker', risk: 'warn',
@@ -124,7 +126,8 @@ export const CENSUS: readonly CensusEntry[] = [
   {
     slug: 'capaneo', id: 'c_capaneo', name: 'Capaneo (Schober)', type: 'Adress-Broker', risk: 'warn',
     riskLbl: 'Werbung', holds: 'Konsumentenprofile und Adressdaten',
-    defaultRequestType: 'ERASURE_ART17', featured: false,
+    // Same rule as acxiom above: Art. 21(2) first for marketing data.
+    defaultRequestType: 'OBJECTION_ART21', featured: false,
   },
 ];
 

@@ -3,8 +3,12 @@
  * text-layer path; OCRmyPDF is the later fallback for scans — separate container, not here).
  *
  * Hostile-input posture (pdf.js has had malicious-PDF CVEs): `isEvalSupported:false` (no JS-in-PDF
- * evaluation), no DOM/fonts (`disableFontFace`), a hard page cap, and a time budget. This module
- * only ever runs inside the doc-sandbox service, which has no DB access by design.
+ * evaluation), no DOM/fonts (`disableFontFace`), a hard page cap, and a time budget. These reduce
+ * the attack surface; the BACKSTOP is process isolation — real-user parses go through
+ * `createIsolatedDatenkopieSandbox()` (isolated.ts), which runs this module in a scrubbed-env
+ * child process with no DATABASE_URL in reach (audit H3). An earlier version of this comment
+ * claimed the isolation while the API imported this module in-process; the claim is only as true
+ * as the caller's choice of factory, so callers: use the isolated one.
  */
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 

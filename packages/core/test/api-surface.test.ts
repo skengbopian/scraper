@@ -46,11 +46,13 @@ describe('GUARDRAIL — the API surface cannot express a subject', () => {
     });
   }
 
-  it('the create DTO exposes only controllerSlug and requestType', () => {
+  it('the create DTO exposes only controllerSlug, requestType, and the reExercise confirmation', () => {
     const src = fs.readFileSync(path.join(ROOT, 'apps/api/src/requests/create-request.dto.ts'), 'utf8');
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const fields = [...code.matchAll(/readonly\s+([A-Za-z0-9_]+)\s*[?!]?\s*:/g)].map((m) => m[1]);
-    expect(fields.sort()).toEqual(['controllerSlug', 'requestType']);
+    // `reExercise` is an ACTION confirmation (Art. 12(5) cooling, guards.ts mayOpenNewCycle) —
+    // a boolean about THIS request's timing, describing nothing about any person.
+    expect(fields.sort()).toEqual(['controllerSlug', 'reExercise', 'requestType']);
   });
 
   it('the caller cannot name its own `cause` — that is a privilege, not a description (ADR-036)', () => {

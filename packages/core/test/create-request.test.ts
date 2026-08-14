@@ -35,6 +35,7 @@ interface PortOverrides {
   mandates?: MandateSnapshot[];
   siblings?: OpenRequestRef[];
   exhausted?: string[];
+  previousClosedAt?: Date | null;
 }
 
 function makePort(over: PortOverrides = {}) {
@@ -49,6 +50,7 @@ function makePort(over: PortOverrides = {}) {
     findLivemandates: async () => over.mandates ?? [mandate],
     findNonTerminalSiblings: async () => over.siblings ?? [],
     countTerminalPredecessors: async () => 0,
+    latestTerminalClosedAt: async () => over.previousClosedAt ?? null,
     findExhaustedMechanisms: async () => over.exhausted ?? [],
     insert: async (row) => { calls.insert++; calls.insertRows.push(row); return { id: String(row.id) }; },
     recordLeverageAction: async () => { calls.record++; },
@@ -109,5 +111,37 @@ describe('createRequest — behavioural (a legal request is NOT created when a s
     expect(r.kind).toBe('GUARD_FAILED');
     if (r.kind === 'GUARD_FAILED') expect(r.failed).toBe('idempotency');
     expect(calls.insert).toBe(0);
+  });
+});
+
+// Art. 12(5) re-exercise cooling — the mechanism the spec (§Idempotency 5a) declared and nothing
+// wired (audit F5). Only the NUMBER stays with counsel (OQ-9).
+describe('the re-exercise cooling window', () => {
+  const recentlyClosed = new Date(opts.now.getTime() - 5 * 86_400_000);
+
+  it('a repeat cycle 5 days after the last one closed requires explicit confirmation', async () => {
+    const { port, calls } = makePort({ routes: [], previousClosedAt: recentlyClosed });
+    const r = await createRequest(port, input(), opts);
+    expect(r.kind).toBe('RE_EXERCISE_CONFIRMATION_REQUIRED');
+    expect(calls.insert).toBe(0);
+  });
+
+  it('the explicit user confirmation opens the cycle', async () => {
+    const { port, calls } = makePort({ routes: [], previousClosedAt: recentlyClosed });
+    const r = await createRequest(port, input({ userExplicitlyReExercised: true }), opts);
+    expect(r.kind).toBe('CREATED');
+    expect(calls.insert).toBe(1);
+  });
+
+  it('a distinct cause (the provenance chain) is not a repeat of the same ask', async () => {
+    const { port } = makePort({ routes: [], previousClosedAt: recentlyClosed });
+    const r = await createRequest(port, input({ cause: 'PROVENANCE_CHAIN' }), opts);
+    expect(r.kind).toBe('CREATED');
+  });
+
+  it('after the window, a new cycle opens without ceremony (lawful annual re-access)', async () => {
+    const { port } = makePort({ routes: [], previousClosedAt: new Date(opts.now.getTime() - 40 * 86_400_000) });
+    const r = await createRequest(port, input(), opts);
+    expect(r.kind).toBe('CREATED');
   });
 });

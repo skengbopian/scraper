@@ -1,7 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import {
+  deriveErasureScope,
   deriveSubject,
   type EvidenceRecord,
+  type PartialErasureScope,
   type Playbook,
   type RequestSnapshot,
   type TimestampAnchor,
@@ -40,6 +42,7 @@ export class PrismaWorkerRepository {
       where: { id: requestId },
       include: {
         playbook: { select: { document: true } },
+        controller: { select: { slug: true } },
         user: { include: { identity: { include: { addresses: true } } } },
         events: { orderBy: { createdAt: 'desc' }, select: { type: true, toState: true } },
       },
@@ -59,15 +62,64 @@ export class PrismaWorkerRepository {
       select: { id: true, kind: true, lastAttachedAt: true },
     });
 
+    const playbook = r.playbook.document as unknown as Playbook;
+    // ADR-036 (audit P4): a scoped playbook renders only with the PartialErasureScope derived from
+    // this same bureau's own Art. 15(1)(g) answer. Without this plumbing the flagship's last link
+    // ALWAYS threw at render time and parked in the human queue — even after counsel activation.
+    // Derivation failures stay fail-closed: `scope` remains undefined and the engine refuses.
+    const scope =
+      playbook.scopeSource === 'PROVENANCE_ANSWER'
+        ? await this.deriveScopeFromProvenance(r.userId, r.controllerId, r.controller.slug)
+        : undefined;
+
     return {
       snapshot: this.toSnapshot(r),
-      playbook: r.playbook.document as unknown as Playbook,
+      playbook,
       subject,
       // audit C6: only a packet that was genuinely ATTACHED to this dispatch counts. A packet that
       // merely exists must not make the letter claim an enclosure it does not carry.
       attachedIdentityPacketId: packet && packet.kind !== 'NONE' && packet.lastAttachedAt !== null ? packet.id : null,
+      ...(scope ? { scope } : {}),
       forceRegistered,
     };
+  }
+
+  /**
+   * The bounded-erasure scope, from the most recent provenance ledger this user holds against this
+   * bureau. `deriveErasureScope` is the ONLY constructor of a scope; any refusal (no watchlisted
+   * broker named, label over budget, wrong source playbook) yields `undefined`, and the engine's
+   * render refusal routes the dispatch to the human queue with the scope requirement named.
+   */
+  private async deriveScopeFromProvenance(
+    userId: string,
+    controllerId: string,
+    bureauSlug: string,
+  ): Promise<PartialErasureScope | undefined> {
+    const ledger = await this.db.provenanceLedger.findFirst({
+      where: { userId, controllerId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        entries: true,
+        request: { include: { playbook: { select: { document: true } } } },
+      },
+    });
+    if (!ledger) return undefined;
+    try {
+      return deriveErasureScope({
+        entries: ledger.entries.map((e) => ({
+          dataCategory: e.dataCategory,
+          statedSource: e.statedSource,
+          statedLegalBasis: e.statedLegalBasis,
+          confidence: e.confidence,
+          isBroker: e.isBroker,
+          matchedWatchlistSlug: e.matchedWatchlistSlug,
+        })),
+        sourcePlaybook: ledger.request.playbook.document as unknown as Playbook,
+        bureauSlug,
+      });
+    } catch {
+      return undefined;
+    }
   }
 
   // --- ingest ---------------------------------------------------------------------------------
@@ -119,7 +171,28 @@ export class PrismaWorkerRepository {
   }
 
   async hasOutboundEvidence(requestId: string): Promise<boolean> {
-    return (await this.db.evidenceRecord.count({ where: { requestId, kind: 'OUTBOUND_COPY' } })) > 0;
+    // §5b is per dispatch ATTEMPT, not per request lifetime. The chase path re-dispatches the SAME
+    // row (AWAITING_REGISTERED_RESEND → READY → registered send), so the OUTBOUND_COPY captured by
+    // the earlier email attempt must not block the registered one — a lifetime check would make the
+    // Art. 12(3) clock unreachable for every chased request. An attempt begins at the most recent
+    // entry into READY (guardsPass, userConfirmsResend, humanResolve:resend — each an explicit
+    // authorisation); only evidence at/after that instant means THIS attempt may have hit the wire.
+    const lastReadyEntry = await this.db.requestEvent.findFirst({
+      where: { requestId, toState: 'READY' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return (
+      (await this.db.evidenceRecord.count({
+        where: {
+          requestId,
+          kind: 'OUTBOUND_COPY',
+          // No READY entry on record should be impossible for a dispatched request — fail closed
+          // by treating ANY outbound evidence as the current attempt's.
+          ...(lastReadyEntry ? { createdAt: { gte: lastReadyEntry.createdAt } } : {}),
+        },
+      })) > 0
+    );
   }
 
   async appendEvidenceRecord(record: EvidenceRecord): Promise<EvidenceRecord> {
@@ -153,6 +226,17 @@ export class PrismaWorkerRepository {
   async recordHumanQueueEntry(entry: { requestId: string; reason: string; queuedAt: Date }): Promise<void> {
     const r = await this.db.rightsRequest.findUnique({ where: { id: entry.requestId }, select: { state: true } });
     if (!r) return;
+    // Dedupe against the latest event: the 15s sweep re-visits every undispatchable READY row, and
+    // without this each visit appended another immortal humanQueued row (~5 760/day per stuck
+    // request — the log is append-only by trigger, so the flood could never be cleaned up). One
+    // entry per (state, reason) episode is the honest record; a CHANGED reason is a new fact.
+    const latest = await this.db.requestEvent.findFirst({
+      where: { requestId: entry.requestId },
+      orderBy: { createdAt: 'desc' },
+      select: { type: true, payload: true },
+    });
+    const reason = entry.reason.slice(0, 1000);
+    if (latest?.type === 'humanQueued' && (latest.payload as { reason?: string } | null)?.reason === reason) return;
     await this.db.requestEvent.create({
       data: {
         requestId: entry.requestId,
@@ -160,7 +244,7 @@ export class PrismaWorkerRepository {
         fromState: r.state,
         toState: r.state,
         actor: 'SYSTEM',
-        payload: { reason: entry.reason.slice(0, 1000), queuedAt: entry.queuedAt.toISOString() },
+        payload: { reason, queuedAt: entry.queuedAt.toISOString() },
       },
     });
   }
@@ -174,6 +258,43 @@ export class PrismaWorkerRepository {
       select: { id: true },
     });
     return rows.map((r) => r.id);
+  }
+
+  /** OUTBOUND_COPY volume per controller — the gateway's flood brake reads this (CLAUDE.md C1). */
+  async countOutboundForControllerSince(controllerId: string, since: Date): Promise<number> {
+    return this.db.evidenceRecord.count({
+      where: { kind: 'OUTBOUND_COPY', createdAt: { gte: since }, request: { controllerId } },
+    });
+  }
+
+  // --- retention (CLAUDE.md §4 — the purge sweep's queries; see workflows/purge.ts) -------------
+
+  async findDueControllerResponsePurges(now: Date, limit: number): Promise<readonly { id: string; rawDocumentRef: string }[]> {
+    const rows = await this.db.controllerResponse.findMany({
+      where: { purgeRawAt: { lte: now }, rawDocumentRef: { not: null } },
+      take: limit,
+      select: { id: true, rawDocumentRef: true },
+    });
+    return rows.filter((r): r is { id: string; rawDocumentRef: string } => r.rawDocumentRef !== null);
+  }
+
+  async findDueInboundDocumentPurges(now: Date, limit: number): Promise<readonly { id: string; storageRef: string }[]> {
+    return this.db.inboundDocument.findMany({
+      where: { purgeRawAt: { lte: now }, NOT: { storageRef: { startsWith: 'purged://' } } },
+      take: limit,
+      select: { id: true, storageRef: true },
+    });
+  }
+
+  async tombstoneControllerResponseRaw(id: string): Promise<void> {
+    // Nulling the ref satisfies 0005's CHECK (`rawDocumentRef IS NULL OR purgeRawAt IS NOT NULL`);
+    // the normalised `structured` payload and the evidence chain remain untouched.
+    await this.db.controllerResponse.update({ where: { id }, data: { rawDocumentRef: null } });
+  }
+
+  async tombstoneInboundDocumentRaw(id: string, purgedAt: Date): Promise<void> {
+    // storageRef is NOT NULL by schema, so the tombstone is a marker value rather than a null.
+    await this.db.inboundDocument.update({ where: { id }, data: { storageRef: `purged://${purgedAt.toISOString()}` } });
   }
 
   /** Timers that should have fired. The backstop for a lost job (deadline.ts). */

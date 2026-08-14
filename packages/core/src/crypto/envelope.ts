@@ -60,14 +60,21 @@ export class EnvKekResolver implements KekResolver {
 
 /**
  * DEV ONLY: derives a static KEK from the kekRef itself, so every developer machine gets the same
- * key — which is the OPPOSITE of a secret. It refuses to run under NODE_ENV=production rather than
- * trusting a deployment never to reach for it (same posture as `devFixturesEnabled()`).
+ * key — which is the OPPOSITE of a secret. It runs only under an ALLOW-listed NODE_ENV (the
+ * `devFixturesEnabled()` posture): refusing only the literal "production" left this resolver live
+ * whenever NODE_ENV was unset, "staging", "prod", or misspelled — silently sealing real secrets
+ * under a key anyone with the source can re-derive (audit H1). The API's boot gate
+ * (`assertApiStartupSafe`) refuses such a deployment before this throw is ever reached.
  * TODO(safety): replace with a KMS-backed resolver before any real personal data is stored.
  */
 export class DevKekResolver implements KekResolver {
   getKek(kekRef: string): Buffer {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('DevKekResolver must never run in production — every machine derives the same key');
+    const env = process.env.NODE_ENV;
+    if (env !== 'development' && env !== 'test') {
+      throw new Error(
+        `DevKekResolver must never run outside development/test (NODE_ENV=${env ?? 'unset'}) — ` +
+          'every machine derives the same key. Set SCRAPER_KEK_MODE=env and provision SCRAPER_KEK_* secrets.',
+      );
     }
     return scryptSync(`scraper-dev-kek:${kekRef}`, 'scraper-dev-only-salt', KEY_BYTES);
   }

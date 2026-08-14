@@ -24,6 +24,10 @@ const TITLES = /\b(dr|prof|dipl[.\-\w]*|mag|ba|ma|msc|bsc)\b\.?/g;
 
 export function normalizeName(name: string): string {
   return name
+    // NFC FIRST: a decomposed "Müller" (u + combining diaeresis, common in PDF text extraction)
+    // otherwise misses the literal `ü` replace below and folds to "muller" vs "mueller" — a false
+    // REJECT of the account holder's own document (audit W15).
+    .normalize('NFC')
     .toLowerCase()
     .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -36,7 +40,11 @@ export function normalizeName(name: string): string {
 export function matchSubjectToIdentity(parsed: ParsedSubject, identity: VerifiedIdentity): IdentityMatch {
   if (identity.status !== 'VERIFIED') return { match: false, reason: 'identity is not VERIFIED' };
   if (!parsed.name.trim()) return { match: false, reason: 'document names no subject' };
-  if (!parsed.dateOfBirth) return { match: false, reason: 'document carries no readable date of birth' };
+  // Invalid Date guards the toISOString below: a parser bug or hostile shape must be a clean
+  // "unreadable", never a RangeError that 500s the upload (audit W15).
+  if (!parsed.dateOfBirth || Number.isNaN(parsed.dateOfBirth.getTime())) {
+    return { match: false, reason: 'document carries no readable date of birth' };
+  }
 
   const dobParsed = parsed.dateOfBirth.toISOString().slice(0, 10);
   const dobIdentity = identity.dateOfBirth.toISOString().slice(0, 10);

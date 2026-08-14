@@ -28,14 +28,18 @@ export class RequestsController {
    */
   @Post()
   async create(@Req() req: AuthedRequest, @Body() dto: CreateRightsRequestDto) {
+    // String() coercion (audit W8): no global validation pipe exists, so a non-string body value
+    // would otherwise reach `slug.trim()` in the repository and 500 instead of 404/400.
     return this.service.create({
       userId: req.userId,
       identity: req.identity,
-      controllerSlug: dto.controllerSlug,
-      requestType: dto.requestType,
+      controllerSlug: String(dto.controllerSlug ?? ''),
+      requestType: String(dto.requestType ?? '') as CreateRightsRequestDto['requestType'],
       // Always USER_INITIATED here. A chained follow-up is created through the follow-up route below,
       // where the cause is established from stored evidence — see create-request.dto.ts.
       cause: 'USER_INITIATED',
+      // Strict === true: any other shape is "not confirmed" (the cooling guard's safe default).
+      userExplicitlyReExercised: dto.reExercise === true,
     });
   }
 

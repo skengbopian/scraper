@@ -65,7 +65,10 @@ export function assertStartupSafe(env: NodeJS.ProcessEnv): void {
     );
   }
 
-  if (env.NODE_ENV !== 'production') return;
+  // ALLOW-list, not `!== 'production'`: an unset, "staging" or misspelled NODE_ENV is a deployment,
+  // and a deployment with stub providers is the black hole this guard exists to prevent (the same
+  // deny-list trap as audit H1's KEK resolver).
+  if (env.NODE_ENV === 'development' || env.NODE_ENV === 'test') return;
 
   const unsafe = REQUIRED_REAL_PROVIDERS.filter((key) => !env[key] || env[key] === 'stub' || env[key] === 'simulated');
   if (unsafe.length > 0) {
@@ -79,6 +82,16 @@ export function assertStartupSafe(env: NodeJS.ProcessEnv): void {
   if (env.SCRAPER_DEV_FIXTURES === '1') {
     throw new WorkerConfigError('refusing to start: SCRAPER_DEV_FIXTURES=1 in production');
   }
+
+  // AUDIT M2: the five selectors above are validated, but until a provider factory dereferences
+  // them, `main.ts` HARDWIRES stub providers regardless — so passing the check by setting the env
+  // vars would still start a worker whose sends go nowhere while claiming real ones were selected.
+  // Refuse outright until the wiring exists; delete this throw when the factory lands.
+  throw new WorkerConfigError(
+    'refusing to start: real provider adapters exist (providers/real-providers.ts) but are not yet ' +
+      'wired into dispatch — this build hardwires stubs (main.ts). A deployment would accept ' +
+      `${REQUIRED_REAL_PROVIDERS.join(', ')} while ignoring them.`,
+  );
 }
 
 export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {

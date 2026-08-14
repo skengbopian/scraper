@@ -151,12 +151,14 @@ describe('GUARDRAIL — the statutory clock only starts on a provable send', () 
       .toThrow(/QTSP-anchored evidence/);
   });
 
-  it('a provable send sets deadlineAt from the registered send time', () => {
+  it('a provable send sets deadlineAt from the registered send time — one CALENDAR month, Berlin end of day', () => {
     const r = apply(req({ state: 'SENT' }), 'provableSendConfirmed', {
       actor: 'SYSTEM', now: AT, deadlineDays: 30, provableSendEvidenceId: 'ev_1',
     });
     expect(r.to).toBe('AWAITING_RESPONSE');
-    expect(r.patch.deadlineAt).toEqual(new Date('2026-09-06T10:00:00Z'));
+    // Sent 7 Aug 2026 → Art. 12(3) month ends with 7 Sep 2026 (a Monday), i.e. Berlin midnight
+    // 8 Sep = 22:00 UTC in CEST. Not `+30 × 24h` (= 6 Sep 10:00Z), which expired a day early.
+    expect(r.patch.deadlineAt).toEqual(new Date('2026-09-07T22:00:00Z'));
     expect(r.patch.provableSendConfirmedAt).toEqual(AT);
   });
 
@@ -167,7 +169,7 @@ describe('GUARDRAIL — the statutory clock only starts on a provable send', () 
       'provableSendConfirmed',
       { actor: 'SYSTEM', now: AT, deadlineDays: 30, provableSendEvidenceId: 'ev_2' },
     );
-    expect(resent.patch.deadlineAt).toEqual(new Date('2026-09-06T10:00:00Z'));
+    expect(resent.patch.deadlineAt).toEqual(new Date('2026-09-07T22:00:00Z'));
   });
 
   it('declining the re-send closes as NO_PROVABLE_CLOCK, excluded from controller stats', () => {
@@ -179,6 +181,52 @@ describe('GUARDRAIL — the statutory clock only starts on a provable send', () 
 
   it('but a provable clock that runs out in silence DOES count', () => {
     expect(countsTowardControllerStats('NO_RESPONSE')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Outcome resolution — provable silence reaches the census (audit F2).
+// ---------------------------------------------------------------------------------------------
+describe('outcome — provable silence closes as NO_RESPONSE, not ABANDONED', () => {
+  const silence = {
+    provableSendConfirmedAt: new Date('2026-06-01T10:00:00Z'),
+    deadlineAt: new Date('2026-07-01T22:00:00Z'), // expired well before AT
+    hasControllerResponse: false,
+  };
+
+  it('discarding the silence-born draft still records what the CONTROLLER did', () => {
+    const r = apply(req({ state: 'ESCALATION_DRAFTED', ...silence }), 'humanDiscard', { actor: 'HUMAN_OPS', now: AT });
+    expect(r.to).toBe('CLOSED_FAILED');
+    expect(r.patch.outcome).toBe('NO_RESPONSE');
+  });
+
+  it('an escalation that fails after provable silence records NO_RESPONSE too', () => {
+    const r = apply(req({ state: 'ESCALATED', ...silence }), 'resolved:failed', { actor: 'HUMAN_OPS', now: AT });
+    expect(r.patch.outcome).toBe('NO_RESPONSE');
+  });
+
+  it('a draft born of a refusal stays ABANDONED — the reply is on file, silence never happened', () => {
+    const r = apply(
+      req({ state: 'ESCALATION_DRAFTED', ...silence, hasControllerResponse: true }),
+      'humanDiscard',
+      { actor: 'HUMAN_OPS', now: AT },
+    );
+    expect(r.patch.outcome).toBe('ABANDONED');
+  });
+
+  it('a discard BEFORE the clock ran out stays ABANDONED', () => {
+    const r = apply(
+      req({ state: 'ESCALATION_DRAFTED', ...silence, deadlineAt: new Date('2026-12-01T22:00:00Z') }),
+      'humanDiscard',
+      { actor: 'HUMAN_OPS', now: AT },
+    );
+    expect(r.patch.outcome).toBe('ABANDONED');
+  });
+
+  it('a guard-failed creation stays ABANDONED (no clock ever ran)', () => {
+    const r = apply(req({ state: 'DRAFT' }), 'guardFail(idempotency|mandate)', { actor: 'SYSTEM', now: AT });
+    expect(r.to).toBe('CLOSED_FAILED');
+    expect(r.patch.outcome).toBe('ABANDONED');
   });
 });
 

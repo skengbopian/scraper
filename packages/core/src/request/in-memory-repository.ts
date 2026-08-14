@@ -12,7 +12,7 @@
 import { assertNoCredential, type SelfServeRoute } from '../leverage/self-serve.js';
 import type { ControllerRef, CreateRequestPort, LeverageActionRow } from './create-request.js';
 import type { MandateSnapshot, OpenRequestRef, RequestTypeStatutory } from '../state-machine/guards.js';
-import type { RequestSnapshot, TransitionResult } from '../state-machine/machine.js';
+import { StaleTransitionError, type RequestSnapshot, type TransitionResult } from '../state-machine/machine.js';
 import type { ProvenanceEntry } from '../provenance/ledger.js';
 
 const TERMINAL: ReadonlySet<string> = new Set(['COMPLIED', 'CLOSED_FAILED', 'WITHDRAWN']);
@@ -34,6 +34,7 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
   private readonly playbooks = new Set<string>();
   private readonly mandates: readonly MandateSnapshot[];
   private readonly requests = new Map<string, RequestSnapshot>();
+  private readonly closedAt = new Map<string, Date>();
   private readonly leverage: LeverageActionRow[] = [];
   private readonly provenance = new Map<string, readonly ProvenanceEntry[]>();
 
@@ -125,6 +126,17 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
     this.leverage.push(row);
   }
 
+  async latestTerminalClosedAt(userId: string, controllerId: string, requestType: string): Promise<Date | null> {
+    let latest: Date | null = null;
+    for (const [id, r] of this.requests) {
+      if (r.userId !== userId || r.controllerId !== controllerId || r.requestType !== requestType) continue;
+      if (!TERMINAL.has(r.state)) continue;
+      const closedAt = this.closedAt.get(id);
+      if (closedAt && (!latest || closedAt > latest)) latest = closedAt;
+    }
+    return latest;
+  }
+
   // Beyond CreateRequestPort, so this can also back the full RequestsRepository (other endpoints).
   async load(id: string): Promise<(RequestSnapshot & { userId: string }) | null> {
     return this.requests.get(id) ?? null;
@@ -133,7 +145,14 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
     const r = this.requests.get(id);
     if (!r) throw new Error(`applyTransition: unknown request ${id} — a missing request during a transition is an invariant violation`);
     const t = result as TransitionResult;
+    // Same compare-and-swap contract as the Prisma repository: a transition computed from a stale
+    // snapshot must lose loudly, not overwrite (double-submitted decline vs. confirm, etc.).
+    if (r.state !== t.from) {
+      throw new StaleTransitionError(id, t.from, `"${t.event}" was computed from a stale snapshot (row is in ${r.state})`);
+    }
     const p = t.patch;
+    // closedAt is not a snapshot field; the cooling guard reads it from this side map.
+    if (p.closedAt) this.closedAt.set(id, p.closedAt);
     // Merge only the known RequestSnapshot fields (patch may also carry closedAt, which is not on the
     // snapshot); `!== undefined` preserves an explicit null in the patch.
     this.requests.set(id, {

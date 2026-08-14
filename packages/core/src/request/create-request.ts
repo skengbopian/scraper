@@ -13,6 +13,7 @@
 import { createHash } from 'node:crypto';
 import type { VerifiedIdentity } from '../identity/subject.js';
 import {
+  mayOpenNewCycle,
   nextCycleOrdinal,
   runGuards,
   type MandateSnapshot,
@@ -57,6 +58,8 @@ export interface CreateRequestPort {
    * endpoint yet. Until it is, this correctly returns nothing and the next rung stays closed (ADR-036).
    */
   findExhaustedMechanisms(userId: string, controllerId: string): Promise<readonly string[]>;
+  /** When the last terminal cycle of this triple closed — feeds the Art. 12(5) cooling guard (F5). */
+  latestTerminalClosedAt(userId: string, controllerId: string, requestType: string): Promise<Date | null>;
   insert(row: Record<string, unknown>): Promise<{ id: string }>;
   recordLeverageAction(row: LeverageActionRow): Promise<void>;
 }
@@ -67,6 +70,11 @@ export interface CreateRequestInput {
   readonly controllerSlug: string;
   readonly requestType: StatutoryRequestType;
   readonly cause: 'USER_INITIATED' | 'PROVENANCE_CHAIN' | 'FRAUD_REPAIR';
+  /**
+   * The user's explicit "yes, again" for a repeat cycle inside the Art. 12(5) cooling window (F5).
+   * An ACTION confirmation, never a subject field; absent means not confirmed.
+   */
+  readonly userExplicitlyReExercised?: boolean;
 }
 
 export interface SelfServeRouteView {
@@ -82,12 +90,17 @@ export type CreateRequestResult =
   | { readonly kind: 'SELF_SERVE'; readonly route: SelfServeRouteView; readonly guided: boolean; readonly reason: string }
   | { readonly kind: 'NO_ROUTE'; readonly reason: string }
   | { readonly kind: 'GUARD_FAILED'; readonly failed: 'identity' | 'mandate' | 'idempotency'; readonly reason: string }
+  /** Art. 12(5) cooling: the previous cycle closed too recently — ask the user to confirm (F5). */
+  | { readonly kind: 'RE_EXERCISE_CONFIRMATION_REQUIRED'; readonly reason: string }
   | { readonly kind: 'CREATED'; readonly id: string };
 
 export interface CreateRequestOpts {
   readonly now: Date;
   /** Injected so the function is deterministic (the service derives it from the clock). */
   readonly requestId: string;
+  /** Art. 12(5) cooling window in days. TODO(counsel): OQ-9 sets it per request type; 30 is the
+   *  conservative operational default until then. */
+  readonly minReExerciseDays?: number;
 }
 
 /**
@@ -153,9 +166,19 @@ export async function createRequest(
   // arms each record exactly one.
   if (!guards.ok) return { kind: 'GUARD_FAILED', failed: guards.failed, reason: guards.reason };
 
-  // NOTE: the Art. 12(5) "excessive" re-exercise cooling (minReExerciseDays between two cycles of the
-  // same request) is NOT enforced here — it is OQ-9 (counsel sets the number). Until then, a new cycle is
-  // allowed as soon as the previous one is terminal. `guards.ts` exports `mayOpenNewCycle` to wire it in.
+  // Art. 12(5) re-exercise cooling (state machine §Idempotency 5a; audit F5). The MECHANISM is
+  // normative — only the NUMBER is OQ-9's. A distinct cause (provenance chain, fraud repair) or an
+  // explicit user confirmation passes; an accidental rapid repeat gets asked to confirm instead of
+  // silently opening cycle 2 the day cycle 1 closed.
+  const cooling = mayOpenNewCycle({
+    previousClosedAt: await port.latestTerminalClosedAt(input.userId, controllerId, input.requestType),
+    minReExerciseDays: opts.minReExerciseDays ?? 30,
+    cause: input.cause,
+    userExplicitlyReExercised: input.userExplicitlyReExercised === true,
+    now: opts.now,
+  });
+  if (!cooling.ok) return { kind: 'RE_EXERCISE_CONFIRMATION_REQUIRED', reason: cooling.reason };
+
   const cycleOrdinal = nextCycleOrdinal(
     await port.countTerminalPredecessors(input.userId, controllerId, input.requestType),
   );

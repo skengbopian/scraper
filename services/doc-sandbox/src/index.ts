@@ -25,7 +25,14 @@ export class SandboxContractViolation extends Error {
   }
 }
 
-/** Instruction-shaped text aimed at the pipeline rather than at a human reader. */
+/**
+ * Instruction-shaped text aimed at the pipeline rather than at a human reader.
+ *
+ * German patterns included from the start (audit L4): the hostile documents this pipeline exists
+ * for are GERMAN broker/bureau letters — an English-only list would wave through "Ignorieren Sie
+ * alle vorherigen Anweisungen". Markers are telemetry + a confidence penalty, never the primary
+ * defence (that is the structured-output envelope + the confidence floor + the human gate).
+ */
 const INJECTION_MARKERS: readonly RegExp[] = [
   /\bignore (all |any )?(previous|prior|above) instructions?\b/i,
   /\b(mark|set|treat) (this|the) (request|controller|case) as (compliant|complied|closed|resolved)\b/i,
@@ -33,6 +40,11 @@ const INJECTION_MARKERS: readonly RegExp[] = [
   /\bsystem prompt\b/i,
   /\byou are (an? )?(ai|assistant|language model)\b/i,
   /\bdo not (escalate|report|complain)\b/i,
+  /\bignorier\w* (sie )?(alle |sämtliche )?(vorherigen?|bisherigen?|obigen?) (anweisungen|instruktionen)\b/i,
+  /\b(markier|behandl|betracht)\w* (sie )?(diese[nr]? )?(anfrage|vorgang|fall|controller) als (erledigt|abgeschlossen|konform|compliant)\b/i,
+  /\bnicht (eskalieren|beschweren|melden)\b/i,
+  /\bsystemanweisung(en)?\b/i,
+  /\bdu bist (ein(e)? )?(ki|assistent|sprachmodell)\b/i,
 ];
 
 export interface ParseTelemetry {
@@ -121,4 +133,5 @@ export const PROVENANCE_OUTPUT_SCHEMA = Object.freeze({
 });
 
 export * from './datenkopie-parser.js';
+export * from './isolated.js';
 export * from './pdf-text.js';

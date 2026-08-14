@@ -2,7 +2,9 @@
 Template: Art. 15(1)(g) DSGVO — Auskunft über die HERKUNFT der Daten (data-source / provenance request).
 This is the Provenance flagship. Variables in {{...}} come from the VERIFIED identity record only.
 DRAFT — MUST be reviewed and approved by German data-protection counsel before use (TODO(counsel)).
-The Schufa variant names section 2.3 "Datenlieferanten" verbatim; other bureaus use {{sourceClauseRef}}.
+The Schufa variant names section 2.3 "Datenlieferanten" verbatim (the `isSchufa` engine flag);
+other bureaus receive the generic wording below — there is deliberately no per-bureau clause
+variable (audit P9: a `{{sourceClauseRef}}` this comment once promised never existed in the engine).
 
 NOTE(safety) — audit C6. The enclosure sentence below is wrapped in {{#if identityProofEnclosed}}.
 `identityProofEnclosed` is an ENGINE-DERIVED flag, not a playbook-declared one: the renderer sets it true

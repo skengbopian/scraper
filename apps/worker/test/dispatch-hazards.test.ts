@@ -165,7 +165,8 @@ describe('hazard 2: a simulated proof cannot start a legal clock', () => {
       actor: 'SYSTEM', now: NOW, deadlineDays: 30, provableSendEvidenceId: id,
     });
     expect(result.to).toBe('AWAITING_RESPONSE');
-    expect(result.patch.deadlineAt).toEqual(new Date(NOW.getTime() + 30 * 86_400_000));
+    // One CALENDAR month from 13 Aug: 13 Sep 2026 is a Sunday → end of Mon 14 Sep, Berlin midnight.
+    expect(result.patch.deadlineAt).toEqual(new Date('2026-09-14T22:00:00Z'));
     expect(result.patch.provableSendConfirmedAt).toEqual(NOW);
   });
 

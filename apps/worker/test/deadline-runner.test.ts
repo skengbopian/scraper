@@ -18,8 +18,16 @@ describe.skipIf(!url)('pg-boss deadline runner (integration)', () => {
     db = new PrismaClient({ datasources: { db: { url } } });
     const { seed } = await import('@scraper/api/dist/db/seed.js');
     // TRUNCATE, not deleteMany: RequestEvent is append-only by trigger (0001) — row deletes are
-    // forbidden even in tests, which is exactly the point of the trigger.
-    await db.$executeRawUnsafe('TRUNCATE TABLE "RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest" CASCADE');
+    // forbidden even in tests, which is exactly the point of the trigger. 0013 blocks TRUNCATE
+    // too; the throwaway test DB disables that guard explicitly around the reset.
+    await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" DISABLE TRIGGER "request_event_no_truncate"');
+    await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" DISABLE TRIGGER "evidence_record_no_truncate"');
+    try {
+      await db.$executeRawUnsafe('TRUNCATE TABLE "RequestEvent","ControllerResponse","EvidenceRecord","RightsRequest" CASCADE');
+    } finally {
+      await db.$executeRawUnsafe('ALTER TABLE "RequestEvent" ENABLE TRIGGER "request_event_no_truncate"');
+      await db.$executeRawUnsafe('ALTER TABLE "EvidenceRecord" ENABLE TRIGGER "evidence_record_no_truncate"');
+    }
     await seed(db);
     const { PgBossEngine } = await import('@scraper/api/dist/scheduler/pg-boss-engine.js');
     engine = new PgBossEngine(url as string);

@@ -48,25 +48,18 @@ export class LetterXpressPostalProvider implements PostalProvider {
     });
     if (!res.ok) throw new Error(`LetterXpress: HTTP ${res.status} — ${await res.text()}`);
     const body = (await res.json()) as { data?: { id?: number; tracking?: string } };
-    // NOTE: Einlieferung ≠ Zustellung. The Auslieferungsbeleg retrieval job (docs/10 §2.4(1),
-    // OQ-11) decides what `provableSendConfirmed` keys on — this adapter only reports what the
-    // vendor asserts, and the DELIVERY_PROOF evidence step is a separate, later fetch.
+    // Einlieferung ≠ Zustellung (BAG 2 AZR 68/24: even the Einlieferungsbeleg proves nothing about
+    // Zugang). A lodgement response can NEVER honestly claim a carrier-issued delivery receipt, so
+    // this adapter never mints one: `proof: null` degrades the send to the provisional clock. The
+    // statutory clock waits for the Auslieferungsbeleg retrieval job (docs/10 §2.4(1), OQ-11),
+    // which will construct the DeliveryProof from the FETCHED receipt with the real deliveredAt —
+    // re-querying by the print-job id in `providerId`. The previous version stamped
+    // `origin: 'CARRIER'` + `deliveredAt: now()` onto the lodgement, which satisfied every check in
+    // provableSendEvidenceIdOf() and was one env change away from starting Art. 12(3) clocks on
+    // invented delivery times (audit F3b). TODO(safety): keep `proof: null` until OQ-11 closes.
     return {
       providerId: String(body.data?.id ?? ''),
-      proof:
-        opts.registered && body.data?.tracking
-          ? {
-              kind: 'EINWURF_EINSCHREIBEN',
-              trackingRef: body.data.tracking,
-              deliveredAt: new Date(),
-              // TODO(credentials): this says a carrier issued the receipt, which is what authorises
-              // the Art. 12(3) clock (ADR-037). It is honest only once this adapter fetches the
-              // Auslieferungsbeleg rather than echoing the lodgement tracking ref — OQ-11. Until the
-              // live-sandbox onboarding closes that, LETTERXPRESS_MODE must stay 'sandbox', where the
-              // vendor returns no tracking and this branch does not fire.
-              origin: 'CARRIER' as const,
-            }
-          : null,
+      proof: null,
     };
   }
 }

@@ -172,21 +172,11 @@ export function ingestProvenanceResponse(input: ProvenanceIngestInput): Provenan
   return { entries, transition, followUpProposals, escalationRoute, notes };
 }
 
-/** Guard re-run wrapper for every entry to READY (invariant 1). */
-export function enterReady(input: GuardInput): TransitionResult {
-  const guards = runGuards(input);
-  const snapshot: RequestSnapshot = {
-    id: input.requestId, state: 'DRAFT', userId: input.userId, controllerId: input.controllerId,
-    requestType: input.requestType, provableSendConfirmedAt: null, deadlineAt: null,
-    provisionalDeadlineAt: null, hasControllerResponse: false, reviewedByHuman: false,
-    parseConfidence: null, humanReviewIfConfidenceBelow: 1, outcome: null,
-  };
-  if (guards.ok) return apply(snapshot, 'guardsPass', { actor: 'SYSTEM', now: input.now });
-  return apply(
-    snapshot,
-    guards.failed === 'identity' ? 'guardFail(identity)' : 'guardFail(idempotency|mandate)',
-    { actor: 'SYSTEM', now: input.now, reason: guards.reason },
-  );
-}
+// NOTE(audit F7): an `enterReady()` wrapper used to live here, advertised as "the invariant-1
+// wrapper for every entry to READY". It had zero call sites, fabricated a DRAFT-state snapshot
+// regardless of the true from-state, and applied `guardsPass` as SYSTEM — used on a real re-entry
+// it would have forged the event log's fromState and bypassed the requiredActor edges. The real
+// re-entries (requests.service.ts confirmRegisteredResend, ops.service.ts resend) run the full
+// guard set against the TRUE snapshot; deleted rather than left as an attractive wrong tool.
 
 export { renderRequest };

@@ -767,3 +767,19 @@ model FileFinding {
 
   @@index([snapshotId])
 }
+
+/// CLAUDE.md C1: anomalous behaviour, flagged for HUMAN review — previously only a log line
+/// (audit M3). Deliberately NO foreign keys: an abuse-audit row must survive erasure of the
+/// account it records; it stores opaque ids and a bounded detail string, never subject data.
+model AnomalyEvent {
+  id               String    @id @default(cuid())
+  userId           String?
+  kind             String
+  detail           String
+  createdAt        DateTime  @default(now())
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+
+  @@index([createdAt])
+  @@index([userId])
+}

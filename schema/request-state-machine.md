@@ -44,7 +44,13 @@ BLOCKED_IDENTITY ──identityVerified:guardFail────────▶ CLO
 READY ──dispatch─────────────────────────────────────▶ SENT
 
 SENT ──provableSendConfirmed─────────────────────────▶ AWAITING_RESPONSE
-                                                        (set deadlineAt = provableSendTime + deadlineDays)
+                                                        (set deadlineAt = end of the Art. 12(3) CALENDAR
+                                                         month from provableSendTime — Reg. 1182/71 /
+                                                         EDPB Guidelines 01/2022 §54: same-numbered day
+                                                         next month, clamped to month end, extended over
+                                                         Sat/Sun/bundesweite Feiertage, Europe/Berlin
+                                                         end of day. NOT deadlineDays × 24h, which fires
+                                                         up to a day early on 31-day months)
 SENT ──sendAccepted:nonProvable──────────────────────▶ AWAITING_RESPONSE_PROVISIONAL
                                                         (set provisionalDeadlineAt = sendTime + deadlineDays;
                                                          deadlineAt stays NULL — no statutory clock)
@@ -68,7 +74,7 @@ RESPONSE_RECEIVED ──lowConfidence|ambiguous──────────▶
 NEEDS_HUMAN ──humanResolve:complied──────────────────▶ COMPLIED
 NEEDS_HUMAN ──humanResolve:incomplete────────────────▶ INCOMPLETE
 NEEDS_HUMAN ──humanResolve:refused───────────────────▶ REFUSED
-NEEDS_HUMAN ──humanResolve:escalate──────────────────▶ ESCALATION_DRAFTED   (see invariant 3b)
+NEEDS_HUMAN ──humanResolve:escalate──────────────────▶ ESCALATION_DRAFTED   (see invariant 4b)
 NEEDS_HUMAN ──humanResolve:resend────────────────────▶ READY
 
 INCOMPLETE ──escalate────────────────────────────────▶ ESCALATION_DRAFTED   (escalation.onIncompleteSourceList)
@@ -105,7 +111,8 @@ letter or complaint as one.
 **The chase path.** Email out on day 0 → silence → on `provisionalDeadlineExpired` the user is asked
 (one decision, clear default) whether to send a registered re-send. On confirmation the request re-enters
 `READY` with the registered channel forced; the resulting `provableSendConfirmed` sets a **fresh**
-`deadlineAt = registeredSendTime + deadlineDays`. Escalation on silence therefore lands at roughly day 60.
+Art. 12(3) calendar month from the registered send time (same rules as above). Escalation on silence
+therefore lands at roughly day 60.
 That is deliberate: it is the only version we can prove end-to-end at a DPA.
 
 **Statistics.** A request that ends in `CLOSED_FAILED` with `outcome = NO_PROVABLE_CLOCK` (the user
@@ -151,14 +158,16 @@ nothing more — "twice, ever" is not the rule and would break the flagship.
 3. **Escalation never auto-sends:** the only transition into `ESCALATED` is `humanSend`.
 4. **Escalation rests on proven receipt.** Every path into `ESCALATION_DRAFTED` must be backed by evidence
    the controller received the request:
-   - **3a (structural):** the silence path `deadlineExpired` exists only on `AWAITING_RESPONSE`, which is
+   - **4a (structural):** the silence path `deadlineExpired` exists only on `AWAITING_RESPONSE`, which is
      only reachable via `provableSendConfirmed`. Silence can therefore never escalate on a provisional
      clock — no runtime check needed.
-   - **3b (guarded):** `INCOMPLETE`/`REFUSED --escalate-->` and `NEEDS_HUMAN --humanResolve:escalate-->`
+   - **4b (guarded):** `INCOMPLETE`/`REFUSED --escalate-->` and `NEEDS_HUMAN --humanResolve:escalate-->`
      need no registered send, because the controller's **own reply proves receipt**. But
      `humanResolve:escalate` is reachable from a `sendPermanentlyFailed` entry into `NEEDS_HUMAN`, where no
      reply exists — so it must assert `provableSendConfirmedAt != null || a ControllerResponse exists`.
      This one is a guard, not a graph property. Test it.
+     (Historical labels “3a/3b” — from before "escalation never auto-sends" became its own invariant 3 —
+     appear in older code comments; they mean 4a/4b.)
 5. **Parser can't decide alone:** transitions `validated:complied|incomplete|refused` require either
    deterministic validation rules matching **or** `reviewedByHuman == true`. Below
    `humanReviewIfConfidenceBelow` the only allowed target is `NEEDS_HUMAN`. This is a guard, not a graph
@@ -182,7 +191,15 @@ nothing more — "twice, ever" is not the rule and would break the flagship.
 | `NO_RESPONSE` | provable clock ran out in silence | yes |
 | `NO_PROVABLE_CLOCK` | user declined the registered re-send | **no** |
 | `WITHDRAWN` | user withdrew / mandate revoked | no |
-| `ABANDONED` | discarded at `ESCALATION_DRAFTED`, or failed after escalation | no |
+| `ABANDONED` | discarded at `ESCALATION_DRAFTED`, or failed after escalation — **unless** the case is provable silence (below) | no |
+
+**Silence provenance wins over discard mechanics.** A request whose statutory clock expired with no
+`ControllerResponse` ever ingested closes as `NO_RESPONSE` even when the closing event is
+`humanDiscard` or `resolved:failed` — what the census records is what the *controller* did (silence on
+a provable month), not what we then chose to do about the drafted complaint. Discards of drafts born of
+a refusal/incomplete answer (a reply exists) and pre-expiry discards remain `ABANDONED`. Without this
+rule `NO_RESPONSE` was unreachable: every terminal path out of a silence case produced `ABANDONED`,
+which is excluded from the stats — total silence was structurally unrecordable (audit F2).
 
 ## Test matrix (minimum)
 - verified vs unverified identity at creation,
@@ -203,7 +220,7 @@ nothing more — "twice, ever" is not the rule and would break the flagship.
 - refusal → drafted complaint,
 - **incomplete answer → `INCOMPLETE` → drafted complaint** (C4),
 - **`humanResolve:escalate` from a `sendPermanentlyFailed` `NEEDS_HUMAN` with no response is rejected**
-  (invariant 3b),
+  (invariant 4b),
 - low-confidence parse → `NEEDS_HUMAN` (never auto-complied),
 - **late response after `ESCALATION_DRAFTED` and after `ESCALATED` is ingestable** (H1),
 - mandate revocation mid-flight → `WITHDRAWN`,
