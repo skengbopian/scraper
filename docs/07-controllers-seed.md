@@ -14,6 +14,16 @@ sourced from `docs/09` and mirrored by the `seatDpa` field in `playbooks/*.yaml`
 a complaint, so every value here is `TODO(counsel)` — confirm the registered seat before enabling any
 playbook that escalates.
 
+**Not every controller has a seat to name (decision D4).** A controller with no German establishment —
+every broker in the enrichment table below, and the AI screeners — has no entry in this column at all,
+because its venue is not a property of the controller: it follows the **data subject's** habitual
+residence (Art. 77(1)) and is therefore only knowable when a specific user escalates. The playbook
+schema expresses that as `venue: USER_RESIDENCE`, the alternative to `seatDpa` rather than a supplement
+to it, and it now **requires one of the two** on any playbook that can draft an Art. 77 complaint. Before
+that rule existed, a blank venue was ambiguous between "dynamic by design" and "someone forgot" — and
+both were present in the shipped corpus at once. A missing row here is no longer the same thing as a
+missing venue; it means *look for `venue` in the playbook*.
+
 ## Credit bureaus (Auskunfteien) — request types: ACCESS_ART15_SOURCE (provenance, flagship) + ACCESS_ART15 (Datenkopie); later correction, not deletion
 | slug | name | why | channel | seat / DPA (`TODO(counsel)`) |
 |---|---|---|---|---|
@@ -28,6 +38,16 @@ playbook that escalates.
 > provenance answer names a broker as the source of a category, that category may be attacked at the
 > bureau under Art. 17(1)(d) (unlawful origin) — a targeted deletion of a broker-sourced layer, never a
 > blanket erasure of the file.
+
+**Adjacent register, deliberately not in the table above: HIS (the insurer fraud database).** It has no
+slug row and no playbook, and this note is prose rather than a table row on purpose — the row format is
+machine-read as the census slug list, and adding a slug would announce a target we have not scoped. It is
+recorded here only so the next person to scope it does not inherit a stale venue: per
+`docs/13-research-2026-08.md` §1, HIS changed operator on **2025-10-01** from informa HIS GmbH (Experian,
+Baden-Baden) to **Besurance HIS GmbH, Wiesbaden**, so its escalation venue moves **LfDI BW → HBDI**, and
+a future HIS playbook takes `seatDpa: HBDI`. `TODO(counsel)`: confirm the operating entity and its
+registered seat from the Handelsregister before any HIS playbook is drafted, and note that a fraud
+database is a Fraud-Shield instrument, not a Provenance one.
 
 ## Address / marketing-data traders (Adresshändler) — request type: OBJECTION_ART21 (+ ACCESS_ART15, ERASURE_ART17)
 | slug | name | why | channel | seat / DPA (`TODO(counsel)`) |
@@ -67,8 +87,12 @@ marketing; see `templates/art17-datenhaendler.de`). Most offer a **self-serve op
 cheapest, primary rung (`SelfServeRoute`, docs/08 Tier 1); the legal letter is the escalation. The
 flagship precedent is the **CNIL KASPR fine (€240,000, Dec 2024)** for scraping LinkedIn contacts.
 Venue for an Art. 77 complaint against a controller with no German seat is the **user's own
-habitual-residence Land DPA** (Art. 77(1)) — not a fixed bureau seat (OQ-20). `TODO(counsel)` on every
-endpoint below; re-verify the live opt-out page before enabling (`[verify]` = confirm exact URL).
+habitual-residence Land DPA** (Art. 77(1)) — not a fixed bureau seat (OQ-20); each of these playbooks
+now states that in the document as `venue: USER_RESIDENCE` instead of leaving `seatDpa` blank, so the
+rule is enforceable rather than merely written here. An Art. 27 representative (VeraSafe Ireland for
+ZoomInfo and RocketReach, DP-Dock GmbH Hamburg for Lusha, Lionheart Squared for Apollo) is a contact
+point, **not** a main establishment: it creates no lead SA and moves no filing venue. `TODO(counsel)` on
+every endpoint below; re-verify the live opt-out page before enabling (`[verify]` = confirm exact URL).
 
 All six verified 2026-08-09 (workflow): self-serve opt-out is an **email-code** form (no login, no ID),
 performs a **genuine GDPR erasure**, and the record **reappears** (re-scraping + customer re-uploads) —

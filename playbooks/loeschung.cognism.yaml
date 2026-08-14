@@ -10,7 +10,7 @@ slug: loeschung.cognism
 kind: RIGHTS_REQUEST
 controller: cognism
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -41,6 +41,16 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED — with, until now, no venue anywhere in the document. This file's header already
+# argued the venue at length (the user always LODGES at their own habitual-residence Land DPA; the
+# one-stop-shop only picks a LEAD SA for cross-border coordination and never moves the filing venue),
+# but that argument lived in a comment no gate could read. `venue: USER_RESIDENCE` states it in a
+# field, so the schema can now insist that some venue is stated.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — Cognism Limited is UK; whether its EU
+                                      # subsidiaries (Cognism GmbH/DE, KASPR SAS/FR) make an EU entity
+                                      # the main establishment is open, but OSS would pick a lead SA,
+                                      # not a filing venue
 notes: >
   KASPR (Cognism-owned) is the CNIL €240k precedent — strong Art. 17(1)(d) material for this group.
   An Art. 27 representative is not a "main establishment" and creates no lead SA; the filing venue is

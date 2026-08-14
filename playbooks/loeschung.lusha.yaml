@@ -7,7 +7,7 @@ slug: loeschung.lusha
 kind: RIGHTS_REQUEST
 controller: lusha
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -38,6 +38,14 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED, and it named no venue. Lusha Systems, Inc. is a US controller; its Art. 27
+# representative DP-Dock GmbH sits in Hamburg, which makes HMBBFDI a tempting seatDpa and a WRONG
+# one — an Art. 27 representative is a contact point, not a main establishment, so it creates no
+# lead SA and moves no venue. The competent authority is the one for the USER's habitual residence
+# (Art. 77(1); docs/07, and this file's own header note). `venue` is the only way to say that.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — confirm the Hamburg Art. 27 rep does
+                                      # not engage the one-stop-shop
 notes: >
   Art. 27 rep DP-Dock GmbH (Hamburg) may be addressed in parallel. Reappears after removal — demand the
   suppression list and re-check.

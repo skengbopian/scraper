@@ -195,6 +195,7 @@ const DEMO_SEAT_DPA: Readonly<Record<string, string>> = {
   crif: 'LFDI_BW',
   schufa: 'HBDI',
   regis24: 'BLNBDI',
+  'az-direct': 'LDI_NRW',
 };
 
 function demoPlaybookDocument(slug: string, controllerSlug: string, requestType: string): Prisma.InputJsonValue {
@@ -225,14 +226,19 @@ function demoPlaybookDocument(slug: string, controllerSlug: string, requestType:
     // The scope binding makes the unbounded rendering structurally unreachable: renderRequest()
     // refuses a scoped playbook without a deriveErasureScope()-constructed PartialErasureScope.
     ...(bounded ? { scopeSource: 'PROVENANCE_ANSWER' } : {}),
-    // The flagship shape requires its extraction contract + venue (schema: ACCESS_ART15_SOURCE ⇒
-    // provenance + seatDpa). Fixture values mirror docs/07's seed rows.
+    // The flagship shape requires its extraction contract (schema: ACCESS_ART15_SOURCE ⇒ provenance).
     ...(provenance
-      ? {
-          provenance: { extractPerCategory: true, brokerWatchlist: ['az-direct'], flagIf: { incompleteSourceList: true } },
-          seatDpa: DEMO_SEAT_DPA[controllerSlug] ?? 'BFDI',
-        }
+      ? { provenance: { extractPerCategory: true, brokerWatchlist: ['az-direct'], flagIf: { incompleteSourceList: true } } }
       : {}),
+    // THE VENUE, on every fixture and not just the provenance one (decision D4). `escalation.onRefusal`
+    // below is DRAFT_ART77 for every demo document, so every one of them can reach
+    // ESCALATION_DRAFTED — and the schema's C2 conditional now insists that anything which can do
+    // that says where the complaint gets filed. Before D4 the requirement applied only to
+    // ACCESS_ART15_SOURCE, which is why these fixtures declared a venue on one shape out of four and
+    // nobody noticed. Every demo controller is a German-seated bureau or list broker, so the answer
+    // is a seat; `venue: USER_RESIDENCE` is for controllers with no German establishment, of which
+    // the fixtures have none. Fixture values mirror docs/07's seed rows.
+    seatDpa: DEMO_SEAT_DPA[controllerSlug] ?? 'BFDI',
     validation: { compliedIf: { responseContains: ['gelöscht', 'widersprochen'] }, humanReviewIfConfidenceBelow: 0.75 },
     escalation: { onDeadlineExpiry: 'NONE', onRefusal: 'DRAFT_ART77' },
   };

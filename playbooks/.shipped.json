@@ -1,15 +1,15 @@
 {
   "datenkopie.schufa": {
-    "version": 1,
-    "sha256": "b77420d154b5f9813680c58b8d7d8f1e9100bddf26e67ddf592448cdc9f09dc7"
+    "version": 2,
+    "sha256": "ad201f65fde871e35278ac4192baa08b53155b33f52c1c04c9fa425cd261208d"
   },
   "explanation.hirevue": {
-    "version": 1,
-    "sha256": "aeeeb42d01acc3dd4a8da322472a753c2686bff57c37202b3c45c17529424c0b"
+    "version": 2,
+    "sha256": "ccd584e7a1dbbe975b4f09509d3556cd00dc3e342c45ae821a1769ba3fa509f8"
   },
   "explanation.retorio": {
-    "version": 1,
-    "sha256": "5bbc440947352eb2e7d775b502862d48bc6b4c63a2fa810535dcf921967a083e"
+    "version": 2,
+    "sha256": "8de85de4ed382f319680d76112f4c38dd85e9e3de3ce9240b5e26bba42dcbe85"
   },
   "loeschung-herkunft.crif": {
     "version": 1,
@@ -24,40 +24,40 @@
     "sha256": "dc52b4ad35bc28140ca13f8f393b09e84d97c0efdc05024fcbf697379e66568f"
   },
   "loeschung.apollo": {
-    "version": 2,
-    "sha256": "c55278a0d1eba1cf96c0e909235af58f2a5d0eda1135c480528edef37a55a983"
+    "version": 3,
+    "sha256": "f380e3dc1f14d09ae9585c6f092bde33f19459cc28c486f84b9714f9755c0e92"
   },
   "loeschung.cognism": {
-    "version": 2,
-    "sha256": "b0d6c5ee3d1112aeff896e1e9e7603ed608650702ba3485a24214c7adeaa6eb1"
+    "version": 3,
+    "sha256": "470b246f7eb9e48bcce5d34605000c17d2b7cededced5ec8985f54291f53442c"
   },
   "loeschung.generic-adresshaendler": {
-    "version": 2,
-    "sha256": "6148a3a0d862212b8c3a5dd364da6273eb0f12334ab2b79bab917d642a373103"
+    "version": 3,
+    "sha256": "9018ff138011fc0fc5e2cde186bed9c974fcb789e62b90c26e91953318be159f"
   },
   "loeschung.generic-datenhaendler": {
-    "version": 2,
-    "sha256": "49aeb0e19df5ec2c939a01ab50acbb8164fd6866252fc05350303e86d03ff86f"
+    "version": 3,
+    "sha256": "0af8f57f90a339e8bd73d5e6380ed8ed08f67b55924e5f8038c9b0b2df1702d6"
   },
   "loeschung.hireright": {
-    "version": 1,
-    "sha256": "37e0f7a7fd79a97f62ad12beda3adef7b4ac119b67dd20032961e1bf9f64a85c"
+    "version": 2,
+    "sha256": "0cb091948cab9fe51ceb0c823e6528ca1c9cb0eb6c7f6f5bab8b079635b4354d"
   },
   "loeschung.lusha": {
-    "version": 2,
-    "sha256": "7fd6add722d80a85764a5f5916ade1d0575e884f725274bd1dc2350d9fcdcbdd"
+    "version": 3,
+    "sha256": "9ce003ff6fad286f18cf79e2587ddddf2b07bd2cc83d48c79e2d3203d129fc04"
   },
   "loeschung.peopledatalabs": {
-    "version": 2,
-    "sha256": "ed54e2416504ba99b13c1f1ef335438cb163e16cc77b6456838bc5a42f897f86"
+    "version": 3,
+    "sha256": "b3843fd2e817b3487c0893b214bbf44e630883ff76035568dfd0380a20d93adc"
   },
   "loeschung.rocketreach": {
-    "version": 2,
-    "sha256": "950d831ffd95f9e9cbcb32ef8adcd9c7eb6a47b4921dea8e5e860b7c9320ad57"
+    "version": 3,
+    "sha256": "9572465635750b4e3dad942af976c17d38014fe63c44eb65a9238fbce9d725d1"
   },
   "loeschung.zoominfo": {
-    "version": 2,
-    "sha256": "ba2f2fa426b2f50ee318f0f66c44c9e350e9e34c01149cba2fad1bc1d8a03ba3"
+    "version": 3,
+    "sha256": "a9d0af1f8e6a92bbaca97613647f238eb588901710057ced57ea08aefa92b4bc"
   },
   "provenance.crif": {
     "version": 1,
@@ -72,7 +72,7 @@
     "sha256": "190de2ba31a73136d637eab50db5b5afbb0b34b043c212836b8ef6099ca22f24"
   },
   "werbewiderspruch.az-direct": {
-    "version": 1,
-    "sha256": "35848c2b96f1bef9dbd7456c75f3ff85f0212474d8ad0902efb1cd38bdb57444"
+    "version": 2,
+    "sha256": "98d789324355eaf9150ab952773b14bedc2e995d4035d9d4a1f606f213ac9a3e"
   }
 }

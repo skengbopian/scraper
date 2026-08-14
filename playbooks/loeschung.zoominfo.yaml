@@ -8,7 +8,7 @@ slug: loeschung.zoominfo
 kind: RIGHTS_REQUEST
 controller: zoominfo
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -39,6 +39,17 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED — and until now it named no venue at all, because the schema demanded seatDpa
+# only of a provenance request. There is no seat to name: ZoomInfo Technologies LLC is a US
+# controller with no German establishment, so the competent authority is the one for the USER's own
+# habitual residence (Art. 77(1); docs/07 "Venue for an Art. 77 complaint against a controller with
+# no German seat"), which is knowable only when a specific user escalates. `venue: USER_RESIDENCE`
+# is how that gets written down; before it existed, "no seatDpa" was indistinguishable from
+# "somebody forgot the seatDpa", which is exactly what had happened elsewhere in this corpus.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — confirm no EU main establishment
+                                      # engages the one-stop-shop (Art. 27 rep VeraSafe Ireland is a
+                                      # contact point, not an establishment)
 notes: >
   Prefer the self-serve removal form first (cheapest-rung-first, docs/08). Reappears after removal
   (re-scraping + customer re-uploads) — demand the suppression list and re-check in ~4 weeks.

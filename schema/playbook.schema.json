@@ -73,6 +73,10 @@
         "ULD_SH", "TLFDI"
       ]
     },
+    "venue": {
+      "description": "The escalation venue when there is no German SEAT to name — i.e. the alternative to seatDpa, not a supplement to it. USER_RESIDENCE = the competent authority follows the DATA SUBJECT's habitual residence (Art. 77(1)), which is the venue for a controller with no German establishment: a US/UK enrichment broker has no seat DPA, so its Art. 77 complaint is lodged at the Land DPA of the user who is complaining, and that is only knowable at escalation time. ONE VALUE, DELIBERATELY. This is not a stub for a venue taxonomy and must not grow into one — every other venue in this product is a fixed German seat and is expressed by seatDpa's closed enum. USER_RESIDENCE exists solely because that enum cannot say \"dynamic, resolved from the user\", and before this field a playbook that omitted seatDpa was ambiguous between \"dynamic by design\" and \"someone forgot\" (the second happened: 13 of 19 shipped playbooks could reach ESCALATION_DRAFTED with no venue recorded anywhere). Declaring it makes the omission a statement instead of a silence. TODO(counsel): venue values are counsel-owned per controller; this field only makes them expressible.",
+      "enum": ["USER_RESIDENCE"]
+    },
     "enrolment": {
       "type": "object",
       "required": ["programSlug", "producesEntity"],
@@ -184,7 +188,7 @@
       }
     },
     {
-      "$comment": "kind: ENROLMENT — non-statutory, so declaring a deadline or an Art. 77 route is a category error.",
+      "$comment": "kind: ENROLMENT — non-statutory, so declaring a deadline or an Art. 77 route is a category error. That covers BOTH ways of naming an Art. 77 venue — seatDpa and venue are each forbidden here — because a suppression enrolment has no supervisory complaint to route. Note this branch is never reached by the C2 conditional below (it requires an escalation, which an ENROLMENT may not have); these two lines are what stops a venue being declared on an enrolment anyway.",
       "if": { "required": ["kind"], "properties": { "kind": { "const": "ENROLMENT" } } },
       "then": {
         "required": ["enrolment"],
@@ -192,7 +196,8 @@
           "requestType": { "enum": ["ROBINSON", "EINMELDUNG_FRAUD"] },
           "deadlineDays": false,
           "escalation": false,
-          "seatDpa": false
+          "seatDpa": false,
+          "venue": false
         }
       }
     },
@@ -237,6 +242,27 @@
             ]
           }
         }
+      }
+    },
+    {
+      "$comment": "C2 (decision D4): a playbook that can draft an Art. 77 complaint must say WHERE it gets filed. Until this existed, seatDpa was schema-required on exactly one shape (ACCESS_ART15_SOURCE, below), nothing read it at escalation time, and the venue for a controller with no German seat — the user's own Land DPA — could not be written down at all. So an absent seatDpa was ambiguous between 'dynamic by design' and 'someone forgot', and 13 of 19 shipped playbooks reached ESCALATION_DRAFTED with no venue recorded anywhere; the missing seatDpa on explanation.retorio (whose own header says to set BAYLDA before activation) is the proof that forgetting happens. Either answer is acceptable, silence is not. NOTE ON SHAPE: `escalation` is an OBJECT with three named triggers, not a list, so this cannot use `contains` — 'any trigger is DRAFT_ART77' has to be an anyOf over the three properties. Each branch carries its own `required` because `properties` alone is vacuously satisfied by an ABSENT property, and onIncompleteSourceList is optional: without the `required` guard the third branch would match every playbook that simply omits it, and the conditional would fire everywhere instead of where it means something.",
+      "if": {
+        "required": ["escalation"],
+        "properties": {
+          "escalation": {
+            "anyOf": [
+              { "required": ["onDeadlineExpiry"], "properties": { "onDeadlineExpiry": { "const": "DRAFT_ART77" } } },
+              { "required": ["onRefusal"], "properties": { "onRefusal": { "const": "DRAFT_ART77" } } },
+              { "required": ["onIncompleteSourceList"], "properties": { "onIncompleteSourceList": { "const": "DRAFT_ART77" } } }
+            ]
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["seatDpa"] },
+          { "required": ["venue"] }
+        ]
       }
     },
     {

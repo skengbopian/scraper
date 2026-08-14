@@ -6,7 +6,7 @@ slug: loeschung.rocketreach
 kind: RIGHTS_REQUEST
 controller: rocketreach
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -37,5 +37,12 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED with no venue recorded. RocketReach LLC is a US controller with no German
+# establishment, so there is no seat to name and the competent authority follows the USER's habitual
+# residence (Art. 77(1)). See loeschung.zoominfo for the full rationale.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — confirm no EU main establishment
+                                      # engages the one-stop-shop (Art. 27 rep VeraSafe Ireland is a
+                                      # contact point, not an establishment)
 notes: >
   Reappears after removal (public-web re-scraping) — demand the suppression list and re-check in ~4 weeks.

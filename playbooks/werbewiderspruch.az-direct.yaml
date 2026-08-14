@@ -5,7 +5,7 @@ slug: werbewiderspruch.az-direct
 kind: RIGHTS_REQUEST
 controller: az-direct
 requestType: OBJECTION_ART21
-version: 1
+version: 2
 active: false                         # flip true only after counsel + endpoint verification
 legalBasis: "DSGVO Art. 21 Abs. 2"
 channel:
@@ -38,6 +38,14 @@ validation:
 escalation:
   onDeadlineExpiry: DRAFT_ART77
   onRefusal: DRAFT_ART77
+# v2 (decision D4): this playbook escalates on BOTH silence and refusal and named no venue, because
+# the schema only ever demanded seatDpa of a provenance request. The venue was known — it sat in
+# docs/counsel-review-packet.md as "LDI NRW per docs/07:35 (no seatDpa field declared)" — but a value
+# that lives only in a review table cannot be read by an escalation and cannot be checked by CI.
+# TODO(counsel): venue values are counsel-owned per controller; this pass makes the venue expressible
+# and asserts nothing new about it.
+seatDpa: LDI_NRW                      # Landesbeauftragte für Datenschutz NRW — AZ Direct GmbH's
+                                      # Gütersloh seat (docs/07)
 notes: >
   Art. 21(2) is unconditional — no balancing test for direct marketing. If the reply demands a full ID
   copy merely to stop marketing, treat as over-collection: respond with a redacted ID only if strictly

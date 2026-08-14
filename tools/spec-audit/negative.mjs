@@ -45,6 +45,16 @@ const base = {
     humanReviewIfConfidenceBelow: 0.75,
   },
   escalation: { onDeadlineExpiry: 'DRAFT_ART77', onRefusal: 'DRAFT_ART77' },
+  // Required since decision D4: anything that can draft an Art. 77 complaint must name a venue —
+  // a seat DPA, or `venue: USER_RESIDENCE` when the controller has no German establishment. This
+  // fixture mirrors the real az-direct playbook, so it takes the seat.
+  //
+  // Adding it here is not cosmetic. The base self-check below exists because a base fixture that
+  // fails validation makes every negative case vacuous: each one would be "rejected" for the
+  // missing venue rather than for the defect it was written to catch, and the file would report
+  // 31/31 rejected while testing nothing at all. That is precisely what happened when the venue
+  // conditional landed without this line.
+  seatDpa: 'LDI_NRW',
 };
 
 const validation = (over) => ({ ...base, validation: { ...base.validation, ...over } });
@@ -121,6 +131,10 @@ const cases = [
     }, 'MUST REJECT'],
   ['scopeSource on a request type that never establishes a scope — an objection letter bounded by categories no Art. 21 answer produces',
     { ...base, scopeSource: 'PROVENANCE_ANSWER' }, 'MUST REJECT'],
+  ['escalation drafts an Art. 77 complaint but names NO venue — neither a seat DPA nor venue: USER_RESIDENCE (decision D4). An absent venue used to be indistinguishable from a deliberately dynamic one, and explanation.retorio proved that "someone forgot" happens; the complaint would be drafted with nowhere to file it',
+    omit(base, 'seatDpa'), 'MUST REJECT'],
+  ['escalation names a venue on a trigger that is NOT DRAFT_ART77 — the conditional must not fire where no complaint can be drafted, or it would demand a venue of every playbook and stop meaning anything',
+    { ...omit(base, 'seatDpa'), escalation: { onDeadlineExpiry: 'NONE', onRefusal: 'NONE' } }, 'MUST ACCEPT'],
   ['a REGISTERED postal channel whose address is a note-to-self ("TODO(counsel): verify") — over 10 characters and free of __PARAM__, so the schema accepts it, while a registered send is the only thing that starts the Art. 12(3) clock',
     { ...base,
       channel: { primary: 'email', fallback: 'postal', registered: { primary: false, fallback: true } },
@@ -149,13 +163,18 @@ for (const [name, doc, expectation] of cases) {
   const errs = validatePlaybook(doc, ajvValidate).filter((e) => e.severity === 'error');
   const valid = errs.length === 0;
   if (valid) accepted++; else rejected++;
-  const bad = valid && expectation.startsWith('MUST REJECT');
-  if (bad) holes.push(name);
+  // Both directions are enforced. A MUST ACCEPT case that gets rejected is not a "hole" in the
+  // safety sense — nothing unsafe gets through — but it is exactly as damaging to this file's
+  // meaning: it means a conditional fires where it should not, and the fixtures below it start
+  // failing for a shared reason rather than for their own defect (which is what the base
+  // self-check above exists to prevent, one level up).
+  const bad = valid ? expectation.startsWith('MUST REJECT') : expectation.startsWith('MUST ACCEPT');
+  if (bad) holes.push(`${expectation}: ${name}`);
   console.log(`${bad ? '  ✗ HOLE  ' : '  ·       '}${(valid ? 'ACCEPTED' : 'rejected').padEnd(9)} | ${name}`);
   if (!valid) console.log(`             └─ ${errs.map((e) => `${e.id}: ${e.message}`).join('; ').slice(0, 220)}`);
 }
 
 console.log(`\n${accepted} accepted, ${rejected} rejected out of ${cases.length}.`);
-console.log(`${holes.length} of these are cases the validation stack MUST have rejected and did not.`);
+console.log(`${holes.length} of these are cases where the validation stack did the OPPOSITE of what it must.`);
 holes.forEach((h) => console.log(`  - ${h}`));
 if (holes.length) process.exitCode = 1;

@@ -6,7 +6,7 @@ slug: loeschung.generic-datenhaendler
 kind: RIGHTS_REQUEST
 controller: "__PARAM__"                # set to the concrete Controller.slug when instantiating
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 parameterised: true                   # stencil: carries __PARAM__ placeholders, so never active:true
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
@@ -43,6 +43,16 @@ escalation:
                                       # planDispatch(forceRegistered), which throws. Locked by
                                       # packages/core/test/enrichment-broker-clock.test.ts.
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so every clone of this stencil can reach
+# ESCALATION_DRAFTED. The venue was already stated correctly in `notes` below — "the user's
+# habitual-residence Land DPA (no one-stop-shop for a non-EU-established broker) — OQ-20" — but prose
+# is not a gate, and the six instances cloned from this stencil all shipped with the venue recorded
+# nowhere a schema, a test, or an escalation could read. USER_RESIDENCE is the right default for THIS
+# stencil precisely because it is the enrichment-broker stencil: these are US/UK controllers with no
+# German seat. A clone against a controller that DOES have a German establishment must replace this
+# with the concrete seatDpa — the two fields are alternatives, not a pair.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — per clone, confirm the controller has
+                                      # no EU main establishment before inheriting this
 notes: >
   Cheapest-rung-first: prefer the self-serve removal form (SelfServeRoute) before sending this letter.
   Instrument is Art. 17 (esp. 17(1)(d) unlawful collection, KASPR reasoning) + Art. 21(1) objection —

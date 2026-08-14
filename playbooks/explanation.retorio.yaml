@@ -2,14 +2,16 @@
 # docs/10 §7.7 target #3. Retorio is German-established, so a registered-post provable clock IS available
 # in principle — but its postal address is unverified, so this draft uses email + onDeadlineExpiry NONE.
 # TODO(counsel): before activation, verify Retorio GmbH's Impressum/Datenschutz postal address (Munich),
-# add a postal fallback with registered.fallback:true, set seatDpa: BAYLDA (Bavarian private-sector DPA),
-# and switch onDeadlineExpiry to DRAFT_ART77 so silence also escalates. Also note Art. 9 (biometric
-# voice/face analysis) exposure. active:false (OQ-17).
+# add a postal fallback with registered.fallback:true, and switch onDeadlineExpiry to DRAFT_ART77 so
+# silence also escalates. (seatDpa: BAYLDA is now declared below — see the v2 note there; the remaining
+# items are the ones the C1 conditional will demand together, since escalating on silence requires a
+# registered postal channel.) Also note Art. 9 (biometric voice/face analysis) exposure.
+# active:false (OQ-17).
 slug: explanation.retorio
 kind: RIGHTS_REQUEST
 controller: retorio
 requestType: ACCESS_ART15
-version: 1
+version: 2
 active: false
 legalBasis: "DSGVO Art. 15 Abs. 1 lit. h i.V.m. Art. 22 Abs. 3"
 channel:
@@ -37,6 +39,16 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v2 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook could already reach
+# ESCALATION_DRAFTED — while its own header instructed a future editor to "set seatDpa: BAYLDA before
+# activation". That is the whole defect D4 exists to fix, caught in the act: the venue was decided,
+# written down in a comment, and left out of the document, and nothing in the schema noticed, because
+# seatDpa was demanded only of a provenance request. This is NOT venue: USER_RESIDENCE — Retorio GmbH
+# is German-established (Munich), so it HAS a seat, and USER_RESIDENCE would assert the opposite.
+seatDpa: BAYLDA                       # Bayerisches Landesamt für Datenschutzaufsicht — the Bavarian
+                                      # private-sector DPA. TODO(counsel): the value is this file's
+                                      # own pre-existing instruction, now expressible; confirm the
+                                      # Munich seat from the Impressum before activation.
 notes: >
   Video/voice analysis engages Art. 9 (biometric) — counsel may add an Art. 9-lawfulness challenge and,
   for a German entity, upgrade the channel to registered post so silence also escalates.

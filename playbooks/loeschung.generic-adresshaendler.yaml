@@ -5,7 +5,7 @@ slug: loeschung.generic-adresshaendler
 kind: RIGHTS_REQUEST
 controller: "__PARAM__"               # set to the concrete Controller.slug when instantiating
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 parameterised: true                   # stencil: carries __PARAM__ placeholders, so it may never be
                                       # active:true. Clone and fill them to make it sendable.
@@ -40,6 +40,23 @@ validation:
 escalation:
   onDeadlineExpiry: DRAFT_ART77
   onRefusal: DRAFT_ART77
+# v3 (decision D4): both triggers draft an Art. 77 complaint, so every clone of this stencil can reach
+# ESCALATION_DRAFTED, and the stencil named no venue. A stencil is the one case where a seat genuinely
+# CANNOT be pre-filled: the seat is whatever the concrete controller's is, and unlike `controller` and
+# `recipient` a venue cannot carry a __PARAM__ placeholder, because seatDpa is a closed enum and a
+# free-text venue is a misrouted complaint (that enum is closed for exactly that reason). So the
+# stencil declares the Art. 77(1) FLOOR that is available to every data subject regardless of seat —
+# their own habitual-residence Land DPA — rather than declaring nothing.
+#
+# READ THIS BEFORE CLONING: unlike loeschung.generic-datenhaendler, this stencil targets GERMAN
+# address/marketing brokers, which do have a seat (docs/07 gives AZ Direct → LDI_NRW, Schober and
+# Capaneo → LFDI_BW, Acxiom → HBDI, Deutsche Post Adress → LDI_NRW). A clone against one of them must
+# REPLACE this line with that controller's seatDpa; the two fields are alternatives, not a pair.
+# TODO(counsel): the per-controller seat is counsel-owned. Nothing structural forces a clone to make
+# that swap today — parameterised:true keeps the stencil itself unsendable, but a filled clone that
+# simply inherits USER_RESIDENCE would validate. Flagged rather than fixed here, since a
+# "placeholder venue" concept is a schema change of its own.
+venue: USER_RESIDENCE
 notes: >
   Use erasure only where the basis is genuinely gone (prefer Art. 21(2) objection first for marketing
   data). For credit bureaus, do NOT use this — use correction/retention arguments instead (deferred).

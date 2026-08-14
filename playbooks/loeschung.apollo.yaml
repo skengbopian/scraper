@@ -6,7 +6,7 @@ slug: loeschung.apollo
 kind: RIGHTS_REQUEST
 controller: apollo
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -37,6 +37,15 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED with no venue recorded — the schema demanded seatDpa only of a provenance
+# request. Apollo.io (ZenLeads, Inc.) is a US controller with no German establishment, so there is no
+# seat to name: the competent authority follows the USER's habitual residence (Art. 77(1); see
+# loeschung.zoominfo for the full rationale and docs/07 for the venue rule). Saying so explicitly is
+# the point — an absent seatDpa used to be indistinguishable from an oversight.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — confirm no EU main establishment
+                                      # engages the one-stop-shop (Art. 27 rep Lionheart Squared is a
+                                      # contact point, not an establishment)
 notes: >
   Crowdsource re-ingestion is Apollo's main reappearance vector — the letter must demand addition to the
   suppression list for all known emails/phones, not only deletion of the current record.

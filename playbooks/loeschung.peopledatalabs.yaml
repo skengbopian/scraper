@@ -6,7 +6,7 @@ slug: loeschung.peopledatalabs
 kind: RIGHTS_REQUEST
 controller: peopledatalabs
 requestType: ERASURE_ART17
-version: 2
+version: 3
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -37,6 +37,13 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v3 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED with no venue recorded. People Data Labs, Inc. is a US controller with no German
+# establishment and (per docs/07) no disclosed EU representative at all, so there is no seat to name:
+# the competent authority follows the USER's habitual residence (Art. 77(1)). See loeschung.zoominfo
+# for the full rationale.
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20 — no EU representative disclosed, so no
+                                      # one-stop-shop argument is even available here
 notes: >
   PDL is a pure data-supplier API — its data flows into many downstream products, so the Art. 19
   recipient-notification demand matters here. Confirm-link window is ~72h; deletion ~14 days.

@@ -5,7 +5,7 @@ slug: datenkopie.schufa
 kind: RIGHTS_REQUEST
 controller: schufa
 requestType: ACCESS_ART15
-version: 1
+version: 2
 active: false
 legalBasis: "DSGVO Art. 15 (Datenkopie nach Art. 15 Abs. 3)"
 channel:
@@ -38,6 +38,14 @@ validation:
 escalation:
   onDeadlineExpiry: DRAFT_ART77
   onRefusal: DRAFT_ART77
+# v2 (decision D4): both triggers draft an Art. 77 complaint, and until now this playbook named no
+# venue at all — the schema only required seatDpa on ACCESS_ART15_SOURCE, so a plain Art. 15 that
+# escalates twice over slipped through with the venue recorded nowhere but a counsel spreadsheet
+# (docs/counsel-review-packet.md said "HBDI per docs/07:21 (no seatDpa field declared)"). The value
+# is not new; writing it down is. TODO(counsel): venue values are counsel-owned per controller —
+# this pass only makes the venue expressible and asserts nothing new about it.
+seatDpa: HBDI                         # Hessischer Beauftragter für Datenschutz — SCHUFA's Wiesbaden
+                                      # seat (docs/07), the same venue provenance.schufa already uses
 notes: >
   Phase 0 does the Datenkopie request + normalised parse only. Do NOT auto-generate disputes,
   retention arguments, or a score simulation — those are Score Studio (deferred). The parsed file feeds

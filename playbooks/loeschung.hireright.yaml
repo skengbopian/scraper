@@ -8,7 +8,7 @@ slug: loeschung.hireright
 kind: RIGHTS_REQUEST
 controller: hireright
 requestType: ERASURE_ART17
-version: 1
+version: 2
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 lit. d i.V.m. Art. 15"
 channel:
@@ -41,6 +41,15 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v2 (decision D4): onRefusal drafts an Art. 77 complaint, so this playbook can reach
+# ESCALATION_DRAFTED and named no venue. HireRight's EMEA hub is UK/Tallinn with no German
+# establishment — the same absence that already forces onDeadlineExpiry: NONE for want of a verified
+# German provable-send path — so there is no seat to name and the competent authority follows the
+# USER's habitual residence (Art. 77(1); docs/07).
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20, and the per-case controller question in
+                                      # the header — where the EMPLOYER is the controller and
+                                      # HireRight only a processor (Art. 28), the venue is the
+                                      # employer's seat and this is the wrong addressee entirely
 notes: >
   Lead with the access request to establish what categories are held, then challenge the unlawful ones
   (Art. 10/§§51,53 BZRG, Art. 9, private social-media, Schufa-in-hiring). Erasure rests on Art. 17(1)(d).

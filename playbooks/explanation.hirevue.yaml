@@ -8,7 +8,7 @@ slug: explanation.hirevue
 kind: RIGHTS_REQUEST
 controller: hirevue
 requestType: ACCESS_ART15
-version: 1
+version: 2
 active: false
 legalBasis: "DSGVO Art. 15 Abs. 1 lit. h i.V.m. Art. 22 Abs. 3"
 channel:
@@ -39,6 +39,15 @@ validation:
 escalation:
   onDeadlineExpiry: NONE
   onRefusal: DRAFT_ART77
+# v2 (decision D4): onRefusal drafts an Art. 77 complaint — and for this playbook a refusal is the
+# EXPECTED outcome, since the header calls a "Geschäftsgeheimnis" refusal strong C-203/22 material.
+# So the one path this playbook is built to take was the path with no venue on it. HireVue is a US
+# controller with no German establishment (the same fact that already forces onDeadlineExpiry: NONE,
+# for want of an Einwurf-Einschreiben path), so there is no seat to name and the competent authority
+# follows the USER's habitual residence (Art. 77(1); docs/07).
+venue: USER_RESIDENCE                 # TODO(counsel): OQ-20, and OQ per case whether the EMPLOYER is
+                                      # the controller here — if it is, the venue is the employer's
+                                      # seat and this playbook is the wrong instrument
 notes: >
   A "Geschäftsgeheimnis" refusal is not a lawful blanket bar (C-203/22) — route it to an Art. 77 draft.
   Where the decision was solely automated, the Art. 22(3) human re-review is the primary demand.
