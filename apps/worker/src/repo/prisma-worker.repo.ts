@@ -297,9 +297,15 @@ export class PrismaWorkerRepository {
     await this.db.inboundDocument.update({ where: { id }, data: { storageRef: `purged://${purgedAt.toISOString()}` } });
   }
 
-  /** Timers that should have fired. The backstop for a lost job (deadline.ts). */
-  async findDueDeadlines(now: Date): Promise<readonly { requestId: string; kind: 'provisional' | 'statutory' }[]> {
-    const [provisional, statutory] = await Promise.all([
+  /**
+   * Timers that should have fired. The backstop for a lost job (deadline.ts).
+   *
+   * Each query pairs a state with the ONE column that means anything in it, which is why 0015's
+   * CHECK matters: `proofDueAt` cannot exist outside AWAITING_DELIVERY_PROOF, so this sweep cannot
+   * pick up a stale retrieval hint left on a request whose clock has since started.
+   */
+  async findDueDeadlines(now: Date): Promise<readonly { requestId: string; kind: 'provisional' | 'statutory' | 'proof' }[]> {
+    const [provisional, statutory, proof] = await Promise.all([
       this.db.rightsRequest.findMany({
         where: { state: 'AWAITING_RESPONSE_PROVISIONAL', provisionalDeadlineAt: { lte: now } },
         select: { id: true },
@@ -308,16 +314,22 @@ export class PrismaWorkerRepository {
         where: { state: 'AWAITING_RESPONSE', deadlineAt: { lte: now } },
         select: { id: true },
       }),
+      this.db.rightsRequest.findMany({
+        where: { state: 'AWAITING_DELIVERY_PROOF', proofDueAt: { lte: now } },
+        select: { id: true },
+      }),
     ]);
     return [
       ...provisional.map((r) => ({ requestId: r.id, kind: 'provisional' as const })),
       ...statutory.map((r) => ({ requestId: r.id, kind: 'statutory' as const })),
+      ...proof.map((r) => ({ requestId: r.id, kind: 'proof' as const })),
     ];
   }
 
   private toSnapshot(r: {
     id: string; state: string; userId: string; controllerId: string; requestType: string;
     provableSendConfirmedAt: Date | null; deadlineAt: Date | null; provisionalDeadlineAt: Date | null;
+    proofDueAt: Date | null;
     outcome: string | null; playbook: { document: unknown };
     events?: { id?: string; type?: string; toState?: string }[];
   }): RequestSnapshot {
@@ -331,6 +343,7 @@ export class PrismaWorkerRepository {
       provableSendConfirmedAt: r.provableSendConfirmedAt,
       deadlineAt: r.deadlineAt,
       provisionalDeadlineAt: r.provisionalDeadlineAt,
+      proofDueAt: r.proofDueAt,
       hasControllerResponse: (r.events ?? []).some((e) => e.type === 'responseIngested' || e.id !== undefined),
       reviewedByHuman: false,
       parseConfidence: null,

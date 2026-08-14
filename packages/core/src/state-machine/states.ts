@@ -11,6 +11,7 @@ export const STATES = [
   'BLOCKED_IDENTITY',
   'READY',
   'SENT',
+  'AWAITING_DELIVERY_PROOF',
   'AWAITING_RESPONSE_PROVISIONAL',
   'AWAITING_RESPONSE',
   'AWAITING_REGISTERED_RESEND',
@@ -36,7 +37,9 @@ export function isTerminal(s: RequestState): s is TerminalState {
 
 /**
  * The statutory clock has started only in AWAITING_RESPONSE. Everything else that looks like
- * "waiting" is a provisional clock with no legal force (CLAUDE.md §6).
+ * "waiting" is a provisional clock with no legal force (CLAUDE.md §6) — or, in
+ * AWAITING_DELIVERY_PROOF, no clock at all: a letter lodged with a carrier whose receipt has not come
+ * back yet is not evidence of anything, so nothing may be counted from it.
  */
 export function hasProvableClock(s: RequestState): boolean {
   return s === 'AWAITING_RESPONSE';

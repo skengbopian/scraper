@@ -36,11 +36,42 @@ export const TRANSITIONS: readonly Transition[] = Object.freeze([
   },
   {
     from: 'SENT',
+    event: 'registeredSendLodged',
+    to: 'AWAITING_DELIVERY_PROOF',
+    note: 'Einlieferung ≠ Zustellung: sets NO clock, only the proofDueAt retrieval hint',
+  },
+  {
+    from: 'SENT',
     event: 'sendAccepted:nonProvable',
     to: 'AWAITING_RESPONSE_PROVISIONAL',
     note: 'sets provisionalDeadlineAt; deadlineAt stays null',
   },
   { from: 'SENT', event: 'sendPermanentlyFailed', to: 'NEEDS_HUMAN' },
+
+  // The asynchronous half of the provable send (audit F3a). A carrier does not hand over the
+  // Auslieferungsbeleg at the counter, so the receipt arrives days later — and before this state
+  // existed it had nowhere to land, which made the Art. 12(3) clock unreachable in production with an
+  // honest postal adapter. A dedicated STATE rather than an upgrade edge on
+  // AWAITING_RESPONSE_PROVISIONAL: email sends live in that state too, so the edge would need a
+  // runtime guard, and invariant 4a would stop being a graph property.
+  {
+    from: 'AWAITING_DELIVERY_PROOF',
+    event: 'provableSendConfirmed',
+    to: 'AWAITING_RESPONSE',
+    note: 'sets deadlineAt from the EVIDENCED delivery time — the second of the two edges that may do so',
+  },
+  {
+    from: 'AWAITING_DELIVERY_PROOF',
+    event: 'responseIngested',
+    to: 'RESPONSE_RECEIVED',
+    note: 'a controller who replies has proven receipt themselves — no carrier receipt needed',
+  },
+  {
+    from: 'AWAITING_DELIVERY_PROOF',
+    event: 'proofRetrievalFailed',
+    to: 'NEEDS_HUMAN',
+    note: 'proofDueAt passed with no receipt. A MISSING receipt asks a human; it never escalates',
+  },
 
   { from: 'AWAITING_RESPONSE_PROVISIONAL', event: 'responseIngested', to: 'RESPONSE_RECEIVED' },
   { from: 'AWAITING_RESPONSE_PROVISIONAL', event: 'provisionalDeadlineExpired', to: 'AWAITING_REGISTERED_RESEND' },

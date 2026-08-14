@@ -416,6 +416,14 @@ export class RequestsService {
         name: 'deadline-expiry',
         payload: { requestId: id, kind: 'statutory' },
       });
+    } else if (r.state === 'AWAITING_DELIVERY_PROOF' && r.proofDueAt) {
+      // Not a deadline. This timer only decides when to stop waiting for the carrier's receipt and
+      // put the request in front of a person (`proofRetrievalFailed` → NEEDS_HUMAN). It is armed
+      // from the same place as the other two so the three cannot drift apart.
+      await this.scheduler.schedule(`deadline:${id}:proof:${r.proofDueAt.getTime()}`, r.proofDueAt, {
+        name: 'deadline-expiry',
+        payload: { requestId: id, kind: 'proof' },
+      });
     }
   }
 

@@ -1,6 +1,7 @@
 // Model the state machine exactly as written in schema/request-state-machine.md
 // and test whether the journeys the rest of the docs REQUIRE are reachable.
-const STATES = ['DRAFT','BLOCKED_IDENTITY','READY','SENT','AWAITING_RESPONSE_PROVISIONAL',
+const STATES = ['DRAFT','BLOCKED_IDENTITY','READY','SENT','AWAITING_DELIVERY_PROOF',
+  'AWAITING_RESPONSE_PROVISIONAL',
   'AWAITING_RESPONSE','AWAITING_REGISTERED_RESEND','RESPONSE_RECEIVED','NEEDS_HUMAN','COMPLIED',
   'INCOMPLETE','REFUSED','ESCALATION_DRAFTED','ESCALATED','CLOSED_FAILED','WITHDRAWN'];
 
@@ -15,8 +16,12 @@ const T = [
   ['BLOCKED_IDENTITY','identityVerified:guardFail','CLOSED_FAILED'],
   ['READY','dispatch','SENT'],
   ['SENT','provableSendConfirmed','AWAITING_RESPONSE'],
+  ['SENT','registeredSendLodged','AWAITING_DELIVERY_PROOF'],
   ['SENT','sendAccepted:nonProvable','AWAITING_RESPONSE_PROVISIONAL'],
   ['SENT','sendPermanentlyFailed','NEEDS_HUMAN'],
+  ['AWAITING_DELIVERY_PROOF','provableSendConfirmed','AWAITING_RESPONSE'],
+  ['AWAITING_DELIVERY_PROOF','responseIngested','RESPONSE_RECEIVED'],
+  ['AWAITING_DELIVERY_PROOF','proofRetrievalFailed','NEEDS_HUMAN'],
   ['AWAITING_RESPONSE_PROVISIONAL','responseIngested','RESPONSE_RECEIVED'],
   ['AWAITING_RESPONSE_PROVISIONAL','provisionalDeadlineExpired','AWAITING_REGISTERED_RESEND'],
   ['AWAITING_REGISTERED_RESEND','userConfirmsResend:guardsPass','READY'],
@@ -114,6 +119,11 @@ const antiJourneys = [
    'AWAITING_REGISTERED_RESEND', 'ESCALATION_DRAFTED',
    ['responseIngested', 'userConfirmsResend:guardsPass'],
    'declining the registered re-send closes the request as NO_PROVABLE_CLOCK; it must not silently escalate'],
+  ['F3a: a lodged registered send must never reach an Art. 77 draft without a receipt, a reply, or a human',
+   'AWAITING_DELIVERY_PROOF', 'ESCALATION_DRAFTED',
+   ['provableSendConfirmed', 'responseIngested',
+    'humanResolve:escalate', 'humanResolve:incomplete', 'humanResolve:refused', 'humanResolve:complied', 'humanResolve:resend'],
+   'Einlieferung is not Zustellung, so a lodged letter whose Auslieferungsbeleg never came back evidences nothing. The two legitimate exits are banned here (the receipt arrives -> provableSendConfirmed, or the controller replies -> responseIngested), and so is every humanResolve:* event. What remains is exactly what must remain: the timeout path proofRetrievalFailed dead-ends at NEEDS_HUMAN. No SYSTEM-driven path leaves that dead end — every onward edge requires HUMAN_OPS, and humanResolve:escalate is additionally refused by invariant 4b (no provable send, no controller response), which packages/core/test/state-machine.test.ts asserts directly.'],
 ];
 for (const [name, from, to, banned, why] of antiJourneys) {
   const p = reach(from, to, banned);

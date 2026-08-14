@@ -12,6 +12,12 @@ export const dynamic = 'force-dynamic';
 const STEP: Record<string, { done: number; active: number }> = {
   READY: { done: -1, active: 0 },
   SENT: { done: 0, active: 1 },
+  // The letter IS out — it is with the carrier, and only the delivery receipt is outstanding. Left
+  // out of this map it would fall through to `{ done: -1, active: -1 }` and draw a pipeline with
+  // nothing done and nothing active: a screen telling a user who has just paid for a registered
+  // letter that nothing has happened. `resolveDeadline` correctly returns `kind: 'none'` for this
+  // state — no clock runs — so the step marker is the only thing saying the send occurred.
+  AWAITING_DELIVERY_PROOF: { done: 0, active: 1 },
   AWAITING_RESPONSE_PROVISIONAL: { done: 0, active: 1 },
   AWAITING_RESPONSE: { done: 0, active: 1 },
   AWAITING_REGISTERED_RESEND: { done: 0, active: 1 },

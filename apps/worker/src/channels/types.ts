@@ -31,7 +31,29 @@ export type SendOutcome =
       readonly channel: 'postal';
       readonly providerRef: string;
       readonly sentAt: Date;
+      /**
+       * When the carrier's receipt says it was DELIVERED — not when we asked. Art. 12(3) runs from
+       * receipt of the request, so this is what the calendar month is measured from.
+       */
+      readonly deliveredAt: Date;
       readonly evidenceId: ProvableSendEvidenceId;
+    }
+  | {
+      /**
+       * A registered letter is with the carrier (Einlieferung) and the delivery receipt
+       * (Auslieferungsbeleg) has not come back. This is what a HONEST postal adapter returns for
+       * essentially every real registered send — and before audit F3a there was no such variant, so
+       * it had to be reported as ACCEPTED_NON_PROVABLE and the request took the provisional clock
+       * with no way ever to be upgraded. The Art. 12(3) clock was therefore unreachable in
+       * production. This variant maps to `registeredSendLodged` and parks the request in
+       * AWAITING_DELIVERY_PROOF with NO clock of any kind until the receipt arrives.
+       */
+      readonly kind: 'REGISTERED_LODGED';
+      readonly channel: 'postal';
+      readonly providerRef: string;
+      readonly sentAt: Date;
+      /** Why no proof yet — carried into the RequestEvent payload, not inferred later. */
+      readonly note: string;
     }
   | {
       /** Not automated in Phase 0, or degraded — a human picks it up. Nothing was sent. */
@@ -50,17 +72,26 @@ export type NonProvableSendOutcome = Extract<SendOutcome, { kind: 'ACCEPTED_NON_
 
 export type PostalSendOutcome = Extract<
   SendOutcome,
-  { kind: 'ACCEPTED_NON_PROVABLE' | 'DELIVERY_PROVEN' | 'FAILED' }
+  { kind: 'ACCEPTED_NON_PROVABLE' | 'DELIVERY_PROVEN' | 'REGISTERED_LODGED' | 'FAILED' }
 >;
 
 /**
  * The state-machine event an outcome maps to. Total over the union, so a new outcome variant is a
  * compile error here rather than a silently-unhandled send.
+ *
+ * Note that the mapping stays one-way and structural: the OUTCOME's type decides which clock (if
+ * any) starts, and no adapter can widen its own return type to claim a better one. `REGISTERED_LODGED`
+ * is reachable only from the postal adapter, and `NonProvableSendOutcome` — what the email adapter
+ * returns — still excludes it, so email keeps mapping to `sendAccepted:nonProvable` and nothing else.
  */
-export function eventFor(outcome: SendOutcome): 'provableSendConfirmed' | 'sendAccepted:nonProvable' | 'sendPermanentlyFailed' | null {
+export function eventFor(
+  outcome: SendOutcome,
+): 'provableSendConfirmed' | 'registeredSendLodged' | 'sendAccepted:nonProvable' | 'sendPermanentlyFailed' | null {
   switch (outcome.kind) {
     case 'DELIVERY_PROVEN':
       return 'provableSendConfirmed';
+    case 'REGISTERED_LODGED':
+      return 'registeredSendLodged';
     case 'ACCEPTED_NON_PROVABLE':
       return 'sendAccepted:nonProvable';
     case 'FAILED':

@@ -40,6 +40,10 @@ import { ingestProvenanceResponse, type ProvenanceIngestPlan } from './provenanc
 
 /** States from which `responseIngested` is a legal edge — see transitions.ts, kept in sync by test. */
 export const INGESTIBLE_STATES: readonly RequestSnapshot['state'][] = [
+  // A controller who answers has proven receipt themselves, so a reply is ingestible even while we
+  // are still waiting on the carrier's Auslieferungsbeleg (audit F3a). Missing this state would
+  // have left a real reply unrecorded until the proof timer fired.
+  'AWAITING_DELIVERY_PROOF',
   'AWAITING_RESPONSE_PROVISIONAL',
   'AWAITING_RESPONSE',
   'AWAITING_REGISTERED_RESEND',

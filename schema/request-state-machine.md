@@ -16,6 +16,7 @@ implement it explicitly, unit-test every transition, and make illegal transition
 | `BLOCKED_IDENTITY` | cannot proceed — identity not `VERIFIED`. **Not terminal**: resolves via `identityVerified` |
 | `READY` | passed all guards (identity verified, mandate ok, idempotency ok, playbook valid) |
 | `SENT` | dispatched via channel; awaiting send acknowledgement |
+| `AWAITING_DELIVERY_PROOF` | a **registered** letter was lodged with the carrier (Einlieferung) and the delivery receipt (Auslieferungsbeleg) has not come back yet. **No clock runs at all** — neither statutory nor provisional. `proofDueAt` is an operational hint for the retrieval job. Not escalatable |
 | `AWAITING_RESPONSE_PROVISIONAL` | sent on a **non-provable** channel (email/web-form). `provisionalDeadlineAt` set. **The statutory clock has NOT started.** Not escalatable |
 | `AWAITING_RESPONSE` | **provable** send confirmed; the Art. 12(3) clock is running (`deadlineAt` set) |
 | `AWAITING_REGISTERED_RESEND` | provisional deadline passed with no reply; waiting on the **user's** decision to send a registered re-send |
@@ -45,16 +46,33 @@ READY ──dispatch────────────────────
 
 SENT ──provableSendConfirmed─────────────────────────▶ AWAITING_RESPONSE
                                                         (set deadlineAt = end of the Art. 12(3) CALENDAR
-                                                         month from provableSendTime — Reg. 1182/71 /
-                                                         EDPB Guidelines 01/2022 §54: same-numbered day
-                                                         next month, clamped to month end, extended over
-                                                         Sat/Sun/bundesweite Feiertage, Europe/Berlin
-                                                         end of day. NOT deadlineDays × 24h, which fires
-                                                         up to a day early on 31-day months)
+                                                         month from the EVIDENCED DELIVERY time —
+                                                         Reg. 1182/71 / EDPB Guidelines 01/2022 §54:
+                                                         same-numbered day next month, clamped to month
+                                                         end, extended over Sat/Sun/bundesweite Feiertage,
+                                                         Europe/Berlin end of day. NOT deadlineDays × 24h,
+                                                         which fires up to a day early on 31-day months)
+SENT ──registeredSendLodged──────────────────────────▶ AWAITING_DELIVERY_PROOF
+                                                        (Einlieferung ≠ Zustellung. Sets NO clock —
+                                                         deadlineAt AND provisionalDeadlineAt both stay
+                                                         NULL. Sets proofDueAt = lodgement + 14 days,
+                                                         an OPERATIONAL retrieval hint that is never a
+                                                         deadline of any kind. TODO(counsel): 14 days)
 SENT ──sendAccepted:nonProvable──────────────────────▶ AWAITING_RESPONSE_PROVISIONAL
                                                         (set provisionalDeadlineAt = sendTime + deadlineDays;
                                                          deadlineAt stays NULL — no statutory clock)
 SENT ──sendPermanentlyFailed─────────────────────────▶ NEEDS_HUMAN
+
+AWAITING_DELIVERY_PROOF ──provableSendConfirmed──────▶ AWAITING_RESPONSE
+                                                        (the receipt arrived. deadlineAt is computed from
+                                                         the EVIDENCED delivery time, never from when we
+                                                         fetched the receipt — see §The clock)
+AWAITING_DELIVERY_PROOF ──responseIngested───────────▶ RESPONSE_RECEIVED
+                                                        (a controller who replies has proven receipt
+                                                         themselves; no carrier receipt is needed)
+AWAITING_DELIVERY_PROOF ──proofRetrievalFailed───────▶ NEEDS_HUMAN
+                                                        (proofDueAt passed with no receipt. A MISSING
+                                                         receipt never escalates — it asks a human)
 
 AWAITING_RESPONSE_PROVISIONAL ──responseIngested─────▶ RESPONSE_RECEIVED
 AWAITING_RESPONSE_PROVISIONAL ──provisionalDeadlineExpired▶ AWAITING_REGISTERED_RESEND
@@ -100,13 +118,39 @@ The Art. 12(3) clock is therefore only ever started by a **provable** send.
 
 | Channel | Send event | Sets | Escalatable on silence? |
 |---|---|---|---|
-| postal + `registered` (Einwurf-Einschreiben) + QTSP anchor | `provableSendConfirmed` | `deadlineAt` | **yes** |
+| postal + `registered` + carrier receipt in hand + QTSP anchor | `provableSendConfirmed` | `deadlineAt` | **yes** |
+| postal + `registered`, receipt not back yet (Einlieferung) | `registeredSendLodged` | `proofDueAt` only | no |
 | email (accepted + DKIM-aligned) | `sendAccepted:nonProvable` | `provisionalDeadlineAt` | no |
 | web-form (submission receipt) | `sendAccepted:nonProvable` | `provisionalDeadlineAt` | no |
 
 `provisionalDeadlineAt` is an **operational scheduling hint** — when to ask the user to escalate the
 channel. It is never asserted to a controller or a DPA as a statutory deadline, and never rendered in a
-letter or complaint as one.
+letter or complaint as one. `proofDueAt` is weaker still: it is when to give up waiting for a carrier
+receipt and ask a human. Neither is a deadline in any legal sense.
+
+**The provable send may be confirmed ASYNCHRONOUSLY.** The clock rule does not change — only a provable
+send starts it — but a real carrier does not hand over the Auslieferungsbeleg at the counter. So the
+registered path is two steps: lodgement puts the request in `AWAITING_DELIVERY_PROOF` with no clock, and
+the receipt, whenever it arrives, applies `provableSendConfirmed` from there. Without this state the
+statutory clock was unreachable in production: with an honest postal adapter (`proof: null` at
+lodgement — audit F3b) every registered send degraded to the provisional clock and had nowhere to be
+upgraded to (audit F3a).
+
+**The month runs from DELIVERY, not from retrieval.** Art. 12(3) is "one month of receipt of the
+request", so `deadlineAt` is computed from `ctx.deliveredAt` — the time the carrier's receipt evidences —
+and NOT from the moment our retrieval job happened to fetch that receipt. Fetching is our scheduling; a
+day of queue latency that quietly extended the controller's month would be us giving away the user's
+statutory time. `ctx.deliveredAt` is therefore **required** on the asynchronous edge
+(`AWAITING_DELIVERY_PROOF --provableSendConfirmed-->`) and may never be in the future.
+
+**A missing receipt is a human question, never an escalation.** `proofRetrievalFailed` goes to
+`NEEDS_HUMAN`. There is deliberately no edge from `AWAITING_DELIVERY_PROOF` to anything that drafts a
+complaint: not knowing whether a letter was delivered is the opposite of evidence that it was.
+
+**The manual path is the primary one today.** Automated Auslieferungsbeleg retrieval is blocked on the
+postal vendor (OQ-11). An ops human who holds the paper receipt records it — the API mints the
+POSTAL_PROOF evidence record, anchors it, and applies exactly the same `provableSendConfirmed`
+transition the retrieval job will later apply. Automation replaces the actor, not the rule.
 
 **The chase path.** Email out on day 0 → silence → on `provisionalDeadlineExpired` the user is asked
 (one decision, clear default) whether to send a registered re-send. On confirmation the request re-enters
@@ -153,14 +197,21 @@ nothing more — "twice, ever" is not the rule and would break the flagship.
    **every** inbound edge to `READY`, not just the one from `DRAFT` — re-entry re-runs the full guard set.
 2. **The clock is provable:** `deadlineAt` is set **only** on `provableSendConfirmed` (postal proof /
    Einwurf-Einschreiben receipt, anchored with a qualified eIDAS timestamp). Never on enqueue, never on an
-   email accept, never on a web-form receipt. `provisionalDeadlineAt` is a separate field and is never
-   presented as a statutory deadline.
+   email accept, never on a web-form receipt, and never on a registered **lodgement**.
+   `provisionalDeadlineAt` and `proofDueAt` are separate fields and neither is ever presented as a
+   statutory deadline. The confirming event may arrive later than the send (from
+   `AWAITING_DELIVERY_PROOF`); when it does, the month is measured from the evidenced delivery time, so
+   the clock's LENGTH does not depend on when we got around to fetching the receipt.
 3. **Escalation never auto-sends:** the only transition into `ESCALATED` is `humanSend`.
 4. **Escalation rests on proven receipt.** Every path into `ESCALATION_DRAFTED` must be backed by evidence
    the controller received the request:
    - **4a (structural):** the silence path `deadlineExpired` exists only on `AWAITING_RESPONSE`, which is
-     only reachable via `provableSendConfirmed`. Silence can therefore never escalate on a provisional
-     clock — no runtime check needed.
+     only reachable via `provableSendConfirmed` — from `SENT` or from `AWAITING_DELIVERY_PROOF`, both of
+     which demand the branded evidence id. Silence can therefore never escalate on a provisional clock,
+     nor on a lodgement whose receipt never came back — no runtime check needed. This is why the async
+     upgrade is a dedicated STATE rather than a second edge out of `AWAITING_RESPONSE_PROVISIONAL`: email
+     sends live in that state too, so an upgrade edge there would have to be gated by a runtime `if`,
+     converting a graph guarantee into a check someone can later relax.
    - **4b (guarded):** `INCOMPLETE`/`REFUSED --escalate-->` and `NEEDS_HUMAN --humanResolve:escalate-->`
      need no registered send, because the controller's **own reply proves receipt**. But
      `humanResolve:escalate` is reachable from a `sendPermanentlyFailed` entry into `NEEDS_HUMAN`, where no
@@ -213,6 +264,16 @@ which is excluded from the stats — total silence was structurally unrecordable
 - **email send sets `provisionalDeadlineAt` and NOT `deadlineAt`** (C1),
 - **`AWAITING_RESPONSE_PROVISIONAL` cannot reach `ESCALATION_DRAFTED`** — assert by graph reachability,
   not by mocking (C1),
+- **a registered lodgement sets NEITHER clock** — `registeredSendLodged` leaves `deadlineAt` and
+  `provisionalDeadlineAt` null and sets only `proofDueAt` (F3a),
+- **`AWAITING_DELIVERY_PROOF` cannot reach `ESCALATION_DRAFTED` except through `provableSendConfirmed`**
+  — assert by graph reachability with that event banned (F3a),
+- **the async confirmation dates the month from the receipt, not from the fetch** — a
+  `provableSendConfirmed` applied from `AWAITING_DELIVERY_PROOF` with `deliveredAt` days before `now`
+  produces the same `deadlineAt` as a synchronous confirmation at `deliveredAt` would have,
+- **`provableSendConfirmed` from `AWAITING_DELIVERY_PROOF` without `deliveredAt` is refused**, and a
+  `deliveredAt` in the future is refused,
+- **a proof that never arrives goes to `NEEDS_HUMAN`, never to a complaint** (`proofRetrievalFailed`),
 - registered re-send sets a **fresh** `deadlineAt` from the registered send time,
 - user declines re-send → `CLOSED_FAILED` with `outcome = NO_PROVABLE_CLOCK`, and the controller's
   compliance stats are **unchanged**,

@@ -72,6 +72,8 @@ export const LEICHT: DeepPartial<AppStrings> = {
     sub: 'Jeder Eintrag wartet auf eine Entscheidung. Nichts geht von allein weiter.',
     queueEmpty: 'Gerade wartet kein Vorgang.',
     inboxEmpty: 'Es sind keine Dokumente da.',
+    anomalyEmpty: 'Es gibt keine Auffälligkeiten.',
+    anomalyNote: 'Hier steht, wenn jemand das Konto für eine andere Person benutzt haben könnte. Bitte selbst nachsehen.',
     inboxUnassigned: 'Gehört noch zu keinem Vorgang',
     sendNote: 'Ein Mensch reicht die Beschwerde ein. Nicht das System. Sie klicken hier, wenn Sie es getan haben.',
     noProvenReceipt:
@@ -102,6 +104,7 @@ export const LEICHT: DeepPartial<AppStrings> = {
     identityNote: 'Erst nach der Prüfung können Sie Anfragen stellen. Ihren Namen nehmen wir aus der Prüfung.',
   },
   stateLabel: {
+    AWAITING_DELIVERY_PROOF: 'Der Brief ist unterwegs. Wir warten auf die Bestätigung.',
     AWAITING_RESPONSE_PROVISIONAL: 'Wir warten auf Antwort',
     AWAITING_REGISTERED_RESEND: 'Keine Antwort. Jetzt per Einschreiben?',
     AWAITING_RESPONSE: 'Wir warten auf Antwort',

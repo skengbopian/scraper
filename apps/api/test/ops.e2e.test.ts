@@ -98,8 +98,10 @@ describe.skipIf(!url)('the ops review queue', () => {
 
   /**
    * Register, sign in, and clear the second factor. Sign-in is two steps (ADR-035): `/auth/login`
-   * issues a token that carries the password factor only, and `/auth/totp` upgrades that same token
-   * to an MFA-verified session — which is the only kind SessionMiddleware attaches anything for.
+   * issues a token that carries the password factor only, and `/auth/totp` ROTATES it — revoking the
+   * password-only session and issuing a fresh, MFA-verified one (audit L2). So the token this helper
+   * returns is the one from step TWO; carrying the step-one token forward would 401 everywhere,
+   * which is the rotation working rather than a fixture bug.
    */
   async function signUp(email: string): Promise<string> {
     const { totp } = await import('@scraper/core');
@@ -108,7 +110,7 @@ describe.skipIf(!url)('the ops review queue', () => {
     const { token } = (await json(await post('/auth/login', { email, password: PASSWORD }))) as { token: string };
     const upgraded = await post('/auth/totp', { code: totp(secret, Date.now()) }, token);
     if (upgraded.status !== 201) throw new Error(`TOTP step failed for ${email}: ${upgraded.status} ${await upgraded.text()}`);
-    return token;
+    return String(((await json(upgraded)) as { token?: string }).token);
   }
 
   /**
@@ -253,6 +255,103 @@ describe.skipIf(!url)('the ops review queue', () => {
       const r = await post(`/ops/requests/${id}/resolve`, { resolution: 'resend' }, opsToken);
       expect(r.status).toBe(409);
       expect(String((await json(r)).error)).toMatch(/^GUARD_/);
+    });
+  });
+
+  /**
+   * The manual delivery-proof route (audit F3a).
+   *
+   * Every assertion here is about FAILING CLOSED, because that is what this process must do: there
+   * is no QTSP configured, so `UnconfiguredTimestamper` anchors the receipt honestly as SIMULATED
+   * and `provableSendEvidenceIdOf()` refuses to mint the id. The receipt is still chained — losing a
+   * carrier's receipt would be strictly worse than being unable to use it — and the request does not
+   * move. There is deliberately no dev switch that makes the anchor come back QUALIFIED; the branded
+   * id has exactly one path to it and it runs through a real trust service provider.
+   */
+  describe('recording a carrier delivery receipt', () => {
+    const PROOF_BODY = {
+      trackingRef: 'RR123456789DE',
+      deliveredAt: '2026-08-10T09:15:00Z',
+      storageRef: 's3://evidence/ops/auslieferungsbeleg.pdf',
+    };
+
+    it('is closed to an ordinary user — starting a legal clock is not a self-service action', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      const r = await post(`/ops/requests/${id}/delivery-proof`, PROOF_BODY, userToken);
+      expect(r.status).toBe(403);
+    });
+
+    it('refuses a receipt for a request that is not awaiting one', async () => {
+      const id = await seedRequest('NEEDS_HUMAN');
+      const r = await post(`/ops/requests/${id}/delivery-proof`, PROOF_BODY, opsToken);
+      expect(r.status).toBe(409);
+      expect((await json(r)).error).toBe('NO_LODGEMENT_AWAITING_PROOF');
+    });
+
+    it('refuses an unparseable delivery date rather than 500ing on an Invalid Date (audit W15)', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      const r = await post(
+        `/ops/requests/${id}/delivery-proof`,
+        { ...PROOF_BODY, deliveredAt: '45.13.2024' },
+        opsToken,
+      );
+      expect(r.status).toBe(400);
+      expect((await json(r)).error).toBe('INVALID_DELIVERED_AT');
+    });
+
+    it('refuses a receipt claiming a delivery in the future', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      const r = await post(
+        `/ops/requests/${id}/delivery-proof`,
+        { ...PROOF_BODY, deliveredAt: new Date(Date.now() + 86_400_000).toISOString() },
+        opsToken,
+      );
+      expect(r.status).toBe(400);
+      expect((await json(r)).error).toBe('DELIVERY_IN_FUTURE');
+    });
+
+    it('stores the receipt but starts NO clock without a qualified anchor — and says which', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      const r = await post(`/ops/requests/${id}/delivery-proof`, PROOF_BODY, opsToken);
+      expect(r.status).toBe(409);
+      const body = await json(r);
+      expect(body.error).toBe('UNPROVABLE_SIMULATED_ANCHOR');
+      expect(String(body.message)).toMatch(/recorded as evidence/);
+
+      // The receipt survives, anchored honestly.
+      const proofs = await db.evidenceRecord.findMany({ where: { requestId: id, kind: 'POSTAL_PROOF' } });
+      expect(proofs).toHaveLength(1);
+      expect(proofs[0]!.anchorKind).toBe('SIMULATED');
+      expect(proofs[0]!.storageRef).toContain(PROOF_BODY.trackingRef);
+
+      // The request did not move, and no clock started.
+      const row = await db.rightsRequest.findUniqueOrThrow({ where: { id } });
+      expect(row.state).toBe('AWAITING_DELIVERY_PROOF');
+      expect(row.deadlineAt).toBeNull();
+      expect(row.provableSendConfirmedAt).toBeNull();
+    });
+
+    it('re-submitting the same receipt does not chain it twice — the ledger is immortal', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      await post(`/ops/requests/${id}/delivery-proof`, PROOF_BODY, opsToken);
+      await post(`/ops/requests/${id}/delivery-proof`, PROOF_BODY, opsToken);
+      expect(await db.evidenceRecord.count({ where: { requestId: id, kind: 'POSTAL_PROOF' } })).toBe(1);
+    });
+
+    it('(0015) the database itself refuses a clock in AWAITING_DELIVERY_PROOF', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      // The legal rule as a CHECK constraint: a lodgement whose receipt has not come back may not
+      // carry a statutory deadline, whatever application code believes.
+      await expect(
+        db.rightsRequest.update({ where: { id }, data: { deadlineAt: new Date(), provableSendConfirmedAt: new Date() } }),
+      ).rejects.toThrow(/delivery_proof_carries_no_clock/);
+    });
+
+    it('(0015) and refuses a retrieval hint left behind in any other state', async () => {
+      const id = await seedRequest('AWAITING_RESPONSE_PROVISIONAL', { provisionalDeadlineAt: new Date() });
+      await expect(db.rightsRequest.update({ where: { id }, data: { proofDueAt: new Date() } })).rejects.toThrow(
+        /delivery_proof_carries_no_clock/,
+      );
     });
   });
 

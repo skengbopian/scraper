@@ -65,6 +65,19 @@ Change all three or change none. The operative consequences:
   legal exposure this rule exists to prevent.
 - **`deadlineAt` is set only on a provable send.** On silence after a provisional send, the user is asked
   to authorise a registered re-send, which starts a **fresh** one-month period from the registered send.
+- **The provable send may be confirmed asynchronously — the rule is unchanged, the timing is not.**
+  Einlieferung is not Zustellung: a carrier accepts the letter and issues the Auslieferungsbeleg later.
+  A registered *lodgement* therefore sets **no clock at all** (`AWAITING_DELIVERY_PROOF`), and the
+  receipt applies `provableSendConfirmed` whenever it arrives. Two consequences that are legal, not
+  operational: (a) the month is computed from the **evidenced delivery time**, because Art. 12(3) runs
+  from receipt of the request — dating it from when our retrieval job ran would silently give the
+  controller our queue latency as extra statutory time; (b) a receipt that never comes back routes to a
+  **human**, never to an escalation, because not knowing whether a letter arrived is the opposite of
+  evidence that it did. Until an automated retrieval exists (OQ-11), an ops human records the paper
+  receipt and the system applies exactly the same transition — automation will replace the actor, not
+  the rule. `TODO(counsel):` whether a re-keyed scan of an Auslieferungsbeleg, anchored at re-keying
+  time, evidences the delivery DATE to a DPA's satisfaction, or whether the carrier's own electronic
+  record must be obtained.
 - **Escalating on silence requires a provable send. Escalating on a refusal or a materially incomplete
   answer does not** — the controller's own reply is itself proof of receipt, so no registered re-send is
   needed to complain about the content of an answer we actually hold.

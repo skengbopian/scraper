@@ -42,6 +42,7 @@ enum RequestState {
   BLOCKED_IDENTITY
   READY
   SENT
+  AWAITING_DELIVERY_PROOF
   AWAITING_RESPONSE_PROVISIONAL
   AWAITING_RESPONSE
   AWAITING_REGISTERED_RESEND
@@ -332,6 +333,11 @@ model RightsRequest {
   provisionalDeadlineAt   DateTime?
   /// The Art. 12(3) clock. A CHECK constraint enforces: non-null ONLY if provableSendConfirmedAt is.
   deadlineAt              DateTime?
+  /// When to stop waiting for the carrier's Auslieferungsbeleg and ask a human (audit F3a). Set on a
+  /// registered LODGEMENT; non-null only in AWAITING_DELIVERY_PROOF. Weaker than
+  /// provisionalDeadlineAt — it measures our patience with a vendor, not anything legal. A separate
+  /// column so no query can mistake it for a deadline, and a CHECK keeps it out of every other state.
+  proofDueAt              DateTime?
   provableSendConfirmedAt DateTime?
   closedAt                DateTime?
   outcome                 Outcome?

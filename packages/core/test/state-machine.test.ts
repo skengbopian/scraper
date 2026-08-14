@@ -26,6 +26,7 @@ function req(over: Partial<RequestSnapshot> = {}): RequestSnapshot {
     provableSendConfirmedAt: null,
     deadlineAt: null,
     provisionalDeadlineAt: null,
+    proofDueAt: null,
     hasControllerResponse: false,
     reviewedByHuman: false,
     parseConfidence: null,
@@ -118,8 +119,15 @@ describe('GUARDRAIL — the statutory clock only starts on a provable send', () 
   });
 
   it('AWAITING_RESPONSE is only reachable via provableSendConfirmed', () => {
+    // There are now TWO inbound edges — the synchronous one from SENT and the asynchronous one from
+    // AWAITING_DELIVERY_PROOF (audit F3a) — and the property that matters is not their number but
+    // that EVERY one of them is `provableSendConfirmed`, which `apply()` refuses without a branded
+    // ProvableSendEvidenceId. Asserting the event set rather than a fixed list keeps this test
+    // failing if someone adds a third edge with any other event, which is the point of it.
     const inbound = TRANSITIONS.filter((t) => t.to === 'AWAITING_RESPONSE');
-    expect(inbound.map((t) => t.event)).toEqual(['provableSendConfirmed']);
+    expect(inbound.length).toBeGreaterThan(0);
+    expect([...new Set(inbound.map((t) => t.event))]).toEqual(['provableSendConfirmed']);
+    expect(inbound.map((t) => t.from).sort()).toEqual(['AWAITING_DELIVERY_PROOF', 'SENT']);
   });
 
   it('silence on a PROVISIONAL clock cannot reach ESCALATION_DRAFTED (reachability, not mocking)', () => {
@@ -181,6 +189,120 @@ describe('GUARDRAIL — the statutory clock only starts on a provable send', () 
 
   it('but a provable clock that runs out in silence DOES count', () => {
     expect(countsTowardControllerStats('NO_RESPONSE')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// F3a — the asynchronous provable send. Einlieferung is not Zustellung.
+//
+// Before AWAITING_DELIVERY_PROOF existed, a real registered send (whose adapter honestly returns
+// `proof: null` at lodgement) degraded to the PROVISIONAL clock and the graph had no upgrade edge —
+// so the Art. 12(3) clock, the thing the whole two-clock machinery exists to produce, was
+// unreachable in production. These tests hold the new path to the same standard as the old one.
+// ---------------------------------------------------------------------------------------------
+describe('F3a — a lodged registered send waits for its receipt, with NO clock running', () => {
+  const LODGED_AT = AT;
+
+  it('registeredSendLodged sets neither clock — only the retrieval hint', () => {
+    const r = apply(req({ state: 'SENT' }), 'registeredSendLodged', { actor: 'SYSTEM', now: LODGED_AT, deadlineDays: 30 });
+    expect(r.to).toBe('AWAITING_DELIVERY_PROOF');
+    expect(r.patch.deadlineAt).toBeNull();
+    expect(r.patch.provisionalDeadlineAt).toBeNull();
+    // 14 days, an operational figure with no legal meaning (TODO(counsel) in machine.ts).
+    expect(r.patch.proofDueAt).toEqual(new Date(LODGED_AT.getTime() + 14 * 86_400_000));
+  });
+
+  it('a lodgement does NOT set provableSendConfirmedAt — nothing is proven yet', () => {
+    const r = apply(req({ state: 'SENT' }), 'registeredSendLodged', { actor: 'SYSTEM', now: LODGED_AT });
+    expect(r.patch.provableSendConfirmedAt).toBeUndefined();
+  });
+
+  it('the receipt starts the month from DELIVERY, not from when we fetched it', () => {
+    // Delivered 7 Aug; the retrieval job only ran on 12 Aug. The month must be measured from the 7th.
+    const fetchedAt = new Date('2026-08-12T09:00:00Z');
+    const r = apply(
+      req({ state: 'AWAITING_DELIVERY_PROOF', proofDueAt: new Date('2026-08-21T10:00:00Z') }),
+      'provableSendConfirmed',
+      { actor: 'SYSTEM', now: fetchedAt, deliveredAt: AT, provableSendEvidenceId: 'ev_async' },
+    );
+    expect(r.to).toBe('AWAITING_RESPONSE');
+    // Identical to the synchronous confirmation at AT — five days of queue latency bought the
+    // controller nothing. (7 Sep 2026 is a Monday → Berlin midnight = 7 Sep 22:00Z.)
+    expect(r.patch.deadlineAt).toEqual(new Date('2026-09-07T22:00:00Z'));
+    expect(r.patch.provableSendConfirmedAt).toEqual(AT);
+    // The retrieval hint is spent; a stale one beside a running statutory clock is audit F7 again.
+    expect(r.patch.proofDueAt).toBeNull();
+  });
+
+  it('refuses the asynchronous confirmation without deliveredAt', () => {
+    expect(() =>
+      apply(req({ state: 'AWAITING_DELIVERY_PROOF' }), 'provableSendConfirmed', {
+        actor: 'SYSTEM', now: AT, provableSendEvidenceId: 'ev_async',
+      }),
+    ).toThrow(/requires ctx.deliveredAt/);
+  });
+
+  it('refuses a receipt that claims a delivery in the future', () => {
+    expect(() =>
+      apply(req({ state: 'AWAITING_DELIVERY_PROOF' }), 'provableSendConfirmed', {
+        actor: 'SYSTEM', now: AT, deliveredAt: new Date(AT.getTime() + 86_400_000), provableSendEvidenceId: 'ev_async',
+      }),
+    ).toThrow(/cannot evidence a future delivery/);
+  });
+
+  it('still refuses the asynchronous confirmation without a branded evidence id', () => {
+    expect(() =>
+      apply(req({ state: 'AWAITING_DELIVERY_PROOF' }), 'provableSendConfirmed', {
+        actor: 'SYSTEM', now: AT, deliveredAt: AT,
+      }),
+    ).toThrow(/QTSP-anchored evidence/);
+  });
+
+  it('a controller who replies proves receipt themselves — no carrier receipt needed', () => {
+    const r = apply(req({ state: 'AWAITING_DELIVERY_PROOF', proofDueAt: AT }), 'responseIngested', { actor: 'SYSTEM', now: AT });
+    expect(r.to).toBe('RESPONSE_RECEIVED');
+    expect(r.patch.proofDueAt).toBeNull();
+  });
+
+  it('a receipt that never arrives goes to a HUMAN, and drafts nothing', () => {
+    const r = apply(req({ state: 'AWAITING_DELIVERY_PROOF', proofDueAt: AT }), 'proofRetrievalFailed', { actor: 'SYSTEM', now: AT });
+    expect(r.to).toBe('NEEDS_HUMAN');
+    expect(r.patch.deadlineAt).toBeUndefined();
+    expect(r.patch.proofDueAt).toBeNull();
+  });
+
+  it('and that human cannot then escalate it — invariant 4b, nothing proves receipt', () => {
+    // The graph route AWAITING_DELIVERY_PROOF → NEEDS_HUMAN → ESCALATION_DRAFTED exists; this guard
+    // is what closes it. A missing delivery receipt is our ignorance, not the controller's silence.
+    const stuck = req({ state: 'NEEDS_HUMAN', provableSendConfirmedAt: null, hasControllerResponse: false });
+    expect(() => apply(stuck, 'humanResolve:escalate', { actor: 'HUMAN_OPS', now: AT })).toThrow(/provenReceipt|neither a provable send/);
+  });
+
+  it('withdrawing from AWAITING_DELIVERY_PROOF spends the hint too', () => {
+    const r = apply(req({ state: 'AWAITING_DELIVERY_PROOF', proofDueAt: AT }), WITHDRAW_EVENT, { actor: 'USER', now: AT });
+    expect(r.to).toBe('WITHDRAWN');
+    expect(r.patch.proofDueAt).toBeNull();
+  });
+
+  it('AWAITING_DELIVERY_PROOF reaches an Art. 77 draft ONLY through a human (reachability)', () => {
+    // Ban the two honest exits (the receipt arrives, the controller replies). What remains must
+    // dead-end at NEEDS_HUMAN, where every onward edge requires HUMAN_OPS.
+    const banned = new Set(['provableSendConfirmed', 'responseIngested']);
+    const seen = new Set<RequestState>(['AWAITING_DELIVERY_PROOF']);
+    const queue: RequestState[] = ['AWAITING_DELIVERY_PROOF'];
+    while (queue.length) {
+      const s = queue.shift()!;
+      // Walk only edges a machine could take on its own: no receipt, no reply, no human. If
+      // ESCALATION_DRAFTED is unreachable across that subgraph, then a complaint can never be
+      // drafted off a lodgement whose delivery we cannot evidence — which is the whole claim.
+      // (INCOMPLETE --escalate--> and REFUSED --escalate--> carry no actor requirement, but both
+      // states are only ENTERED through a reply or a HUMAN_OPS resolution, so they drop out here.)
+      for (const t of TRANSITIONS.filter((t) => t.from === s && !banned.has(t.event) && t.requiredActor !== 'HUMAN_OPS')) {
+        if (!seen.has(t.to)) { seen.add(t.to); queue.push(t.to); }
+      }
+    }
+    expect([...seen].sort()).toEqual(['AWAITING_DELIVERY_PROOF', 'NEEDS_HUMAN']);
+    expect(seen.has('ESCALATION_DRAFTED')).toBe(false);
   });
 });
 
@@ -336,6 +458,9 @@ describe('exhaustive transition matrix', () => {
         now: AT,
         deadlineDays: 30,
         provableSendEvidenceId: 'ev_1',
+        // The asynchronous provableSendConfirmed demands the evidenced delivery time (F3a); this is
+        // the "satisfy the guards so we are testing the edge" line for that one.
+        deliveredAt: AT,
       };
       const r = apply(snapshot, t.event, ctx);
       expect(r.to).toBe(t.to);

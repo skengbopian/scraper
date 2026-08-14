@@ -60,8 +60,23 @@ export async function sendPostalLetter(
   }
   if (result.proof === null) {
     // Einlieferung ≠ Zustellung: the letter is lodged but the Auslieferungsbeleg has not come back
-    // yet (docs/10 §2.4(1), OQ-11). A provisional clock now; the proof-retrieval job may upgrade it.
-    return nonProvable('registered send lodged, but no delivery receipt has come back yet');
+    // yet (docs/10 §2.4(1), OQ-11). This is the NORMAL outcome of a real registered send — the
+    // carrier does not hand over the receipt at the counter.
+    //
+    // It used to degrade to the provisional clock, and that was the F3a hole: a provisional clock
+    // expires into AWAITING_REGISTERED_RESEND, i.e. into asking the user to authorise a registered
+    // re-send — of a letter that WAS sent registered. The chase was being offered as a remedy for
+    // its own outcome, and the statutory clock was unreachable because nothing could ever upgrade
+    // that state. AWAITING_DELIVERY_PROOF is where this actually belongs: no clock runs, and the
+    // receipt (fetched by the retrieval job, or recorded by an ops human from the paper original)
+    // applies `provableSendConfirmed` from there.
+    return {
+      kind: 'REGISTERED_LODGED',
+      channel: 'postal',
+      providerRef: result.providerId,
+      sentAt: now,
+      note: 'registered send lodged with the carrier; the Auslieferungsbeleg has not come back yet',
+    };
   }
 
   // Anchoring happens BEFORE minting and unconditionally, because the receipt is legally meaningful
@@ -80,6 +95,8 @@ export async function sendPostalLetter(
       channel: 'postal',
       providerRef: result.providerId,
       sentAt: now,
+      // The receipt's own delivery time, not `now`. Art. 12(3) runs from receipt of the request.
+      deliveredAt: result.proof.deliveredAt,
       evidenceId: provableSendEvidenceIdOf(record, result.proof),
     };
   } catch (e) {
@@ -87,6 +104,13 @@ export async function sendPostalLetter(
     // THE STUB-PROOF HAZARD, closed. A simulated receipt or a simulated anchor lands here and the
     // request takes the provisional clock — the same clock an email would have got, which is the
     // honest description of what just happened.
+    //
+    // Deliberately NOT the new REGISTERED_LODGED variant, even though the send was registered:
+    // that state means "the receipt has not come back". Here it HAS come back and it was not good
+    // enough. There is nothing left to wait for, so parking the request in AWAITING_DELIVERY_PROOF
+    // would be waiting for an event that has already happened and already failed — it would sit
+    // there until proofDueAt and then land on a human with no new information. The provisional
+    // clock at least runs the chase, which is a real remedy.
     return nonProvable(`registered send is NOT provable (${e.reason}): ${e.message}`);
   }
 }

@@ -247,6 +247,13 @@ export interface AppStrings {
     queueHeading: string;
     queueEmpty: string;
     inboxHeading: string;
+    venueLabel: string;
+    venueUserResidence: string;
+    anomalyHeading: string;
+    anomalyEmpty: string;
+    anomalyNote: string;
+    anomalyReviewed: string;
+    anomalyOpen: string;
     inboxEmpty: string;
     inboxUnassigned: string;
     inboxAssigned: string;
@@ -283,6 +290,7 @@ export interface AppStrings {
    */
   stateLabel: Record<
     | 'DRAFT' | 'BLOCKED_IDENTITY' | 'READY' | 'SENT'
+    | 'AWAITING_DELIVERY_PROOF'
     | 'AWAITING_RESPONSE_PROVISIONAL' | 'AWAITING_REGISTERED_RESEND' | 'AWAITING_RESPONSE'
     | 'RESPONSE_RECEIVED' | 'NEEDS_HUMAN' | 'COMPLIED' | 'INCOMPLETE' | 'REFUSED'
     | 'ESCALATION_DRAFTED' | 'ESCALATED' | 'CLOSED_FAILED' | 'WITHDRAWN',

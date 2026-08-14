@@ -16,6 +16,7 @@ export const REQUEST_STATES = [
   'BLOCKED_IDENTITY',
   'READY',
   'SENT',
+  'AWAITING_DELIVERY_PROOF',
   'AWAITING_RESPONSE_PROVISIONAL',
   'AWAITING_REGISTERED_RESEND',
   'AWAITING_RESPONSE',
@@ -138,6 +139,37 @@ export interface OpsQueueItem {
   readonly provisionalDeadlineAt: string | null;
   readonly reason: string | null;
   readonly queuedAt: string;
+  /**
+   * Where an Art. 77 complaint for this case gets filed (decision D4). `USER_RESIDENCE` arrives with
+   * no authority resolved on purpose — it depends on the data subject's Land, which this payload
+   * deliberately does not carry.
+   */
+  readonly escalationVenue:
+    | { readonly kind: 'SEAT'; readonly dpa: string }
+    | { readonly kind: 'USER_RESIDENCE'; readonly dpa: null }
+    | null;
+}
+
+/**
+ * One row of the abuse-review log (CLAUDE.md's one rule; audit M3).
+ *
+ * SUBJECT_MISMATCH — someone uploading a Datenkopie about a DIFFERENT person than the verified
+ * account holder — is the highest-signal abuse event this product can observe, and it is exactly the
+ * shape a stalker's first attempt takes. The table has been written since migration 0013 and the API
+ * has listed it since; nothing rendered it, so "flag anomalous targeting for human review" was a row
+ * in a database nobody opened.
+ *
+ * `userId` is the opaque id and `detail` is a bounded string the API caps. Deliberately no subject
+ * identifiers: an abuse log that named people would itself be the artefact the rule exists to
+ * prevent.
+ */
+export interface AnomalyEventView {
+  readonly id: string;
+  readonly userId: string | null;
+  readonly kind: string;
+  readonly detail: string;
+  readonly createdAt: string;
+  readonly reviewedAt: string | null;
 }
 
 /** A document that arrived without knowing which case it answers. Correlated by a human. */

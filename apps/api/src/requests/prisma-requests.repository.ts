@@ -314,6 +314,7 @@ export class PrismaRequestsRepository implements RequestsRepository {
     const data: Record<string, unknown> = { state: t.to };
     if (p.deadlineAt !== undefined) data.deadlineAt = p.deadlineAt;
     if (p.provisionalDeadlineAt !== undefined) data.provisionalDeadlineAt = p.provisionalDeadlineAt;
+    if (p.proofDueAt !== undefined) data.proofDueAt = p.proofDueAt;
     if (p.provableSendConfirmedAt !== undefined) data.provableSendConfirmedAt = p.provableSendConfirmedAt;
     if (p.outcome !== undefined) data.outcome = p.outcome;
     if (p.closedAt !== undefined) data.closedAt = p.closedAt;
@@ -345,6 +346,7 @@ export class PrismaRequestsRepository implements RequestsRepository {
   private toSnapshot(r: {
     id: string; state: string; userId: string; controllerId: string; requestType: string;
     provableSendConfirmedAt: Date | null; deadlineAt: Date | null; provisionalDeadlineAt: Date | null;
+    proofDueAt: Date | null;
     outcome: string | null; playbook: { document: unknown } | null; events: { id: string }[];
   }): RequestSnapshot & { userId: string } {
     const doc = r.playbook?.document as { validation?: { humanReviewIfConfidenceBelow?: number } } | null;
@@ -357,6 +359,7 @@ export class PrismaRequestsRepository implements RequestsRepository {
       provableSendConfirmedAt: r.provableSendConfirmedAt,
       deadlineAt: r.deadlineAt,
       provisionalDeadlineAt: r.provisionalDeadlineAt,
+      proofDueAt: r.proofDueAt,
       hasControllerResponse: r.events.length > 0,
       reviewedByHuman: false,
       parseConfidence: null,

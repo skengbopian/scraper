@@ -3,14 +3,21 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { PrismaClient, type Prisma } from '@prisma/client';
 import {
   apply,
+  appendEvidence,
+  provableSendEvidenceIdOf,
   runGuards,
   sha256Hex,
+  UnprovableSendError,
+  type DeliveryProof,
+  type EvidenceRecord,
   type RequestSnapshot,
   type RequestTypeStatutory,
+  type Timestamper,
   type TransitionResult,
   type VerifiedIdentity,
   type WorkflowEngine,
 } from '@scraper/core';
+import { UnconfiguredTimestamper } from './timestamper.js';
 
 /**
  * The human review surface (port wave 5, ADR-037). Wave 2c deliberately refused to build the /ops
@@ -58,6 +65,22 @@ export interface OpsQueueItem {
   /** Why a human is looking at this: the last humanQueued / sendPermanentlyFailed / lowConfidence reason. */
   readonly reason: string | null;
   readonly queuedAt: Date;
+  /**
+   * WHERE an Art. 77 complaint for this case gets filed (decision D4).
+   *
+   * Until D4 the playbook schema required `seatDpa` on exactly one shape, nothing read it at
+   * escalation time, and "the user's own Land DPA" — the correct venue for a US broker with no
+   * German establishment — could not be written down at all. So an ops reviewer looking at a drafted
+   * complaint had to go and find the venue in a spreadsheet, and a MISSING venue was
+   * indistinguishable from a deliberately dynamic one. Now the playbook says which, and this carries
+   * the answer to the screen.
+   *
+   * `kind: 'USER_RESIDENCE'` deliberately arrives with `dpa: null`. Resolving it needs the data
+   * subject's Land, and this payload does not carry subject data (see the header) — nor does the
+   * postcode → Land → authority map exist yet.
+   * TODO(counsel): OQ-20 — that map, and whether one-stop-shop applies to any of these controllers.
+   */
+  readonly escalationVenue: { readonly kind: 'SEAT'; readonly dpa: string } | { readonly kind: 'USER_RESIDENCE'; readonly dpa: null } | null;
 }
 
 @Injectable()
@@ -66,6 +89,12 @@ export class OpsService {
     private readonly db: PrismaClient,
     /** The same engine the API schedules deadline timers into; null when no scheduler is configured. */
     private readonly scheduler: WorkflowEngine | null = null,
+    /**
+     * The qualified-timestamp client. Defaults to the unconfigured one, which anchors honestly as
+     * SIMULATED — so a receipt recorded on a machine with no QTSP is still chained, and still
+     * cannot start a statutory clock. See ./timestamper.ts.
+     */
+    private readonly timestamper: Timestamper = new UnconfiguredTimestamper(),
   ) {}
 
   /**
@@ -79,6 +108,7 @@ export class OpsService {
       orderBy: { createdAt: 'asc' },
       include: {
         controller: { select: { slug: true } },
+        playbook: { select: { document: true } },
         events: { orderBy: { createdAt: 'desc' }, take: 5, select: { type: true, payload: true, createdAt: true } },
       },
     });
@@ -97,6 +127,7 @@ export class OpsService {
         clockIsProvable: r.provableSendConfirmedAt !== null,
         reason: payload?.reason ?? payload?.note ?? null,
         queuedAt: explaining?.createdAt ?? r.createdAt,
+        escalationVenue: venueOf(r.playbook.document),
       };
     });
   }
@@ -179,6 +210,183 @@ export class OpsService {
       });
     });
     return { state: result.to };
+  }
+
+  /**
+   * Record a carrier's delivery receipt (Auslieferungsbeleg) by hand, and — if it qualifies — start
+   * the Art. 12(3) clock from it. This is the MANUAL half of audit F3a, and today it is the only
+   * half that exists.
+   *
+   * Why a manual route at all. Automated receipt retrieval is blocked on the postal vendor (OQ-11),
+   * but the receipt itself is a piece of paper that arrives in an office. Making the statutory clock
+   * wait for a vendor integration would mean the product's central legal mechanism stays unreachable
+   * for a reason that has nothing to do with the law. So an ops human types in what the receipt says,
+   * and the retrieval job — when it exists — will apply exactly the same transition with exactly the
+   * same evidence. Automation replaces the ACTOR here, not the rule.
+   *
+   * The ordering is deliberate and copied from the postal channel:
+   *
+   *   1. anchor and persist the POSTAL_PROOF evidence UNCONDITIONALLY. A carrier receipt is
+   *      meaningful evidence whether or not our anchor turns out to be qualified; losing it would be
+   *      worse than being unable to use it.
+   *   2. THEN try to mint the branded `ProvableSendEvidenceId` from the persisted record. There is
+   *      no other constructor, and it refuses a simulated anchor, a non-carrier origin, or a record
+   *      that does not reference this receipt.
+   *   3. Only a successful mint reaches `apply()`. A refusal returns 409 with the machine-readable
+   *      reason, the receipt already stored, and the request still in AWAITING_DELIVERY_PROOF.
+   *
+   * TODO(safety): `origin: 'CARRIER'` is asserted by the ops human, who is looking at the carrier's
+   * paper receipt. That is an attestation, not a machine fact — which is why the route is behind the
+   * ops role, why the attesting user id goes into the RequestEvent payload, and why the retrieval
+   * job (which gets `origin` from the carrier's own API) is the better long-term source.
+   * TODO(counsel): whether a scanned Auslieferungsbeleg re-keyed by an operator, anchored at a QTSP
+   * at re-keying time, is sufficient evidence of the delivery DATE before a DPA — or whether the
+   * carrier's own electronic record must be fetched — is a legal question, not an engineering one.
+   */
+  async recordDeliveryProof(
+    requestId: string,
+    input: { readonly trackingRef: string; readonly deliveredAt: Date; readonly storageRef: string },
+    opsUserId: string,
+  ): Promise<{ state: string; deadlineAt: Date | null; evidenceId: string; clockStarted: boolean }> {
+    const snapshot = await this.mustLoad(requestId);
+    if (snapshot.state !== 'AWAITING_DELIVERY_PROOF' && snapshot.state !== 'SENT') {
+      throw new ConflictException({
+        error: 'NO_LODGEMENT_AWAITING_PROOF',
+        message:
+          `request is in ${snapshot.state}; a delivery receipt can only be recorded against a ` +
+          'registered send that is lodged (AWAITING_DELIVERY_PROOF) or still acknowledging (SENT)',
+        nextAction: 'VIEW_REQUEST',
+      });
+    }
+    const now = new Date();
+    if (input.deliveredAt.getTime() > now.getTime()) {
+      throw new BadRequestException({
+        error: 'DELIVERY_IN_FUTURE',
+        message: 'a delivery receipt cannot evidence a delivery that has not happened yet',
+      });
+    }
+
+    const proof: DeliveryProof = {
+      kind: 'EINWURF_EINSCHREIBEN',
+      trackingRef: input.trackingRef,
+      deliveredAt: input.deliveredAt,
+      // Attested by the ops human from the carrier's paper receipt — see the TODO(safety) above.
+      origin: 'CARRIER',
+    };
+    // The chained content names the receipt, the delivery time and who attested it, so the ledger
+    // records not just THAT a proof exists but which one and on whose word.
+    const content = `POSTAL_PROOF requestId=${requestId} tracking=${proof.trackingRef} delivered=${proof.deliveredAt.toISOString()} attestedBy=${opsUserId}`;
+    const record = await this.appendPostalProof(requestId, content, input.storageRef, proof, now);
+
+    let evidenceId;
+    try {
+      evidenceId = provableSendEvidenceIdOf(record, proof);
+    } catch (e) {
+      if (!(e instanceof UnprovableSendError)) throw e;
+      // Fail CLOSED, and say exactly why. The receipt is stored (step 1 above); what is missing is
+      // the qualified time, and no amount of ops privilege can supply it.
+      throw new ConflictException({
+        error: `UNPROVABLE_${e.reason}`,
+        message:
+          `the receipt was recorded as evidence ${record.id}, but it cannot start the Art. 12(3) ` +
+          `clock: ${e.message}`,
+        nextAction: 'VIEW_REQUEST',
+      });
+    }
+
+    const result = apply(snapshot, 'provableSendConfirmed', {
+      actor: 'HUMAN_OPS',
+      now,
+      // THE point of the whole async path: the month runs from when the carrier says it was
+      // delivered, not from when a person got round to typing it in.
+      deliveredAt: input.deliveredAt,
+      provableSendEvidenceId: evidenceId,
+      reason: `delivery receipt ${proof.trackingRef} recorded by ops`,
+    });
+    await this.persist(requestId, result, { opsUserId, evidenceId: record.id, trackingRef: proof.trackingRef });
+    if (result.patch.deadlineAt) await this.armDeadline(requestId, 'statutory', result.patch.deadlineAt);
+    return { state: result.to, deadlineAt: result.patch.deadlineAt ?? null, evidenceId: record.id, clockStarted: true };
+  }
+
+  /**
+   * Append the POSTAL_PROOF record, or return the existing one for the same receipt.
+   *
+   * Idempotent on the content hash because a re-submitted receipt is the SAME fact, and an
+   * append-only ledger cannot be tidied up afterwards: a double-click that chained the same
+   * Auslieferungsbeleg twice would leave two immortal records of one delivery.
+   */
+  private async appendPostalProof(
+    requestId: string,
+    content: string,
+    storageRef: string,
+    proof: DeliveryProof,
+    now: Date,
+  ): Promise<EvidenceRecord> {
+    const sha256 = sha256Hex(content);
+    const existing = await this.db.evidenceRecord.findFirst({ where: { requestId, kind: 'POSTAL_PROOF', sha256 } });
+    if (existing) {
+      return {
+        id: existing.id,
+        requestId,
+        kind: 'POSTAL_PROOF',
+        sha256: existing.sha256,
+        prevHash: existing.prevHash,
+        chainHash: existing.chainHash,
+        qualifiedTimestamp:
+          existing.qualifiedTimestampRef === null || existing.anchorKind === null
+            ? null
+            : existing.anchorKind === 'QUALIFIED'
+              ? { kind: 'QUALIFIED', tsaRef: existing.qualifiedTimestampRef, signedAt: existing.createdAt, algorithm: 'sha256' }
+              : {
+                  kind: 'SIMULATED',
+                  tsaRef: existing.qualifiedTimestampRef,
+                  signedAt: existing.createdAt,
+                  algorithm: 'sha256',
+                  reason: 'anchor recorded as SIMULATED when this record was written',
+                },
+        storageRef: existing.storageRef,
+        createdAt: existing.createdAt,
+      };
+    }
+
+    const last = await this.db.evidenceRecord.findFirst({
+      where: { requestId },
+      orderBy: { createdAt: 'desc' },
+      select: { chainHash: true },
+    });
+    // `appendEvidence` is what anchors: POSTAL_PROOF is clock-critical, so it calls the timestamper
+    // itself and records whatever kind of anchor it got — honestly, including SIMULATED.
+    const built = await appendEvidence(
+      {
+        requestId,
+        kind: 'POSTAL_PROOF',
+        content,
+        // The storageRef must name the receipt: `provableSendEvidenceIdOf` refuses a record whose
+        // storageRef does not reference the trackingRef it claims to anchor (PROOF_MISMATCH), which
+        // is what stops the outbound letter's own evidence being passed off as a delivery proof.
+        storageRef: storageRef.includes(proof.trackingRef) ? storageRef : `${storageRef}#${proof.trackingRef}`,
+        prevHash: last?.chainHash ?? null,
+        now,
+        idFactory: () => 'pending',
+      },
+      this.timestamper,
+    );
+    const created = await this.db.evidenceRecord.create({
+      data: {
+        requestId,
+        kind: 'POSTAL_PROOF',
+        sha256: built.sha256,
+        prevHash: built.prevHash,
+        chainHash: built.chainHash,
+        qualifiedTimestampRef: built.qualifiedTimestamp?.tsaRef ?? null,
+        anchorKind: built.qualifiedTimestamp?.kind ?? null,
+        storageRef: built.storageRef,
+      },
+      select: { id: true },
+    });
+    // The DB-assigned id is what gets branded, so the id authorising the clock is the id of a row
+    // that actually exists (the worker's adapter does the same).
+    return { ...built, id: created.id };
   }
 
   async discardEscalation(requestId: string, opsUserId: string): Promise<{ state: string; outcome: string | null }> {
@@ -354,6 +562,21 @@ export class OpsService {
     }
   }
 
+  /**
+   * Arm a durable timer for a clock this surface just started.
+   *
+   * The timestamp is part of the key (the worker's convention, audit F7): pg-boss dedupes on the
+   * singleton key, so re-arming the same kind for the same request would otherwise be swallowed
+   * while the spent key still exists.
+   */
+  private async armDeadline(requestId: string, kind: 'statutory' | 'provisional' | 'proof', at: Date): Promise<void> {
+    if (!this.scheduler) return;
+    await this.scheduler.schedule(`deadline:${requestId}:${kind}:${at.getTime()}`, at, {
+      name: 'deadline-expiry',
+      payload: { requestId, kind },
+    });
+  }
+
   private async persist(
     id: string,
     t: TransitionResult,
@@ -363,6 +586,16 @@ export class OpsService {
     const data: Record<string, unknown> = { state: t.to };
     if (t.patch.outcome !== undefined) data.outcome = t.patch.outcome;
     if (t.patch.closedAt !== undefined) data.closedAt = t.patch.closedAt;
+    // The clock columns are written here too, for the same reason the requests repository writes
+    // them: `apply()` is the only thing that may compute them, so whatever it put in the patch must
+    // reach the row atomically with the state change. Before the manual delivery-proof route no ops
+    // transition touched a clock, so this block did not exist — and adding the route without it
+    // would have moved the request into AWAITING_RESPONSE with `deadlineAt` still null, i.e. into
+    // the one state whose entire meaning is that a deadline is running.
+    if (t.patch.deadlineAt !== undefined) data.deadlineAt = t.patch.deadlineAt;
+    if (t.patch.provisionalDeadlineAt !== undefined) data.provisionalDeadlineAt = t.patch.provisionalDeadlineAt;
+    if (t.patch.proofDueAt !== undefined) data.proofDueAt = t.patch.proofDueAt;
+    if (t.patch.provableSendConfirmedAt !== undefined) data.provableSendConfirmedAt = t.patch.provableSendConfirmedAt;
     await this.db.$transaction(async (tx) => {
       // Compare-and-swap on the from-state: two reviewers acting on one ticket must yield ONE
       // transition and ONE event in the append-only log — the loser sees a conflict and re-loads,
@@ -399,7 +632,7 @@ export class OpsService {
       id: r.id, state: r.state as RequestSnapshot['state'], userId: r.userId, controllerId: r.controllerId,
       requestType: String(r.requestType),
       provableSendConfirmedAt: r.provableSendConfirmedAt, deadlineAt: r.deadlineAt,
-      provisionalDeadlineAt: r.provisionalDeadlineAt,
+      provisionalDeadlineAt: r.provisionalDeadlineAt, proofDueAt: r.proofDueAt,
       // Invariant 3b reads this: a controller's own reply proves receipt where no provable send does.
       hasControllerResponse: r.responses.length > 0,
       reviewedByHuman: false, parseConfidence: null,
@@ -407,6 +640,21 @@ export class OpsService {
       outcome: (r.outcome ?? null) as RequestSnapshot['outcome'],
     };
   }
+}
+
+/**
+ * Read the venue off the playbook document. Two fields, one answer, and never both.
+ *
+ * The schema's C2 conditional (D4) insists that any playbook which can reach ESCALATION_DRAFTED
+ * declares `seatDpa` OR `venue`, so `null` here means the playbook predates that rule or is not an
+ * escalating one — it is never a silent default to some fallback authority. Guessing a venue would
+ * be worse than showing none: a complaint filed at the wrong authority is not a small mistake.
+ */
+function venueOf(document: unknown): OpsQueueItem['escalationVenue'] {
+  const doc = document as { seatDpa?: unknown; venue?: unknown } | null;
+  if (typeof doc?.seatDpa === 'string' && doc.seatDpa.length > 0) return { kind: 'SEAT', dpa: doc.seatDpa };
+  if (doc?.venue === 'USER_RESIDENCE') return { kind: 'USER_RESIDENCE', dpa: null };
+  return null;
 }
 
 function toVerifiedIdentity(row: {

@@ -51,6 +51,13 @@ If any task appears to weaken identity binding, treat it as a blocker and say so
      it is never `deadlineAt`, and is never asserted to a controller or a DPA as a statutory deadline.
    - **`deadlineAt` (the Art. 12(3) clock) is set only by a provable send** — a verifiable postal channel
      (Einwurf-Einschreiben) whose receipt is anchored with a qualified eIDAS timestamp.
+   - **The provable send may be confirmed asynchronously, and the month runs from DELIVERY.** A carrier
+     does not hand over the Auslieferungsbeleg at the counter, so a registered *lodgement*
+     (Einlieferung) sets **no clock at all** and parks the request in `AWAITING_DELIVERY_PROOF`; the
+     receipt, whenever it arrives — fetched by the retrieval job or recorded by an ops human from the
+     paper original — applies the same `provableSendConfirmed`. The month is measured from the time the
+     receipt evidences, never from when we fetched it: queue latency is ours to bear, not statutory time
+     to give away. A receipt that never arrives goes to a **human**, never to an escalation.
    - On silence after a provisional send, the user is asked to authorise a **registered re-send**. That
      re-send starts a **fresh** Art. 12(3) month from the registered send time.
    - **No path into `ESCALATION_DRAFTED` may rest on a provisional clock.** Escalating on *silence*

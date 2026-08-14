@@ -114,6 +114,7 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
       provableSendConfirmedAt: null,
       deadlineAt: null,
       provisionalDeadlineAt: null,
+      proofDueAt: null,
       hasControllerResponse: false,
       reviewedByHuman: false,
       parseConfidence: null,
@@ -160,6 +161,7 @@ export class InMemoryRequestsRepository implements CreateRequestPort {
       state: t.to,
       deadlineAt: p.deadlineAt !== undefined ? p.deadlineAt : r.deadlineAt,
       provisionalDeadlineAt: p.provisionalDeadlineAt !== undefined ? p.provisionalDeadlineAt : r.provisionalDeadlineAt,
+      proofDueAt: p.proofDueAt !== undefined ? p.proofDueAt : r.proofDueAt,
       provableSendConfirmedAt: p.provableSendConfirmedAt !== undefined ? p.provableSendConfirmedAt : r.provableSendConfirmedAt,
       outcome: p.outcome !== undefined ? p.outcome : r.outcome,
       // A controller reply proves receipt (invariant 3b reads this flag) — record it on the ingest

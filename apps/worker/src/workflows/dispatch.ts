@@ -12,6 +12,7 @@ import {
 } from '@scraper/core';
 import { HUMAN_QUEUE_REASON, humanQueue, type RecordHumanQueueEntry } from '../channels/human-queue.js';
 import { eventFor, type SendOutcome } from '../channels/types.js';
+import type { DeadlinePayload } from './deadline.js';
 import type { GatewaySendRequest, OutboundGateway } from '../gateway/controller-gateway.js';
 import { planDispatch, type DispatchPlan } from './provenance.js';
 
@@ -220,7 +221,10 @@ export async function applySendOutcome(
     actor: 'SYSTEM',
     now,
     deadlineDays,
-    ...(outcome.kind === 'DELIVERY_PROVEN' ? { provableSendEvidenceId: outcome.evidenceId } : {}),
+    ...(outcome.kind === 'DELIVERY_PROVEN'
+      ? { provableSendEvidenceId: outcome.evidenceId, deliveredAt: outcome.deliveredAt }
+      : {}),
+    ...(outcome.kind === 'REGISTERED_LODGED' ? { reason: outcome.note } : {}),
     ...(outcome.kind === 'FAILED' ? { reason: outcome.reason } : {}),
   });
   await deps.applyTransition(sent.id, result);
@@ -229,6 +233,13 @@ export async function applySendOutcome(
     await schedule(deps, sent.id, 'statutory', result.patch.deadlineAt);
     return `${sent.id}: provable send confirmed → AWAITING_RESPONSE, Art. 12(3) clock to ${result.patch.deadlineAt.toISOString()}`;
   }
+  if (result.patch.proofDueAt) {
+    // NOT a deadline timer. This one only decides when to stop waiting on the carrier and put the
+    // request in front of a person — see deadline.ts, where its expiry goes to NEEDS_HUMAN and
+    // emphatically not to an escalation draft.
+    await schedule(deps, sent.id, 'proof', result.patch.proofDueAt);
+    return `${sent.id}: registered send LODGED → AWAITING_DELIVERY_PROOF, no clock runs; delivery receipt chased until ${result.patch.proofDueAt.toISOString()}`;
+  }
   if (result.patch.provisionalDeadlineAt) {
     await schedule(deps, sent.id, 'provisional', result.patch.provisionalDeadlineAt);
     return `${sent.id}: non-provable send → AWAITING_RESPONSE_PROVISIONAL, provisional hint to ${result.patch.provisionalDeadlineAt.toISOString()} (NOT a statutory deadline)`;
@@ -236,7 +247,7 @@ export async function applySendOutcome(
   return `${sent.id}: send failed → NEEDS_HUMAN (${outcome.kind === 'FAILED' ? outcome.reason : outcome.kind})`;
 }
 
-async function schedule(deps: DispatchDeps, requestId: string, kind: 'provisional' | 'statutory', at: Date): Promise<void> {
+async function schedule(deps: DispatchDeps, requestId: string, kind: DeadlinePayload['kind'], at: Date): Promise<void> {
   if (!deps.engine) {
     deps.log(`no workflow engine configured — ${kind} deadline for ${requestId} is NOT armed`);
     return;

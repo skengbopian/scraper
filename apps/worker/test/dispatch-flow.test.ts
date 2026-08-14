@@ -49,7 +49,7 @@ function playbook(over: Partial<Playbook> = {}): Playbook {
 function row(pb: Playbook, over: Partial<DispatchableRequest> = {}): DispatchableRequest {
   const snapshot: RequestSnapshot = {
     id: 'req_1', state: 'READY', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
-    provableSendConfirmedAt: null, deadlineAt: null, provisionalDeadlineAt: null,
+    provableSendConfirmedAt: null, deadlineAt: null, provisionalDeadlineAt: null, proofDueAt: null,
     hasControllerResponse: false, reviewedByHuman: false, parseConfidence: null,
     humanReviewIfConfidenceBelow: 0.8, outcome: null,
   };
@@ -181,7 +181,12 @@ describe('registered dispatch', () => {
     class CarrierPostal extends StubPostalProvider {
       override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
         const base = await super.send(letter, opts);
-        return base.proof ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const } } : base;
+        // `deliveredAt: NOW`, not the stub's wall-clock `new Date()`. The machine refuses a receipt
+        // that claims a delivery in the future (F3a), and against a frozen test clock the wall clock
+        // IS the future — so a fixture that left it real was asserting an impossible receipt.
+        return base.proof
+          ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const, deliveredAt: NOW } }
+          : base;
       }
     }
     const pb = playbook({
@@ -225,7 +230,12 @@ describe('registered dispatch', () => {
     class CarrierPostal extends StubPostalProvider {
       override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
         const base = await super.send(letter, opts);
-        return base.proof ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const } } : base;
+        // `deliveredAt: NOW`, not the stub's wall-clock `new Date()`. The machine refuses a receipt
+        // that claims a delivery in the future (F3a), and against a frozen test clock the wall clock
+        // IS the future — so a fixture that left it real was asserting an impossible receipt.
+        return base.proof
+          ? { ...base, proof: { ...base.proof, origin: 'CARRIER' as const, deliveredAt: NOW } }
+          : base;
       }
     }
     const pb = playbook({
@@ -341,5 +351,59 @@ describe('prepareDispatch is pure', () => {
       expect(prepared.body).toContain('Erika Mustermann');
       expect(prepared.plan.expectedEvent).toBe('sendAccepted:nonProvable');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// F3a — the asynchronous provable send, end to end through the worker.
+//
+// The default StubPostalProvider returns a receipt for every registered send, which is not what a
+// carrier does. `LodgingPostal` is the honest one: it accepts the letter and returns `proof: null`,
+// exactly like the corrected LetterXpress adapter (audit F3b). Before AWAITING_DELIVERY_PROOF
+// existed this shape took the PROVISIONAL clock and could never be upgraded — so the Art. 12(3)
+// clock was unreachable for every real registered send in production.
+// ---------------------------------------------------------------------------------------------
+class LodgingPostal extends StubPostalProvider {
+  override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+    const base = await super.send(letter, opts);
+    return { ...base, proof: null };
+  }
+}
+
+describe('registered lodgement (the honest carrier)', () => {
+  const POSTAL = playbook({
+    slug: 'test.lodged',
+    channel: { primary: 'postal', registered: { primary: true } },
+    recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+  });
+
+  it('a lodged registered send parks in AWAITING_DELIVERY_PROOF with NO clock', async () => {
+    const h = harness(row(POSTAL, { forceRegistered: true }), new SimulatedTimestamper(), new LodgingPostal());
+    const note = await dispatchReadyRequest(h.deps, 'req_1');
+
+    expect(h.transitions.map((t) => t.result.to)).toEqual(['SENT', 'AWAITING_DELIVERY_PROOF']);
+    const lodged = h.transitions[1]!.result;
+    expect(lodged.event).toBe('registeredSendLodged');
+    expect(lodged.patch.deadlineAt).toBeNull();
+    expect(lodged.patch.provisionalDeadlineAt).toBeNull();
+    expect(lodged.patch.proofDueAt).toEqual(new Date(NOW.getTime() + 14 * 86_400_000));
+    expect(note).toMatch(/no clock runs/);
+  });
+
+  it('arms a PROOF timer, not a deadline timer', async () => {
+    const h = harness(row(POSTAL, { forceRegistered: true }), new SimulatedTimestamper(), new LodgingPostal());
+    await dispatchReadyRequest(h.deps, 'req_1');
+
+    expect(h.scheduled).toHaveLength(1);
+    expect(h.scheduled[0]!.key).toMatch(/:proof:/);
+    expect(h.scheduled[0]!.key).not.toMatch(/:statutory:|:provisional:/);
+  });
+
+  it('the outbound letter is still captured as evidence — the send DID happen', async () => {
+    const h = harness(row(POSTAL, { forceRegistered: true }), new SimulatedTimestamper(), new LodgingPostal());
+    await dispatchReadyRequest(h.deps, 'req_1');
+    expect(h.evidence.filter((e) => e.kind === 'OUTBOUND_COPY')).toHaveLength(1);
+    // ...but no POSTAL_PROOF, because no receipt came back. That asymmetry is the whole state.
+    expect(h.evidence.filter((e) => e.kind === 'POSTAL_PROOF')).toHaveLength(0);
   });
 });

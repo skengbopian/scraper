@@ -12,6 +12,16 @@ import { TRANSITIONS, WITHDRAW_EVENT, type Transition } from './transitions.js';
  * believe the structure still holds.
  */
 
+/**
+ * How long we wait for a carrier's delivery receipt before asking a human.
+ *
+ * TODO(counsel): 14 days is an operational guess, not a legal figure. Deutsche Post's
+ * Einwurf-Einschreiben receipt is retrievable for a bounded window; the right number is whatever the
+ * chosen carrier's retention is, minus our own processing slack. Nothing legal keys off it — it only
+ * decides when `proofRetrievalFailed` puts the request in front of a person.
+ */
+export const PROOF_RETRIEVAL_WINDOW_DAYS = 14;
+
 export interface RequestSnapshot {
   readonly id: string;
   readonly state: RequestState;
@@ -24,6 +34,13 @@ export interface RequestSnapshot {
   readonly deadlineAt: Date | null;
   /** Operational scheduling hint from a non-provable send. NEVER a statutory deadline. */
   readonly provisionalDeadlineAt: Date | null;
+  /**
+   * When to stop waiting for a carrier's delivery receipt and ask a human. Set on a registered
+   * LODGEMENT and non-null only in AWAITING_DELIVERY_PROOF. Weaker than `provisionalDeadlineAt`:
+   * that one at least measures time since something reached the wire, this one only measures our own
+   * patience with a vendor. It is never a deadline of any kind.
+   */
+  readonly proofDueAt: Date | null;
   readonly hasControllerResponse: boolean;
   readonly reviewedByHuman: boolean;
   readonly parseConfidence: number | null;
@@ -46,6 +63,17 @@ export interface TransitionContext {
    * throw at the one place ids are made, rather than a runtime `if` someone can relax later.
    */
   readonly provableSendEvidenceId?: ProvableSendEvidenceId;
+  /**
+   * When the carrier's receipt says the letter was DELIVERED — `DeliveryProof.deliveredAt`.
+   *
+   * Art. 12(3) runs from receipt of the request, so this is what the calendar month is measured from.
+   * It matters because the confirming event can arrive long after delivery: on the asynchronous path
+   * `ctx.now` is when our retrieval job fetched the receipt, and dating the month from THAT would
+   * hand the controller however many days our queue happened to be behind — the user's statutory
+   * time, given away by a scheduling detail. Required on the asynchronous edge (see `apply()`);
+   * optional from SENT, where the receipt was already in hand when the send returned.
+   */
+  readonly deliveredAt?: Date;
   readonly reason?: string;
 }
 
@@ -59,6 +87,7 @@ export interface TransitionResult {
   readonly patch: Partial<{
     deadlineAt: Date | null;
     provisionalDeadlineAt: Date | null;
+    proofDueAt: Date | null;
     provableSendConfirmedAt: Date | null;
     outcome: Outcome | null;
     closedAt: Date | null;
@@ -147,7 +176,12 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
       event,
       actor: ctx.actor,
       at: ctx.now,
-      patch: { outcome: 'WITHDRAWN', closedAt: ctx.now },
+      patch: {
+        outcome: 'WITHDRAWN',
+        closedAt: ctx.now,
+        // A withdrawal from AWAITING_DELIVERY_PROOF spends the retrieval hint like any other exit.
+        ...(req.state === 'AWAITING_DELIVERY_PROOF' ? { proofDueAt: null } : {}),
+      },
       ...(ctx.reason ? { reason: ctx.reason } : {}),
     };
   }
@@ -182,17 +216,53 @@ export function apply(req: RequestSnapshot, event: string, ctx: TransitionContex
           'other constructor, and deliberately no simulated one.',
       );
     }
-    patch.provableSendConfirmedAt = ctx.now;
-    // Art. 12(3) is one CALENDAR month (Reg. 1182/71 / EDPB Guidelines 01/2022 §54): same-numbered
-    // day next month, clamped to month end, extended over Sat/Sun/bundesweite Feiertage, expiring
-    // at Europe/Berlin end of day. `deadlineDays × 24h` fired up to a day early on 31-day months —
-    // an escalation draft alleging silence while the controller legally had time left.
-    // `ctx.deadlineDays` parameterises only the PROVISIONAL hint on the sibling edge.
-    patch.deadlineAt = statutoryDeadlineAt(ctx.now);
+    // ASYNCHRONOUS CONFIRMATION (audit F3a). Coming from AWAITING_DELIVERY_PROOF, `ctx.now` is when
+    // the retrieval job ran, which has nothing to do with when the letter was delivered. Requiring
+    // `deliveredAt` on exactly that edge is what stops a queue backlog from silently extending the
+    // controller's month; from SENT the receipt was already in hand, so `now` is the delivery time
+    // and the field stays optional.
+    if (req.state === 'AWAITING_DELIVERY_PROOF' && !ctx.deliveredAt) {
+      throw new GuardViolationError(
+        'deliveredAt',
+        'confirming a provable send from AWAITING_DELIVERY_PROOF requires ctx.deliveredAt — the time ' +
+          "the carrier's receipt evidences DELIVERY. Dating the Art. 12(3) month from when we fetched " +
+          'the receipt would hand the controller our queue latency as extra statutory time.',
+      );
+    }
+    const deliveredAt = ctx.deliveredAt ?? ctx.now;
+    if (deliveredAt.getTime() > ctx.now.getTime()) {
+      throw new GuardViolationError(
+        'deliveredAt',
+        `the delivery receipt claims delivery at ${deliveredAt.toISOString()}, which is after now ` +
+          `(${ctx.now.toISOString()}). A receipt cannot evidence a future delivery; treat this as a ` +
+          'corrupt or misparsed proof and route it to a human.',
+      );
+    }
+    patch.provableSendConfirmedAt = deliveredAt;
+    // Art. 12(3) is one CALENDAR month (Reg. 1182/71 / EDPB Guidelines 01/2022 §54) from RECEIPT of
+    // the request: same-numbered day next month, clamped to month end, extended over
+    // Sat/Sun/bundesweite Feiertage, expiring at Europe/Berlin end of day. `deadlineDays × 24h`
+    // fired up to a day early on 31-day months — an escalation draft alleging silence while the
+    // controller legally had time left. `ctx.deadlineDays` parameterises only the PROVISIONAL hint.
+    patch.deadlineAt = statutoryDeadlineAt(deliveredAt);
     // The hint is spent: leaving it beside the statutory clock showed a stale provisional date in
     // the ops queue (audit F7). The UI already prefers the statutory clock; the row should agree.
     patch.provisionalDeadlineAt = null;
   }
+
+  // A registered LODGEMENT starts nothing. Einlieferung is not Zustellung: the carrier has the
+  // letter, and until the Auslieferungsbeleg comes back nothing is evidenced — not a statutory
+  // month, and not even the weaker provisional hint, because there is no chase to schedule (the
+  // registered send the chase would ask for has already happened).
+  if (event === 'registeredSendLodged') {
+    patch.deadlineAt = null;
+    patch.provisionalDeadlineAt = null;
+    patch.proofDueAt = new Date(ctx.now.getTime() + PROOF_RETRIEVAL_WINDOW_DAYS * 86_400_000);
+  }
+
+  // Leaving AWAITING_DELIVERY_PROOF spends the retrieval hint, whichever way we leave. A stale
+  // proofDueAt sitting beside a running statutory clock is the audit-F7 confusion again.
+  if (req.state === 'AWAITING_DELIVERY_PROOF') patch.proofDueAt = null;
 
   if (event === 'sendAccepted:nonProvable') {
     if (!ctx.deadlineDays) throw new GuardViolationError('send', 'deadlineDays is required');

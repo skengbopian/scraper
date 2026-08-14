@@ -22,6 +22,12 @@ class AssignInboundDto {
   readonly requestId!: string;
 }
 
+class DeliveryProofDto {
+  readonly trackingRef!: string;
+  readonly deliveredAt!: string;
+  readonly storageRef!: string;
+}
+
 /** docs/03 retention: the raw inbound document is purged after the normalisation window. */
 const RAW_RETENTION_DAYS = 30;
 
@@ -79,6 +85,38 @@ export class OpsController {
   @Post('requests/:id/escalation/discard')
   async discardEscalation(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.service.discardEscalation(id, req.userId);
+  }
+
+  /**
+   * Record a carrier's Auslieferungsbeleg for a lodged registered send (audit F3a, manual half).
+   *
+   * This is the ONLY route in the product that can start an Art. 12(3) clock, and it cannot do so by
+   * asserting anything: it hands the receipt to `provableSendEvidenceIdOf()`, which needs a
+   * carrier-issued proof AND a qualified eIDAS anchor, and refuses otherwise. There is deliberately
+   * no user-facing sibling — the same reasoning as the escalation send: a "my letter arrived" button
+   * on the consumer surface would be a second way to start a legal clock, in everything but name.
+   */
+  @Post('requests/:id/delivery-proof')
+  async recordDeliveryProof(@Req() req: AuthedRequest, @Param('id') id: string, @Body() dto: DeliveryProofDto) {
+    // String() coercion + explicit date validation, the auth controllers' pattern (audit W8/W15):
+    // there is no global validation pipe, and a hostile or fat-fingered date ("45.13.2024") must
+    // produce a handled 400, never an Invalid Date that reaches the state machine.
+    const trackingRef = String(dto.trackingRef ?? '').trim();
+    const storageRef = String(dto.storageRef ?? '').trim();
+    if (!trackingRef || !storageRef) {
+      throw new BadRequestException({
+        error: 'INVALID_DELIVERY_PROOF',
+        message: 'trackingRef and storageRef are required — the receipt must be identifiable and stored',
+      });
+    }
+    const deliveredAt = new Date(String(dto.deliveredAt ?? ''));
+    if (Number.isNaN(deliveredAt.getTime())) {
+      throw new BadRequestException({
+        error: 'INVALID_DELIVERED_AT',
+        message: 'deliveredAt must be a valid ISO-8601 date-time — it is what the statutory month is measured from',
+      });
+    }
+    return this.service.recordDeliveryProof(id, { trackingRef, deliveredAt, storageRef }, req.userId);
   }
 
   @Get('inbound-documents')
