@@ -5,7 +5,7 @@ slug: loeschung.generic-adresshaendler
 kind: RIGHTS_REQUEST
 controller: "__PARAM__"               # set to the concrete Controller.slug when instantiating
 requestType: ERASURE_ART17
-version: 1
+version: 2
 active: false
 parameterised: true                   # stencil: carries __PARAM__ placeholders, so it may never be
                                       # active:true. Clone and fill them to make it sendable.
@@ -32,9 +32,10 @@ validation:
     anyOf:
       - responseContains: ["gelöscht", "Löschung", "entfernt"]
       - structured.erased: true
+  # v2 (audit P6): negated replies must trip the contradiction path, never validate as COMPLIED.
   refusedIf:
     anyOf:
-      - responseContains: ["Aufbewahrungspflicht", "berechtigtes Interesse", "lehnen wir ab"]
+      - responseContains: ["Aufbewahrungspflicht", "berechtigtes Interesse", "lehnen wir ab", "nicht gelöscht", "keine Löschung", "nicht entfernt", "erfolgt nicht"]
   humanReviewIfConfidenceBelow: 0.75
 escalation:
   onDeadlineExpiry: DRAFT_ART77

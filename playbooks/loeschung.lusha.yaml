@@ -7,7 +7,7 @@ slug: loeschung.lusha
 kind: RIGHTS_REQUEST
 controller: lusha
 requestType: ERASURE_ART17
-version: 1
+version: 2
 active: false
 legalBasis: "DSGVO Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1"
 channel:
@@ -28,9 +28,12 @@ validation:
     anyOf:
       - responseContains: ["gelöscht", "Löschung", "entfernt", "deleted", "removed from"]
       - structured.erased: true
+  # v2 (audit P6): negated replies must trip the contradiction path, never validate as COMPLIED —
+  # "nicht gelöscht" contains the compliedIf needle "gelöscht", so without these the erasure
+  # REJECTION letter satisfied compliedIf alone and auto-closed the case as success.
   refusedIf:
     anyOf:
-      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline"]
+      - responseContains: ["berechtigtes Interesse", "lehnen wir ab", "legitimate interest", "we decline", "nicht gelöscht", "keine Löschung", "nicht entfernt", "erfolgt nicht", "not deleted", "will not remove", "cannot delete"]
   humanReviewIfConfidenceBelow: 0.75
 escalation:
   onDeadlineExpiry: NONE

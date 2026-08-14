@@ -24,40 +24,40 @@
     "sha256": "dc52b4ad35bc28140ca13f8f393b09e84d97c0efdc05024fcbf697379e66568f"
   },
   "loeschung.apollo": {
-    "version": 1,
-    "sha256": "3081cca5fd3cb7c32a53b5423256f0df045754ef79ac369fddacd4de301410ec"
+    "version": 2,
+    "sha256": "c55278a0d1eba1cf96c0e909235af58f2a5d0eda1135c480528edef37a55a983"
   },
   "loeschung.cognism": {
-    "version": 1,
-    "sha256": "d8ee415a17aa39868eba61a97278e42893836f437b9c63c42a23b8bc0cc843bf"
+    "version": 2,
+    "sha256": "b0d6c5ee3d1112aeff896e1e9e7603ed608650702ba3485a24214c7adeaa6eb1"
   },
   "loeschung.generic-adresshaendler": {
-    "version": 1,
-    "sha256": "f9d1e817796b91a2e957550ab3c297ceaf976ab0260c30129dc9175d896c9b64"
+    "version": 2,
+    "sha256": "6148a3a0d862212b8c3a5dd364da6273eb0f12334ab2b79bab917d642a373103"
   },
   "loeschung.generic-datenhaendler": {
-    "version": 1,
-    "sha256": "f0950d9c2d432d062d1f94ae3c5e3a7254662a5b9155cb664f9d96e9b13594d8"
+    "version": 2,
+    "sha256": "49aeb0e19df5ec2c939a01ab50acbb8164fd6866252fc05350303e86d03ff86f"
   },
   "loeschung.hireright": {
     "version": 1,
     "sha256": "37e0f7a7fd79a97f62ad12beda3adef7b4ac119b67dd20032961e1bf9f64a85c"
   },
   "loeschung.lusha": {
-    "version": 1,
-    "sha256": "c5aa8029813461b8a4b97b7dadc312a2b94b7f81fa9eb8e2d4de2f313694e3f5"
+    "version": 2,
+    "sha256": "7fd6add722d80a85764a5f5916ade1d0575e884f725274bd1dc2350d9fcdcbdd"
   },
   "loeschung.peopledatalabs": {
-    "version": 1,
-    "sha256": "53f3f474bd4f1305f01abfb9fa94235deac4e7a3685cf624c29ddce945aa10d2"
+    "version": 2,
+    "sha256": "ed54e2416504ba99b13c1f1ef335438cb163e16cc77b6456838bc5a42f897f86"
   },
   "loeschung.rocketreach": {
-    "version": 1,
-    "sha256": "5682a4e27f9398a1266e66bd5ceb1df4460ee09e0242808038e3d6ede226beee"
+    "version": 2,
+    "sha256": "950d831ffd95f9e9cbcb32ef8adcd9c7eb6a47b4921dea8e5e860b7c9320ad57"
   },
   "loeschung.zoominfo": {
-    "version": 1,
-    "sha256": "a3e443384f99b03e786424e8ba6e399f15e2eb451d750e7b4e52e5e1fc105761"
+    "version": 2,
+    "sha256": "ba2f2fa426b2f50ee318f0f66c44c9e350e9e34c01149cba2fad1bc1d8a03ba3"
   },
   "provenance.crif": {
     "version": 1,
