@@ -6,8 +6,8 @@
 > line's stricter clock rule and hold unchanged: the `POSTAL_PROOF` evidence requirement (§105) and
 > "correct deadline + a drafted, NOT sent, Art. 77 complaint" (§135) — both are consistent with
 > ADR-012, under which only a registered, QTSP-anchored send sets `deadlineAt` at all.
-> `pnpm readiness` (`scripts/readiness.mjs`) arrives later in wave 1; until then treat every
-> mechanical check here as unverified rather than passed.
+> `pnpm readiness` (`scripts/readiness.mjs`) exists since the 2026-08-13 audit — run it; a ☐ row
+> in its output is a humans-only box no script can tick.
 
 > **Run `pnpm readiness` first.** Everything mechanically checkable is verified
 > by `scripts/readiness.mjs`, split into the two tracks that gate different

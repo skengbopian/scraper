@@ -135,8 +135,12 @@ stop. For the vulnerable-user population that is a targeting aid.
   list — because alias→person is a re-identification surface.
 - Server-side revocable sessions with an idle timeout; instant "sign out
   everywhere".
-- Per-user envelope encryption; only wrapped DEKs leave the KMS.
-- Account-scoped login throttling and no enumeration oracle on any auth path.
+- Per-user envelope encryption; only wrapped DEKs leave the KMS. **IMPLEMENTATION STATUS
+  (2026-08-13 audit): the envelope machinery is live but applied only to the TOTP secret; the KMS
+  is an env-var resolver. See §6 for what this means for the identity row.**
+- Account-scoped login throttling and no enumeration oracle on any auth path. *(Was overstated:
+  `POST /auth/register` answered EMAIL_TAKEN until the 2026-08-13 audit; it now returns an
+  indistinguishable decoy for taken addresses, so the sentence is true again.)*
 
 **Residual risk: LOW–MEDIUM.** Medium because credential stuffing against a
 consumer product is a permanent condition, not a solved problem.
@@ -215,6 +219,14 @@ could invalidate a contract or a claim.
 | Account email, password hash | Life of account | Contract |
 | Verified identity (encrypted) | Life of account; crypto-shred on erasure | Contract |
 | TOTP secret (encrypted) | Life of account | Security (Art. 32) |
+
+> **Row 2 is a TARGET, not the present state** (2026-08-13 audit H2 — counsel must not review a
+> claim as an implementation): `Identity.legalName`, `dateOfBirth` and `IdentityAddress` are today
+> PLAIN columns; the envelope encrypts only the TOTP secret, and no crypto-shred/erasure path
+> exists yet (`userErasedAt` is structurally null, TODO(safety) in auth.service.ts). Both are
+> launch-gated in PRE-SEND-CHECKLIST.md ("Identity, mandate, evidence" + "our own DSR endpoint")
+> and must be TRUE before this DPIA is signed. The credit-file store is likewise not yet
+> segregated (same Postgres role — checklist D6 box).
 | Sessions | 12h absolute / 30min idle; purged after expiry | Security |
 | Aliases | Until burned; burned rows retained as tombstones so the address is never reissued | Contract + safety |
 | Relay idempotency ledger | **[OPS]** short window, set to the provider's retry horizon | Security |
