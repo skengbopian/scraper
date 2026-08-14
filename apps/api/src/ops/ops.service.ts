@@ -4,6 +4,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import {
   apply,
   appendEvidence,
+  openVerifiedIdentity,
   provableSendEvidenceIdOf,
   runGuards,
   sha256Hex,
@@ -17,6 +18,9 @@ import {
   type VerifiedIdentity,
   type WorkflowEngine,
 } from '@scraper/core';
+import { AesGcmEnvelopeCrypto, type PurposeCipher } from '@scraper/core';
+import { kekResolver } from '../auth/auth.service.js';
+import { createPurposeCipher } from '../identity/user-key.store.js';
 import { UnconfiguredTimestamper } from './timestamper.js';
 
 /**
@@ -95,6 +99,14 @@ export class OpsService {
      * cannot start a statutory clock. See ./timestamper.ts.
      */
     private readonly timestamper: Timestamper = new UnconfiguredTimestamper(),
+    /**
+     * The dossier cipher. Ops NEVER renders subject identifiers (see the header) — this exists for
+     * the ONE thing that needs them: `resolve('resend')` re-enters READY, and invariant 1 says every
+     * entry to READY re-runs the full guard set, which includes checking that the request's subject
+     * still equals the verified identity. The plaintext is used inside `runGuards` and leaves this
+     * method in no response.
+     */
+    private readonly cipher: PurposeCipher = createPurposeCipher(db, new AesGcmEnvelopeCrypto(kekResolver())),
   ) {}
 
   /**
@@ -543,7 +555,7 @@ export class OpsService {
       userId: snapshot.userId,
       controllerId: snapshot.controllerId,
       requestType: snapshot.requestType as RequestTypeStatutory,
-      identity: toVerifiedIdentity(identity),
+      identity: await openVerifiedIdentity(this.cipher, identity),
       mandates: mandates.map((m) => ({
         id: m.id, userId: m.userId, scope: m.scope as unknown as RequestTypeStatutory[],
         signedAt: m.signedAt, revokedAt: m.revokedAt,
@@ -657,19 +669,3 @@ function venueOf(document: unknown): OpsQueueItem['escalationVenue'] {
   return null;
 }
 
-function toVerifiedIdentity(row: {
-  id: string; userId: string; status: string; method: string | null; legalName: string | null;
-  dateOfBirth: Date | null; verifiedAt: Date | null; providerRef: string | null;
-  addresses: { street: string; postalCode: string; city: string; country: string; current: boolean; verifiedAt: Date }[];
-}): VerifiedIdentity {
-  return {
-    id: row.id, userId: row.userId, status: row.status as VerifiedIdentity['status'],
-    method: (row.method ?? 'EID') as VerifiedIdentity['method'],
-    legalName: row.legalName ?? '', dateOfBirth: row.dateOfBirth ?? new Date(0),
-    addresses: row.addresses.map((a) => ({
-      street: a.street, postalCode: a.postalCode, city: a.city, country: a.country,
-      current: a.current, verifiedAt: a.verifiedAt,
-    })),
-    verifiedAt: row.verifiedAt, providerRef: row.providerRef,
-  };
-}

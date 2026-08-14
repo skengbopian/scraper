@@ -5,8 +5,8 @@ needed a design or counsel decision first (`AUDIT-2026-08-13.md` §3). Those dec
 this file records what was implemented against them. It is the fix ledger for that list; the audit
 narrative itself stays in the 08-13 file.
 
-Seven of the eight landed. **D2/D3 (two-key envelope encryption + crypto-shred erasure) did not** —
-see §3, which says plainly what that means for the DPIA and for launch.
+All eight landed, D2/D3 in two passes: **pass 1 (identity + erasure) is implemented**; pass 2
+(credit-file sealing + the M4 role split) is not — see §3.
 
 ## 1. What this pass implemented
 
@@ -134,45 +134,65 @@ Recorded because both were found by gates rather than by review, which is the ar
   registered letter that nothing has happened. The project rule is that every screen states the next
   action; a pipeline showing no progress after a send does not.
 
-## 3. NOT implemented: D2/D3 — two-key encryption and crypto-shred erasure
+## 3. D2/D3 — pass 1 implemented, pass 2 outstanding
 
-**Identity PII and credit-file contents are still plaintext at rest, and there is still no account
-erasure path.** `Identity.legalName`, `Identity.dateOfBirth`, `IdentityAddress` line fields and
-`CreditFileEntry.{reportedBy,label,amountCents,raw}` are unchanged from the 08-13 audit's H2/W14
-findings.
+The decision was to stage it (B2): identity first, credit-file second. Identity is what *generates a
+letter* and is what a stolen dump most directly weaponises; `CreditFileEntry` is advisory parser
+output that never drives an irreversible action. Splitting there means the DPIA stops overstating
+after pass 1 rather than after both.
 
-Why it is not here: the change is a schema migration, a data migration of existing rows, a rewrite of
-every read and write path in the API and the worker (the worker derives the subject at dispatch, so it
-becomes a key-holder too), an erasure endpoint, the M4 credit-store role split, and a DPIA rewrite. It
-is all-or-nothing — a schema change without the repository rewrites leaves the tree broken — and it did
-not fit the working window this pass had. Starting it and stopping half way would have been worse than
-not starting.
+### Pass 1 — landed
 
-What was **not** done as a substitute, deliberately: erasure-by-scrub without encryption. It is
-buildable today and it is a different design from the one chosen, and quietly shipping a rejected
-alternative is worse than shipping nothing.
+- **Two keys per user** in a `UserKey` table (`DOSSIER`, `EVIDENCE`), plus the pre-existing AUTH key
+  on `User.wrappedDek`, which stays separate so a dossier compromise does not open the second factor.
+  `wrappedDek IS NULL` means shredded, and a CHECK keeps that in step with `shreddedAt`: material
+  without a stamp is a corruption, a stamp without material is a claim the bytes contradict.
+- **`Identity.legalName`/`dateOfBirth` and `IdentityAddress` lines are sealed** under DOSSIER.
+  Migrations 0016 (additive) → backfill script → 0017 (drops the plaintext, and REFUSES to run until
+  the backfill has sealed every row, checking the rows rather than trusting an operator's word).
+  0018 re-points the 0005 identity-freeze trigger at the sealed columns — PL/pgSQL resolves columns
+  at execution time, so dropping them left the function silently broken.
+- **The subject snapshot in `RequestEvent` is sealed under EVIDENCE.** This is what makes the erasure
+  real: that table is append-only by trigger, so a plaintext name there would have outlived any
+  erasure forever, and shredding the dossier while the ledger still named the person is not an
+  erasure. EVIDENCE rather than DOSSIER because the snapshot proves the request was about the
+  verified account holder and nobody else — the anti-stalker binding and the Art. 17(3)(e) defence
+  in one record — so it must survive erasure to a bounded window.
+- **`DELETE /auth/account`**, step-up gated: shred DOSSIER, shred AUTH, delete credential and
+  recovery codes, delete credit-file rows (crude but correct until pass 2 seals them), scrub email to
+  a digest, revoke every session, stamp `userErasedAt` — which finally makes `evaluateSession`'s
+  USER_ERASED branch reachable after three waves of being structurally null. Idempotent: a second
+  request must not rewrite the first stamp, because that date is the evidence and the date the
+  EVIDENCE window is measured from.
+- **The worker is now a key-holder**, stated in the code rather than discovered later: the subject is
+  derived at send time from the Identity row, so sealing it does not move the identity out of that
+  process.
 
-Consequences to hold on to:
+### Pass 2 — outstanding
 
-- `docs/11-dpia.md` §6 **keeps its "this row is a TARGET, not the present state" warning.** It comes out
-  when the implementation lands, not before. A DPIA that describes an intention as a control is the
-  failure mode this repo has already corrected once.
-- `pnpm readiness` still shows the counsel box *"DPIA signed AFTER §6 reflects implementation (identity-PII
-  encryption + crypto-shred are open)"* unticked. That is accurate.
-- The design decision itself stands and does not need re-taking: two keys per user (DOSSIER, shredded
-  immediately on Art. 17; EVIDENCE, retained to a limitation window then shredded by a job), a
-  `UserKey` table rather than more columns on `User`, reusing `AesGcmEnvelopeCrypto` and `KekResolver`.
-  The first concrete step is the schema + migration + the key store, and the honest scope note is that
-  it only pays off in the same pass that converts the columns.
-- The threat model, when it does land, must be written down as **"a stolen DB dump or backup"** and not
-  a word more. Both the API and the worker will hold the DOSSIER key, so a compromised application
-  process is not covered.
+`CreditFileEntry.{reportedBy, label, amountCents, raw}` is still plaintext, and the credit-file store
+still shares the main Postgres role (M4, checklist D6). Erasure deletes those rows today, which is a
+correct erasure by a cruder mechanism; sealing them under DOSSIER makes the delete redundant.
+
+### What the DPIA now says, and what it deliberately does not
+
+§6 describes the implemented two-key model and the "this row is a TARGET" warning is gone, because
+the row is no longer a target. Three things are stated as limits rather than softened:
+
+- **The threat closed is a stolen database dump or backup.** Not a compromised application process —
+  both the API and the worker hold the DOSSIER key while they work — and not a compromised KEK.
+- **Backups are the honest gap.** A shred destroys the live key; a backup taken before it still
+  contains one, so erasure completes when that backup expires. R6 moves from UNRESOLVED to
+  partly-resolved with the backup half named as an **[OPS]** decision: short retention, stated, and
+  no completion confirmation to the user earlier than it allows.
+- **The EVIDENCE window is 3 years** from the year-end of the erasure (§ 195 with § 199(1) BGB),
+  marked **[COUNSEL]**. The mechanism is not counsel's question; the number is.
 
 ## 4. Verification
 
-`pnpm -r build` 7/7 · `pnpm -r test` **549 passing** (core 310, api 89, web-next 71, worker 49, i18n 15,
+`pnpm -r build` 7/7 · `pnpm -r test` **552 passing** (core 310, api 91, web-next 71, worker 50, i18n 15,
 doc-sandbox 15; baseline was 525) · spec-audit **0 failures, 0 warnings, 76 checks** · negative fixtures
 **33 cases, base self-check green, 0 wrong-direction results** · version seal 0 problems · state-machine
-graph 0 structural problems (incl. the new F3a anti-journey) · migrations 0000–0015 deployed to
-`scraper3` **and** `scraper3_test` · axe gate green (light/dark/Leichte Sprache) · API boot smoke green,
+graph 0 structural problems (incl. the new F3a anti-journey) · migrations 0000–0018 deployed to
+`scraper3` **and** `scraper3_test` (0017 refused until the backfill ran, which is the guard working) · axe gate green (light/dark/Leichte Sprache) · API boot smoke green,
 census serving · `pnpm readiness`: **no mechanical failures**, dev posture.

@@ -76,15 +76,24 @@ describe.skipIf(!url)('database invariants (0005 + 0008)', () => {
   });
 
   it('(3) freezes a VERIFIED identity’s subject fields, and allows re-verification via a status change', async () => {
+    // Captured so the row goes back exactly as it was — the seed re-runs against this database and a
+    // fixture identity left holding junk ciphertext would fail to decrypt for every later suite.
+    const { legalNameEnc: original } = await db.identity.findUniqueOrThrow({
+      where: { id: identityId },
+      select: { legalNameEnc: true },
+    });
     await expect(
-      db.identity.update({ where: { id: identityId }, data: { legalName: 'Someone Else' } }),
+      // Any rewrite of the sealed name, not merely a DIFFERENT name: AES-GCM's random IV means
+      // re-sealing the SAME name produces different bytes, so the freeze now asserts "these bytes
+      // were not rewritten", which is strictly tighter than the plaintext comparison it replaced.
+      db.identity.update({ where: { id: identityId }, data: { legalNameEnc: Buffer.from('someone-else-sealed') } }),
     ).rejects.toThrow(/VERIFIED identity is immutable/);
 
     // The legitimate path: leave VERIFIED, then correct, then verify again.
     await db.identity.update({ where: { id: identityId }, data: { status: 'EXPIRED' } });
-    const corrected = await db.identity.update({ where: { id: identityId }, data: { legalName: 'Erika Mustermann-Neu' } });
-    expect(corrected.legalName).toBe('Erika Mustermann-Neu');
-    await db.identity.update({ where: { id: identityId }, data: { status: 'VERIFIED', legalName: 'Erika Mustermann' } });
+    const corrected = await db.identity.update({ where: { id: identityId }, data: { legalNameEnc: Buffer.from('re-verified-sealed') } });
+    expect(corrected.legalNameEnc).toEqual(Buffer.from('re-verified-sealed'));
+    await db.identity.update({ where: { id: identityId }, data: { status: 'VERIFIED', legalNameEnc: original } });
   });
 
   it('(4) freezes a request’s binding while allowing its state to advance', async () => {

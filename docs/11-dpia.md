@@ -217,7 +217,14 @@ old wrapped DEKs silently resurrects every "erased" user's key.**
   **[COUNSEL]** Lawful basis — Art. 89 statistical purposes vs. Art. 6(1)(f) —
   and whether `userId` should be pseudonymised at shred time.
 
-**Residual risk: currently UNRESOLVED.** Do not launch on this one.
+**Residual risk: PARTLY RESOLVED (2026-08-14), and the remainder is the backup
+question.** The mechanism now exists: the DOSSIER key is destroyed on erasure and
+the dossier is unreadable from that moment (§6). What is NOT resolved is that a
+backup taken before the shred still contains the key, so the erasure completes
+only when that backup expires — and that is an operations decision, not an
+engineering one. **[OPS]** set and state a short backup retention, and do not
+confirm completion to the user earlier than it allows. Do not launch on the
+backup half.
 
 ### R7 — Alias misuse damages the user (LOW–MEDIUM)
 An alias used where a real identity is legally required (Art. 5(1)(d) accuracy)
@@ -233,19 +240,73 @@ could invalidate a contract or a claim.
 
 ## 6. Data minimisation and retention
 
+### The mechanism: two keys per user, and what destroying one does
+
+Identity fields and address lines are **sealed at rest under a per-user DOSSIER
+key** (AES-256-GCM envelope; migrations 0016–0018, implemented 2026-08-14). The
+subject snapshot carried in the append-only request ledger is sealed under a
+separate **EVIDENCE key**. Art. 17 erasure destroys the first key and leaves the
+second, and `DELETE /auth/account` performs it.
+
+Deletion was never available and this is not a preference. `RequestEvent` and
+`EvidenceRecord` are append-only by database trigger, so the erasure cascades the
+schema declared could never fire — the promised endpoint was *unbuildable*, not
+merely unbuilt. Those triggers must stay: an evidence chain that can be edited is
+not evidence. Crypto-shred answers both — the payload becomes permanently
+unreadable, the ledger survives, and `UserKey.shreddedAt` is itself the record
+that the erasure happened and when.
+
+**Why two keys and not one.** Art. 17(3)(e) preserves data needed to establish,
+exercise or defend legal claims. This product sends legal letters in a user's
+name; if a controller later disputes that a request was made, or made lawfully,
+those artefacts are the only answer available. A single key shredded on erasure
+would destroy that defence. So:
+
+| Key | Seals | Lifetime |
+|---|---|---|
+| DOSSIER | `Identity.legalName`, `dateOfBirth`, `IdentityAddress` lines | Shredded **immediately** on Art. 17 erasure |
+| EVIDENCE | the subject snapshot in `RequestEvent` (who a request was about) | Survives erasure to the limitation window, then shredded by a job |
+| AUTH (`User.wrappedDek`) | the TOTP secret | Shredded on erasure; kept separate so a dossier compromise does not open the second factor |
+
+The EVIDENCE window is **three years from the year-end of the erasure** (§ 195
+with § 199(1) BGB). **[COUNSEL]** confirm that window, and whether any claim this
+product could face carries a longer one. The mechanism is not counsel's question;
+the number is.
+
+### The threat model — stated exactly, and no wider
+
+**What this closes: a stolen database dump or backup.** Ciphertext without the
+KEK is not personal data in any usable sense.
+
+**What it does not close: a compromised application process.** Both the API and
+the worker hold the DOSSIER key in memory while they work — the worker must,
+because the request subject is derived at send time from the Identity row rather
+than threaded through a queue, which is what makes the anti-stalker binding true
+end to end. Nor does it close a compromised KEK. No control here should be
+described to a supervisory authority as protecting against either.
+
+**Backups are the honest gap.** A shred destroys the live key; a backup taken
+before the shred still contains it, so erasure completes only when that backup
+expires. **[OPS]** backup retention must therefore be short and stated, and the
+erasure confirmation to the user must not claim completion earlier than the
+retention window allows. See R6.
+
+### Still in the clear, and named rather than implied
+
+`CreditFileEntry.{reportedBy, label, amountCents, raw}` is **not yet sealed** —
+that is pass 2 of this work. Until it lands, erasure DELETES those rows outright
+(they carry no append-only trigger, so deletion is possible where it is not for
+the ledger), which is a correct erasure by a cruder mechanism. The credit-file
+store also still shares the main Postgres role; segregation is checklist box D6
+and is not done.
+
 | Data | Retention | Basis |
 |---|---|---|
-| Account email, password hash | Life of account | Contract |
-| Verified identity (encrypted) | Life of account; crypto-shred on erasure | Contract |
+| Account email, password hash | Life of account; email → digest and credential deleted on erasure | Contract |
+| Verified identity (**sealed under DOSSIER**) | Life of account; **crypto-shred on erasure** | Contract |
+| Request subject snapshot (**sealed under EVIDENCE**) | Erasure + 3 years (§ 195 BGB), then shredded | Art. 17(3)(e) |
+| Credit-file contents (**plaintext — pass 2**) | Life of account; **deleted** on erasure | Contract |
 | TOTP secret (encrypted) | Life of account | Security (Art. 32) |
-
-> **Row 2 is a TARGET, not the present state** (2026-08-13 audit H2 — counsel must not review a
-> claim as an implementation): `Identity.legalName`, `dateOfBirth` and `IdentityAddress` are today
-> PLAIN columns; the envelope encrypts only the TOTP secret, and no crypto-shred/erasure path
-> exists yet (`userErasedAt` is structurally null, TODO(safety) in auth.service.ts). Both are
-> launch-gated in PRE-SEND-CHECKLIST.md ("Identity, mandate, evidence" + "our own DSR endpoint")
-> and must be TRUE before this DPIA is signed. The credit-file store is likewise not yet
-> segregated (same Postgres role — checklist D6 box).
 | Sessions | 12h absolute / 30min idle; purged after expiry | Security |
 | Aliases | Until burned; burned rows retained as tombstones so the address is never reissued | Contract + safety |
 | Relay idempotency ledger | **[OPS]** short window, set to the provider's retry horizon | Security |

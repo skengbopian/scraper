@@ -6,6 +6,7 @@ import {
   AesGcmEnvelopeCrypto,
   DevKekResolver,
   EnvKekResolver,
+  KEY_PURPOSES,
   EnvelopeSecretCipher,
   LOGIN_THROTTLE,
   MFA_THROTTLE,
@@ -19,6 +20,7 @@ import {
   isLockedOut,
   lockoutRemainingSeconds,
   sessionExpiryFrom,
+  sha256Hex,
   type ThrottleState,
   type UserKeyResolver,
 } from '@scraper/core';
@@ -118,6 +120,17 @@ export class AuthService {
         // the ident provider verifies. Auth and identity verification are deliberately separate gates.
         await tx.identity.create({ data: { userId: user.id, status: 'UNVERIFIED' } });
         await tx.recoveryCode.createMany({ data: recovery.hashes.map((codeHash) => ({ userId: user.id, codeHash })) });
+        // The DOSSIER and EVIDENCE keys are minted here, in the SAME transaction as the user, for
+        // the reason the comment above gives about the credential: a user who exists without a
+        // dossier key has an identity row nothing can seal into, and the failure would surface much
+        // later as an identity verification that cannot be saved. Minting is idempotent by the
+        // (userId, purpose) unique index, so the concurrent-registration path below cannot produce a
+        // second DOSSIER key and silently orphan whatever the first one sealed.
+        // See packages/core/src/crypto/user-keys.ts for what each key protects and for how long.
+        for (const purpose of KEY_PURPOSES) {
+          const purposeKey = await crypto.generateWrappedDek(kekRef);
+          await tx.userKey.create({ data: { userId: user.id, purpose, wrappedDek: purposeKey.wrappedDek, kekRef } });
+        }
         return user.id;
       });
     } catch (e) {
@@ -330,6 +343,102 @@ export class AuthService {
     return { mfaVerified: true, remainingCodes, token: rotated };
   }
 
+  /**
+   * Art. 17 erasure — the self-service path the schema promised and could never deliver (audit W14).
+   *
+   * WHY DELETION WAS NEVER AN OPTION. `RequestEvent` and `EvidenceRecord` are append-only by trigger
+   * and hang off the user row, so the cascades declared in the schema could not fire — the promised
+   * erasure endpoint was unbuildable, not merely unbuilt. And they must stay: an evidence chain that
+   * can be edited is not evidence, and Art. 17(3)(e) preserves what is needed to defend legal claims
+   * — which, for a product that sends legal letters in a user's name, is precisely that ledger.
+   *
+   * So the erasure is CRYPTOGRAPHIC. Destroying the DOSSIER key makes everything sealed under it
+   * permanently unreadable; the ledger survives, and `UserKey.shreddedAt` is itself the evidence that
+   * the erasure happened and when. What remains readable afterwards is the shape of the activity —
+   * which controllers were written to, in which state each request ended — and nothing that names a
+   * person.
+   *
+   * FOUR THINGS HAPPEN, and they are four because they have four different justifications:
+   *   1. the DOSSIER key is shredded          — the erasure itself
+   *   2. the AUTH key is shredded             — the TOTP secret becomes unopenable; the account is gone
+   *   3. the residual plaintext is scrubbed   — email → hash, credentials and recovery codes deleted,
+   *      credit-file rows deleted (see below), every session revoked
+   *   4. `userErasedAt` is stamped            — `evaluateSession` has read this since port wave 3 and
+   *      the API has been passing a hardcoded null; this is what finally makes that branch reachable
+   *
+   * The EVIDENCE key is deliberately NOT shredded. It becomes shreddable at
+   * `evidenceShredDueAt(userErasedAt)` — three years from the year-end of the erasure, § 195 with
+   * § 199(1) BGB — and a job destroys it then, which is what bounds the retention rather than leaving
+   * it perpetual. TODO(counsel) on the window; the mechanism is not counsel's question.
+   *
+   * CREDIT-FILE ROWS ARE DELETED, NOT SHREDDED, and that is a stated limitation of this pass rather
+   * than a design: `CreditFileEntry` is still plaintext (pass 2 seals it under DOSSIER, at which
+   * point this delete becomes redundant and comes out). Deleting is correct in the meantime — an
+   * erasure that left a parsed credit file behind would be no erasure at all — and those tables carry
+   * no append-only trigger, so it is possible where it is not possible for the ledger.
+   *
+   * STEP-UP IS REQUIRED. This is the most irreversible action in the product and there is no undo:
+   * one compromised, idle-but-live session must not be able to destroy someone's dossier. The same
+   * gate that guards reading the credit file guards destroying it.
+   */
+  async eraseAccount(token: string): Promise<{ erasedAt: Date; requestsRetained: number }> {
+    const now = new Date();
+    const session = await this.db.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
+    const verdict = evaluateSession(session ? toSessionState(session) : null, now);
+    if (!verdict.ok) throw sessionRejection(verdict.reason);
+    if (!verdict.stepUp) {
+      throw new ForbiddenException({
+        error: 'STEP_UP_REQUIRED',
+        reason: 'STEP_UP_REQUIRED',
+        nextAction: 'CONFIRM_SECOND_FACTOR',
+      });
+    }
+    const userId = session!.userId;
+
+    // ONE transaction. A half-erasure is the worst outcome available here: a shredded key with the
+    // account still usable, or a scrubbed email with the dossier still readable, and no way for the
+    // user to tell which they got.
+    const requestsRetained = await this.db.$transaction(async (tx) => {
+      const already = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { userErasedAt: true } });
+      // Idempotent: a double-submitted erasure must not rewrite the stamp, because the FIRST date is
+      // the one that would be produced as evidence and the one the EVIDENCE window is measured from.
+      if (already.userErasedAt) return tx.rightsRequest.count({ where: { userId } });
+
+      await tx.userKey.updateMany({
+        where: { userId, purpose: 'DOSSIER', shreddedAt: null },
+        data: { wrappedDek: null, shreddedAt: now },
+      });
+      await tx.creditFileSnapshot.deleteMany({ where: { userId } });
+      await tx.authCredential.deleteMany({ where: { userId } });
+      await tx.recoveryCode.deleteMany({ where: { userId } });
+      await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          // The address is replaced by an opaque digest rather than deleted: `email` is UNIQUE and
+          // NOT NULL, and the row must survive to hold the ledger. The digest is not reversible and
+          // does not let the same person be recognised on a future registration — it exists so a
+          // duplicate-erasure or abuse investigation has something to correlate on that is not a
+          // mailbox. TODO(counsel): confirm a salted digest is the right residue here, or whether a
+          // random tombstone with no link to the original address is preferable.
+          email: `erased:${sha256Hex(session!.user.email)}`,
+          wrappedDek: null,
+          kekRef: null,
+          totpEnrolledAt: null,
+          // `totpLastCounter` is deliberately LEFT ALONE. Nulling it rewinds the replay defence, and
+          // 0008's `totp_counter_monotonic` trigger refuses that — correctly, and it refused this
+          // erasure until the line came out. It is an opaque integer that identifies nobody, the
+          // secret it defended is deleted with the credential above, and keeping it costs nothing
+          // while removing it would mean arguing with a safety trigger to erase a number.
+          userErasedAt: now,
+        },
+      });
+      return tx.rightsRequest.count({ where: { userId } });
+    });
+
+    return { erasedAt: now, requestsRetained };
+  }
+
   async logout(token: string): Promise<void> {
     await this.db.session.updateMany({ where: { tokenHash: hashToken(token), revokedAt: null }, data: { revokedAt: new Date() } });
   }
@@ -484,7 +593,8 @@ export class AuthService {
 }
 
 /** KEKs come from the environment in any deployed setting; the dev resolver is allow-listed to dev/test. */
-function kekResolver(): EnvKekResolver | DevKekResolver {
+/** Exported so every key-holding surface in this process resolves KEKs the same way (audit H1). */
+export function kekResolver(): EnvKekResolver | DevKekResolver {
   return process.env.SCRAPER_KEK_MODE === 'env' ? new EnvKekResolver() : new DevKekResolver();
 }
 

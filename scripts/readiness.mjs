@@ -79,7 +79,7 @@ for (const label of [
   'every controller endpoint verified against the CURRENT Datenschutz page (docs/07 TODO(counsel) rows)',
   'Art. 77 venue confirmed per controller (incl. CRIF seat move München→Karlsruhe; HIS operator → Hessen)',
   'RDG structure decided (Inkasso registration vs lawyer white-label)',
-  'DPIA signed AFTER §6 reflects implementation (identity-PII encryption + crypto-shred are open)',
+  'DPIA signed AFTER §6 reflects implementation (identity + erasure landed 2026-08-14; credit-file sealing, DB-role split and the backup window are open)',
   'ident/QTSP/postal contracts signed; stubs disabled; dry run against a test controller done',
 ]) add('COUNSEL', HUMAN, label);
 

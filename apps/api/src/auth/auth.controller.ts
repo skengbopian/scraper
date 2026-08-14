@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, Delete, Headers, Post, UseFilters } from '@nestjs/common';
 import { AuthErrorFilter } from './auth-error.filter.js';
 import { AuthService } from './auth.service.js';
 
@@ -60,6 +60,19 @@ export class AuthController {
    * Redeem a recovery code instead of the TOTP challenge. Completes MFA but deliberately does NOT
    * grant step-up — someone signing in from a code found on paper should not thereby open the file.
    */
+  /**
+   * Art. 17 erasure. Irreversible, step-up gated, and DELETE rather than POST because that is what
+   * it is — the only route in this product that destroys anything.
+   *
+   * There is no ops sibling and there must not be: an erasure a support agent can perform on a user's
+   * behalf is an erasure an attacker can perform on a user's behalf, and unlike every other action
+   * here it cannot be undone or contested afterwards.
+   */
+  @Delete('account')
+  eraseAccount(@Headers('authorization') auth: string | undefined) {
+    return this.service.eraseAccount(bearer(auth));
+  }
+
   @Post('recovery')
   recovery(@Headers('authorization') auth: string | undefined, @Body() dto: RecoveryDto) {
     return this.service.redeemRecoveryCode(bearer(auth), String(dto.code ?? ''));

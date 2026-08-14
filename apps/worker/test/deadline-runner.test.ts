@@ -175,7 +175,15 @@ describe.skipIf(!url)('pg-boss deadline runner (integration)', () => {
     // evidence that it did, and a complaint founded on our own ignorance is worse than none.
     expect(state).toBe('NEEDS_HUMAN');
     expect(state).not.toBe('ESCALATION_DRAFTED');
-    expect(fired.some((f) => f.includes('proof deadline expired'))).toBe(true);
+    // Asserted from the append-only ledger rather than from this test's `fired` array: both tests in
+    // this file register a worker on the same `deadline-expiry` queue, so pg-boss may hand the job
+    // to either handler and the local array is not a reliable witness. The RequestEvent is — and it
+    // is the record that would actually be produced as evidence.
+    const event = await db.requestEvent.findFirstOrThrow({
+      where: { requestId: created.id, type: 'proofRetrievalFailed' },
+    });
+    expect(event.toState).toBe('NEEDS_HUMAN');
+    expect(event.actor).toBe('SYSTEM');
 
     // No clock was started on the way out, and the spent hint is cleared.
     const row = await db.rightsRequest.findUniqueOrThrow({ where: { id: created.id } });

@@ -162,10 +162,21 @@ model User {
   role               UserRole @default(USER)
   createdAt          DateTime @default(now())
 
-  /// Per-user envelope key material (CLAUDE.md §4). The DEK is sealed under a KEK the app does not
-  /// store beside the data; `kekRef` names which KEK, so keys can rotate without re-reading rows.
+  /// The AUTH key: per-user envelope material sealing the TOTP secret (CLAUDE.md §4). The DEK is
+  /// sealed under a KEK the app does not store beside the data; `kekRef` names which KEK, so keys
+  /// can rotate without re-reading rows.
+  ///
+  /// Deliberately NOT merged into `UserKey`: a second factor that shared the DOSSIER key would be
+  /// opened by any DOSSIER compromise and destroyed by a shred that has nothing to do with
+  /// authentication. Erasure nulls this too — the account is gone — but as a separate act.
   wrappedDek            Bytes?
   kekRef                String?
+
+  /// Art. 17 erasure. Non-null means the DOSSIER key has been shredded, the remaining plaintext
+  /// scrubbed, and every session refused (`evaluateSession` → USER_ERASED). The row itself is NEVER
+  /// deleted: `RequestEvent` and `EvidenceRecord` are append-only by trigger and hang off it, so a
+  /// delete could not fire and an orphaned ledger would be worse than a tombstoned user.
+  userErasedAt          DateTime?
 
   /// --- Auth policy (port wave 3, ADR-035) ---------------------------------------------------
   /// When the second factor was enrolled. Null = enrolled but never confirmed.
@@ -188,6 +199,7 @@ model User {
   fraudMarkerFilings    FraudMarkerFiling[]
   provenanceLedgers     ProvenanceLedger[]
   authCredential        AuthCredential?
+  keys                  UserKey[]
   sessions              Session[]
   recoveryCodes         RecoveryCode[]
   creditFileSnapshots   CreditFileSnapshot[]
@@ -200,9 +212,10 @@ model Identity {
   userId      String          @unique
   status      IdentityStatus  @default(UNVERIFIED)
   method      IdentityMethod?
-  /// Encrypt at rest with a per-user envelope key (docs/03 retention section).
-  legalName   String?
-  dateOfBirth DateTime?
+  /// Sealed under the user's DOSSIER key (CLAUDE.md §4). These were plain columns until the
+  /// 2026-08-14 pass; the plaintext ones are dropped by migration 0016 after backfill.
+  legalNameEnc   Bytes?
+  dateOfBirthEnc Bytes?
   verifiedAt  DateTime?
   providerRef String?
   createdAt   DateTime        @default(now())
@@ -217,9 +230,11 @@ model Identity {
 model IdentityAddress {
   id         String   @id @default(cuid())
   identityId String
-  street     String
-  postalCode String
-  city       String
+  /// Sealed under the user's DOSSIER key. `country` stays plaintext: it is not an identifier on its
+  /// own, and the routing/jurisdiction logic reads it without needing a key.
+  streetEnc     Bytes
+  postalCodeEnc Bytes
+  cityEnc       Bytes
   country    String   @default("DE")
   /// Exactly one current address per identity — enforced by a partial unique index in the migration.
   /// Zero means an empty "Anschrift" line goes out in a legal letter; more than one means the
@@ -309,6 +324,39 @@ model Playbook {
   @@index([controllerId])
 }
 
+/// Per-user key material, by PURPOSE — the mechanism behind Art. 17 erasure (audit H2/W14).
+///
+/// A table rather than more columns on `User` because the purposes have different LIFETIMES, and a
+/// lifetime is a row-level fact: DOSSIER is shredded the moment erasure is requested, EVIDENCE
+/// outlives it to a limitation window and is then shredded by a job. Columns would have forced both
+/// to be handled by the same code at the same moment, which is precisely the collapse this design
+/// exists to avoid (see packages/core/src/crypto/user-keys.ts).
+///
+/// `wrappedDek` is NULLABLE and null means SHREDDED. The key material is destroyed; the row stays,
+/// because "this user's dossier key was destroyed on 2026-08-14" is itself the evidence that the
+/// erasure happened, and a deleted row proves nothing.
+model UserKey {
+  id         String         @id @default(cuid())
+  userId     String
+  purpose    UserKeyPurpose
+  /// NULL = shredded. A CHECK keeps this in step with `shreddedAt` — key material without a shred
+  /// stamp is a corruption, not an erasure, and the two must never be confused.
+  wrappedDek Bytes?
+  kekRef     String
+  createdAt  DateTime       @default(now())
+  shreddedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One key per purpose per user. Two DOSSIER keys would mean half the dossier survives a shred.
+  @@unique([userId, purpose])
+}
+
+enum UserKeyPurpose {
+  DOSSIER
+  EVIDENCE
+}
+
 // ---------------------------------------------------------------------------------------------
 // The ticket
 // ---------------------------------------------------------------------------------------------
@@ -367,6 +415,7 @@ model RightsRequest {
   @@index([userId, controllerId, requestType])
   @@index([state])
   @@index([deadlineAt])
+  @@index([proofDueAt])
 }
 
 /// Append-only. No updates, no deletes — corrections are new rows (enforced by triggers).

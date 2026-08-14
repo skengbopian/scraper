@@ -68,8 +68,22 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
     const events = await db.requestEvent.findMany({ where: { requestId: id } });
     expect(events).toHaveLength(1);
     expect(events[0]?.type).toBe('guardsPass');
-    const payload = events[0]?.payload as { subjectLegalName: string };
-    expect(payload.subjectLegalName).toBe('Erika Mustermann');
+    // The subject snapshot is SEALED under the EVIDENCE key (audit W14): `RequestEvent` is
+    // append-only by trigger, so a plaintext name here would outlive an Art. 17 erasure forever.
+    // What the test asserts is therefore that the snapshot is present, opaque, and OPENS to the
+    // right name — proving both halves, which a plaintext assertion could only ever prove one of.
+    const payload = events[0]?.payload as { subjectSnapshotEnc: string; subjectIdentityId: string };
+    expect(payload.subjectSnapshotEnc).toBeTypeOf('string');
+    expect(payload.subjectSnapshotEnc).not.toContain('Erika');
+    const { AesGcmEnvelopeCrypto, DevKekResolver } = await import('@scraper/core');
+    const { createPurposeCipher } = await import('../dist/identity/user-key.store.js');
+    const cipher = createPurposeCipher(db, new AesGcmEnvelopeCrypto(new DevKekResolver()));
+    const opened = JSON.parse(
+      await cipher.openText(DEV_USER_ID, 'EVIDENCE', Buffer.from(payload.subjectSnapshotEnc, 'base64')),
+    ) as { legalName: string };
+    expect(opened.legalName).toBe('Erika Mustermann');
+    // The identity id stays in the clear: it names a ROW, not a person.
+    expect(payload.subjectIdentityId).not.toBe('');
 
     // Idempotency: the duplicate is a guard failure, not a second row.
     await expect(
@@ -90,7 +104,12 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
   it('trigger: a credit-file snapshot for someone else’s identity is unrepresentable', async () => {
     const { DEV_USER_ID } = await import('../dist/common/dev-fixtures.js');
     const other = await db.user.create({ data: { email: 'other@example.com' } });
-    const otherIdentity = await db.identity.create({ data: { userId: other.id, status: 'VERIFIED', legalName: 'Other Person', verifiedAt: new Date() } });
+    // A distinct, recognisable ciphertext rather than a sealed name: this fixture exists to be the
+    // WRONG identity for a credit-file snapshot, and nothing decrypts it — the trigger under test
+    // compares ids, not names.
+    const otherIdentity = await db.identity.create({
+      data: { userId: other.id, status: 'VERIFIED', legalNameEnc: Buffer.from('other-person-fixture'), verifiedAt: new Date() },
+    });
     const controller = await db.controller.findUniqueOrThrow({ where: { slug: 'schufa' } });
 
     await expect(
@@ -126,7 +145,7 @@ describe.skipIf(!url)('prisma adapter + safety triggers (integration)', () => {
         sourceKind: 'UPLOAD', matchAssertedAt: new Date(), parseConfidence: 0.9, rawDocumentHash: 'z'.repeat(64),
       },
     });
-    const other = await db.identity.findFirstOrThrow({ where: { legalName: 'Other Person' } });
+    const other = await db.identity.findFirstOrThrow({ where: { legalNameEnc: Buffer.from('other-person-fixture') } });
     await expect(
       db.creditFileSnapshot.update({ where: { id: snap.id }, data: { identityId: other.id } }),
     ).rejects.toThrow(/rebinding|belongs to another user/);

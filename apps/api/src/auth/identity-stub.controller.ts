@@ -2,7 +2,10 @@ import { BadRequestException, Body, Controller, Post, Req, UseGuards } from '@ne
 // Value import on purpose: Nest resolves the constructor param via emitted metadata, and a
 // type-only import degrades that metadata to Function (unresolvable).
 import { PrismaClient } from '@prisma/client';
+import { AesGcmEnvelopeCrypto, sealAddressLines, sealIdentityFields, type PurposeCipher } from '@scraper/core';
 import { DevOnlyGuard } from '../common/dev-only.guard.js';
+import { createPurposeCipher } from '../identity/user-key.store.js';
+import { kekResolver } from './auth.service.js';
 
 class VerifyStubDto {
   readonly legalName!: string;
@@ -24,7 +27,11 @@ class VerifyStubDto {
 @Controller('identity')
 @UseGuards(DevOnlyGuard)
 export class IdentityStubController {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly cipher: PurposeCipher;
+
+  constructor(private readonly db: PrismaClient) {
+    this.cipher = createPurposeCipher(db, new AesGcmEnvelopeCrypto(kekResolver()));
+  }
 
   @Post('verify-stub')
   async verifyStub(@Req() req: { userId?: string }, @Body() dto: VerifyStubDto) {
@@ -33,13 +40,21 @@ export class IdentityStubController {
     if (!dto.legalName || Number.isNaN(dob.getTime()) || !dto.street || !dto.postalCode || !dto.city) {
       throw new BadRequestException({ error: 'INCOMPLETE', message: 'Name, Geburtsdatum und Anschrift werden benötigt.' });
     }
+    // Sealed under the caller's own DOSSIER key before it reaches the database. `sealIdentityFields`
+    // and `openVerifiedIdentity` are a matched pair in core, so a writer cannot seal under a purpose
+    // the reader will not look for — and the userId is the caller's session user, which is what keeps
+    // "the subject is structurally the CALLER" true through the encryption layer too.
+    const sealed = await sealIdentityFields(this.cipher, req.userId, { legalName: dto.legalName.trim(), dateOfBirth: dob });
+    const address = await sealAddressLines(this.cipher, req.userId, {
+      street: dto.street.trim(), postalCode: dto.postalCode.trim(), city: dto.city.trim(),
+    });
     const identity = await this.db.identity.update({
       where: { userId: req.userId },
       data: {
         status: 'VERIFIED',
         method: 'EID',
-        legalName: dto.legalName.trim(),
-        dateOfBirth: dob,
+        legalNameEnc: sealed.legalNameEnc,
+        dateOfBirthEnc: sealed.dateOfBirthEnc,
         verifiedAt: new Date(),
         providerRef: 'stub',
       },
@@ -48,7 +63,7 @@ export class IdentityStubController {
     await this.db.identityAddress.create({
       data: {
         identityId: identity.id,
-        street: dto.street.trim(), postalCode: dto.postalCode.trim(), city: dto.city.trim(),
+        streetEnc: address.streetEnc, postalCodeEnc: address.postalCodeEnc, cityEnc: address.cityEnc,
         country: 'DE', current: true, verifiedAt: new Date(),
       },
     });

@@ -1,14 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import {
+  AesGcmEnvelopeCrypto,
   deriveErasureScope,
   deriveSubject,
+  openVerifiedIdentity,
   type EvidenceRecord,
   type PartialErasureScope,
   type Playbook,
+  type EnvelopeCrypto,
+  type PurposeCipher,
   type RequestSnapshot,
   type TimestampAnchor,
-  type VerifiedIdentity,
 } from '@scraper/core';
+import { createPurposeCipher } from '@scraper/api/dist/identity/user-key.store.js';
+import { kekResolver } from '@scraper/api/dist/auth/auth.service.js';
 import type { DispatchableRequest } from '../workflows/dispatch.js';
 import type { ControllerResponseRow, IngestibleRequest } from '../workflows/ingest.js';
 
@@ -33,7 +38,21 @@ import type { ControllerResponseRow, IngestibleRequest } from '../workflows/inge
  *    rather than as an unlabelled ref that reads like a QTSP one later.
  */
 export class PrismaWorkerRepository {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly cipher: PurposeCipher;
+
+  /**
+   * THE WORKER IS A KEY-HOLDER, and that is a consequence worth naming rather than discovering.
+   *
+   * The subject is derived at SEND time from the Identity row (ADR-009), never threaded through a
+   * queue — that is what makes "there is no free-typed subject" true end to end. Sealing the dossier
+   * therefore does not move the identity out of this process; it means this process must be able to
+   * open it. So the threat this closes is a stolen DATABASE DUMP OR BACKUP, and it does not close a
+   * compromised application process, because two processes now hold the key while they work.
+   * docs/11 §6 says exactly that and no more.
+   */
+  constructor(private readonly db: PrismaClient, crypto: EnvelopeCrypto = new AesGcmEnvelopeCrypto(kekResolver())) {
+    this.cipher = createPurposeCipher(db, crypto);
+  }
 
   // --- dispatch -------------------------------------------------------------------------------
 
@@ -51,7 +70,11 @@ export class PrismaWorkerRepository {
 
     const identity = r.user.identity;
     if (!identity) return null;
-    const subject = deriveSubject(toVerifiedIdentity(identity));
+    // A shredded DOSSIER key throws here, and that is the correct outcome: a request whose subject
+    // exercised Art. 17 must not be dispatched, and failing loudly at the seam beats rendering a
+    // letter with an empty Anschrift line. The dispatch workflow's caller routes the throw to the
+    // human queue rather than retrying it onto the wire.
+    const subject = deriveSubject(await openVerifiedIdentity(this.cipher, identity));
 
     // The most recent transition INTO READY decides whether this dispatch must be registered.
     const lastIntoReady = r.events.find((e) => e.toState === 'READY');
@@ -356,25 +379,3 @@ export class PrismaWorkerRepository {
 /** Anchor kinds, re-exported so the persistence seam and the core union cannot drift apart. */
 export type PersistedAnchorKind = TimestampAnchor['kind'];
 
-function toVerifiedIdentity(row: {
-  id: string; userId: string; status: string; method: string | null;
-  legalName: string | null; dateOfBirth: Date | null; verifiedAt: Date | null; providerRef: string | null;
-  addresses: { street: string; postalCode: string; city: string; country: string; current: boolean; verifiedAt: Date }[];
-}): VerifiedIdentity {
-  return {
-    id: row.id,
-    userId: row.userId,
-    status: row.status as VerifiedIdentity['status'],
-    method: (row.method ?? 'EID') as VerifiedIdentity['method'],
-    // deriveSubject() throws on an unverified identity before these are read; the empty defaults
-    // exist so a partially-filled row fails THERE, with the identity error, rather than here.
-    legalName: row.legalName ?? '',
-    dateOfBirth: row.dateOfBirth ?? new Date(0),
-    addresses: row.addresses.map((a) => ({
-      street: a.street, postalCode: a.postalCode, city: a.city, country: a.country,
-      current: a.current, verifiedAt: a.verifiedAt,
-    })),
-    verifiedAt: row.verifiedAt,
-    providerRef: row.providerRef,
-  };
-}

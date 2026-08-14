@@ -2,7 +2,15 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { ENRICHMENT_BROKER_ROUTES, SOURCE_HARDENING_ROUTES } from '@scraper/core';
 import { CENSUS, controllerTypeOf } from '../census/census.js';
 import { DEV_DEMO_PLAYBOOK_PAIRS, DEV_IDENTITY, DEV_MANDATE, DEV_USER_ID, devFixturesEnabled } from '../common/dev-fixtures.js';
-import { AesGcmEnvelopeCrypto, DevKekResolver, EnvelopeSecretCipher, type UserKeyResolver } from '@scraper/core';
+import {
+  AesGcmEnvelopeCrypto,
+  DevKekResolver,
+  EnvelopeSecretCipher,
+  sealAddressLines,
+  sealIdentityFields,
+  type UserKeyResolver,
+} from '@scraper/core';
+import { createPurposeCipher, provisionUserKeys } from '../identity/user-key.store.js';
 import { hashPassword, generateTotpSecret, totpProvisioningUri } from '../auth/crypto.js';
 
 /**
@@ -77,6 +85,15 @@ export async function seed(db: PrismaClient): Promise<void> {
     // credential is rewritten below in the same run.
     await db.user.update({ where: { id: DEV_USER_ID }, data: { wrappedDek, kekRef: 'user' } });
   }
+  // The fixture's DOSSIER/EVIDENCE keys, minted the same way registration mints them. Without these
+  // the identity below has nothing to seal into, and the seed would fail with a KeyMissingError —
+  // which is the correct failure, but a re-runnable seed should simply repair it.
+  await provisionUserKeys(db, envelope, DEV_USER_ID, 'user');
+  const cipher = createPurposeCipher(db, envelope);
+  const sealed = await sealIdentityFields(cipher, DEV_USER_ID, {
+    legalName: DEV_IDENTITY.legalName,
+    dateOfBirth: DEV_IDENTITY.dateOfBirth,
+  });
   await db.identity.upsert({
     where: { id: DEV_IDENTITY.id },
     create: {
@@ -84,21 +101,29 @@ export async function seed(db: PrismaClient): Promise<void> {
       userId: DEV_USER_ID,
       status: 'VERIFIED',
       method: 'EID',
-      legalName: DEV_IDENTITY.legalName,
-      dateOfBirth: DEV_IDENTITY.dateOfBirth,
+      legalNameEnc: sealed.legalNameEnc,
+      dateOfBirthEnc: sealed.dateOfBirthEnc,
       verifiedAt: DEV_IDENTITY.verifiedAt,
       providerRef: DEV_IDENTITY.providerRef,
     },
+    // Status only, NOT the sealed fields — `identity_freeze` (0005/0018) refuses any edit to a
+    // VERIFIED identity's subject columns, and AES-GCM's random IV means re-sealing the same name
+    // produces different bytes and would trip it on the second run. Re-sealing is unnecessary
+    // anyway: the fixture KEK is derived deterministically and `provisionUserKeys` never replaces an
+    // existing key, so what was sealed on the first run stays readable on every later one.
     update: { status: 'VERIFIED' },
   });
   const addr = DEV_IDENTITY.addresses[0];
   if (!addr) throw new Error('dev fixture identity has no address — deriveSubject would refuse it');
   const hasAddr = await db.identityAddress.findFirst({ where: { identityId: DEV_IDENTITY.id, current: true } });
   if (!hasAddr) {
+    const addrEnc = await sealAddressLines(cipher, DEV_USER_ID, {
+      street: addr.street, postalCode: addr.postalCode, city: addr.city,
+    });
     await db.identityAddress.create({
       data: {
-        identityId: DEV_IDENTITY.id, street: addr.street, postalCode: addr.postalCode,
-        city: addr.city, country: addr.country, current: true, verifiedAt: addr.verifiedAt,
+        identityId: DEV_IDENTITY.id, streetEnc: addrEnc.streetEnc, postalCodeEnc: addrEnc.postalCodeEnc,
+        cityEnc: addrEnc.cityEnc, country: addr.country, current: true, verifiedAt: addr.verifiedAt,
       },
     });
   }

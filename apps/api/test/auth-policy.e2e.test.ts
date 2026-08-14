@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { AesGcmEnvelopeCrypto, DevKekResolver, evidenceShredDueAt, sealIdentityFields } from '@scraper/core';
+import { createPurposeCipher } from '../dist/identity/user-key.store.js';
 import type { INestApplication } from '@nestjs/common';
 
 /**
@@ -16,6 +18,7 @@ import type { INestApplication } from '@nestjs/common';
  * reads SCRAPER_REPOSITORY at import time, so the env has to be set before the dynamic import.
  */
 const url = process.env.DATABASE_URL_TEST;
+
 
 describe.skipIf(!url)('auth policy (0008) end to end', () => {
   let app: INestApplication;
@@ -90,7 +93,17 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     if (identity.status === 'VERIFIED') return;
     await db.identity.update({
       where: { userId: user.id },
-      data: { status: 'VERIFIED', method: 'EID', legalName: 'Martina Musterfrau', dateOfBirth: new Date('1980-05-04'), verifiedAt: new Date(), providerRef: 'test-stub' },
+      // Sealed under this user's own DOSSIER key, exactly as the ident-provider callback does.
+      // Identity fields have had no plaintext column since 0017, so a fixture cannot write one —
+      // the encryption is structural rather than a convention a test can forget.
+      data: {
+        status: 'VERIFIED', method: 'EID', verifiedAt: new Date(), providerRef: 'test-stub',
+        ...(await sealIdentityFields(
+          createPurposeCipher(db, new AesGcmEnvelopeCrypto(new DevKekResolver())),
+          user.id,
+          { legalName: 'Martina Musterfrau', dateOfBirth: new Date('1980-05-04') },
+        )),
+      },
     });
   }
 
@@ -312,6 +325,94 @@ describe.skipIf(!url)('auth policy (0008) end to end', () => {
     expect(replayed.status).toBe(401);
     expect((await json(replayed)).reason).toBe('BAD_RECOVERY_CODE');
   });
+
+  /**
+   * Art. 17 erasure by crypto-shred (audit H2/W14) — the endpoint the schema promised and could not
+   * deliver, because the append-only ledgers made deletion impossible.
+   *
+   * What this proves, in the order it matters: the dossier becomes UNREADABLE, the ledger SURVIVES,
+   * the account is dead, and the evidence key is deliberately still alive.
+   */
+  it('erases the dossier, keeps the ledger, and leaves the EVIDENCE key alive', async () => {
+    const ERASE_EMAIL = 'erasure-subject@example.com';
+    const registered = await json(await post('/auth/register', { email: ERASE_EMAIL, password: PASSWORD }));
+    const secret = String(registered.totpSecret);
+    const { token: pre } = (await json(await post('/auth/login', { email: ERASE_EMAIL, password: PASSWORD }))) as { token: string };
+    const mfa = String(((await json(await post('/auth/totp', { code: await currentCode(secret) }, pre))) as { token?: string }).token);
+    const user = await db.user.findUniqueOrThrow({ where: { email: ERASE_EMAIL } });
+
+    // Seal an identity so there is a dossier to destroy.
+    const cipher = createPurposeCipher(db, new AesGcmEnvelopeCrypto(new DevKekResolver()));
+    await db.identity.update({
+      where: { userId: user.id },
+      data: {
+        status: 'VERIFIED', method: 'EID', verifiedAt: new Date(), providerRef: 'test-stub',
+        ...(await sealIdentityFields(cipher, user.id, { legalName: 'Zu Löschen', dateOfBirth: new Date('1975-01-02') })),
+      },
+    });
+    expect(await cipher.openText(user.id, 'DOSSIER',
+      Buffer.from((await db.identity.findUniqueOrThrow({ where: { userId: user.id } })).legalNameEnc!))).toBe('Zu Löschen');
+
+    // STEP-UP IS REQUIRED. The most irreversible action in the product must not be reachable from a
+    // session that merely completed sign-in an hour ago.
+    const tooSoon = await fetch(`${base}/auth/account`, { method: 'DELETE', headers: { authorization: `Bearer ${mfa}` } });
+    expect(tooSoon.status).toBe(403);
+    expect((await json(tooSoon)).reason).toBe('STEP_UP_REQUIRED');
+
+    // Reset THIS user's replay counter, not the suite's main one: the code just spent on /auth/totp
+    // is at or below `totpLastCounter`, and step-up refuses a replay (that defence is proven above).
+    await db.$executeRawUnsafe('ALTER TABLE "User" DISABLE TRIGGER "totp_counter_monotonic"');
+    await db.$executeRawUnsafe('UPDATE "User" SET "totpLastCounter" = NULL WHERE "email" = $1', ERASE_EMAIL);
+    await db.$executeRawUnsafe('ALTER TABLE "User" ENABLE TRIGGER "totp_counter_monotonic"');
+    const stepUpRes = await post('/auth/step-up', { code: await currentCode(secret) }, mfa);
+    expect(stepUpRes.status).toBe(201);
+    const stepped = String(((await json(stepUpRes)) as { token?: string }).token);
+    const erased = await fetch(`${base}/auth/account`, { method: 'DELETE', headers: { authorization: `Bearer ${stepped}` } });
+    expect(erased.status).toBe(200);
+
+    // 1. THE DOSSIER IS UNREADABLE. Not deleted — unreadable, which is the whole mechanism.
+    const dossier = await db.userKey.findUniqueOrThrow({ where: { userId_purpose: { userId: user.id, purpose: 'DOSSIER' } } });
+    expect(dossier.wrappedDek).toBeNull();
+    expect(dossier.shreddedAt).not.toBeNull();
+    const stillThere = await db.identity.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(stillThere.legalNameEnc).not.toBeNull(); // the ciphertext remains; the key does not
+    await expect(cipher.openText(user.id, 'DOSSIER', Buffer.from(stillThere.legalNameEnc!))).rejects.toThrow(/shredded/);
+
+    // 2. THE EVIDENCE KEY SURVIVES — Art. 17(3)(e). A job shreds it at the limitation window; an
+    // erasure that destroyed the record of the letters we sent would be both unlawful to promise
+    // and foolish to perform.
+    const evidence = await db.userKey.findUniqueOrThrow({ where: { userId_purpose: { userId: user.id, purpose: 'EVIDENCE' } } });
+    expect(evidence.wrappedDek).not.toBeNull();
+    expect(evidence.shreddedAt).toBeNull();
+    expect(evidenceShredDueAt(new Date()).getTime()).toBeGreaterThan(Date.now());
+
+    // 3. THE ACCOUNT IS DEAD, and the session that performed the erasure died with it.
+    const after = await fetch(`${base}/requests`, { headers: { authorization: `Bearer ${stepped}` } });
+    expect(after.status).toBe(403);
+    expect(await db.authCredential.findUnique({ where: { userId: user.id } })).toBeNull();
+    expect(await db.recoveryCode.count({ where: { userId: user.id } })).toBe(0);
+
+    // 4. THE ROW SURVIVES, scrubbed. It has to: the append-only ledgers hang off it, so deleting it
+    // was never possible — and `userErasedAt` is what makes `evaluateSession`'s USER_ERASED branch
+    // reachable after three waves of being structurally null.
+    const tombstone = await db.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(tombstone.userErasedAt).not.toBeNull();
+    expect(tombstone.email).toMatch(/^erased:[0-9a-f]{64}$/);
+    expect(tombstone.email).not.toContain('erasure-subject');
+    expect(tombstone.wrappedDek).toBeNull();
+
+    // Idempotent: a second erasure must not rewrite the stamp, because the FIRST date is the one
+    // produced as evidence and the one the EVIDENCE window is measured from.
+    // The erasure revoked every session including the one that performed it, so the second attempt
+    // never reaches the endpoint's own idempotency branch — it is refused at the session layer (401
+    // for a revoked token, 403 where a guard answers first). Either is the right answer; what
+    // matters is that nothing re-stamps the date.
+    const second = await fetch(`${base}/auth/account`, { method: 'DELETE', headers: { authorization: `Bearer ${stepped}` } });
+    expect([401, 403]).toContain(second.status);
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).userErasedAt).toEqual(tombstone.userErasedAt);
+
+    await db.user.deleteMany({ where: { id: user.id } });
+  }, 30_000);
 
   it('revoke-everywhere kills every session INCLUDING the caller', async () => {
     await resetReplayCounter();

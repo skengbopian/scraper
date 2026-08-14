@@ -1,7 +1,17 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 // Value import on purpose: a type-only import degrades the DI metadata to Function.
 import { PrismaClient } from '@prisma/client';
-import { evaluateSession, shouldTouchLastSeen, type SessionRejection, type VerifiedIdentity } from '@scraper/core';
+import {
+  AesGcmEnvelopeCrypto,
+  KeyShreddedError,
+  evaluateSession,
+  openVerifiedIdentity,
+  shouldTouchLastSeen,
+  type PurposeCipher,
+  type SessionRejection,
+} from '@scraper/core';
+import { createPurposeCipher } from '../identity/user-key.store.js';
+import { kekResolver } from './auth.service.js';
 import { toSessionState } from './auth.service.js';
 import { hashToken } from './crypto.js';
 
@@ -25,7 +35,11 @@ import { hashToken } from './crypto.js';
  */
 @Injectable()
 export class SessionMiddleware implements NestMiddleware {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly cipher: PurposeCipher;
+
+  constructor(private readonly db: PrismaClient) {
+    this.cipher = createPurposeCipher(db, new AesGcmEnvelopeCrypto(kekResolver()));
+  }
 
   async use(
     req: Record<string, unknown> & { headers: Record<string, string | undefined> },
@@ -56,21 +70,26 @@ export class SessionMiddleware implements NestMiddleware {
     req.userId = verdict.userId;
     req.stepUp = verdict.stepUp;
     if (identity) {
-      const mapped: VerifiedIdentity = {
-        id: identity.id,
-        userId: identity.userId,
-        status: identity.status as VerifiedIdentity['status'],
-        method: (identity.method ?? 'EID') as VerifiedIdentity['method'],
-        legalName: identity.legalName ?? '',
-        dateOfBirth: identity.dateOfBirth ?? new Date(0),
-        addresses: identity.addresses.map((a) => ({
-          street: a.street, postalCode: a.postalCode, city: a.city, country: a.country,
-          current: a.current, verifiedAt: a.verifiedAt ?? new Date(0),
-        })),
-        verifiedAt: identity.verifiedAt ?? new Date(0),
-        providerRef: identity.providerRef ?? '',
-      };
-      req.identity = mapped;
+      // The dossier is sealed at rest (0016/0017), so building the request's identity is now a
+      // decryption. `openVerifiedIdentity` is the single implementation, shared with the worker,
+      // because two "decrypt the dossier" functions would be two places for one to fall back to an
+      // empty string — and an empty string here becomes an empty Anschrift line in a legal letter.
+      //
+      // A SHREDDED key throws, and that throw must not become a 500 on every route: an erased user's
+      // session is already refused by `evaluateSession` (USER_ERASED), so reaching this line at all
+      // means something is inconsistent. Attaching no identity is the fail-closed answer — the
+      // request routes then 403 on the identity gate, which is the correct outcome for a user whose
+      // dossier no longer exists.
+      try {
+        req.identity = await openVerifiedIdentity(this.cipher, {
+          ...identity,
+          verifiedAt: identity.verifiedAt,
+          providerRef: identity.providerRef,
+        });
+      } catch (e) {
+        if (!(e instanceof KeyShreddedError)) throw e;
+        req.sessionRejection = 'USER_ERASED' satisfies SessionRejection;
+      }
     }
     next();
   }

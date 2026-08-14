@@ -13,7 +13,12 @@ import {
   type SelfServeRoute,
   type TransitionResult,
   type LeverageActionRow,
+  type EnvelopeCrypto,
+  type PurposeCipher,
+  AesGcmEnvelopeCrypto,
 } from '@scraper/core';
+import { kekResolver } from '../auth/auth.service.js';
+import { createPurposeCipher } from '../identity/user-key.store.js';
 import type { RequestsRepository } from './requests.service.js';
 
 const TERMINAL = [...TERMINAL_STATES] as ('COMPLIED' | 'CLOSED_FAILED' | 'WITHDRAWN')[];
@@ -48,7 +53,11 @@ export class DuplicateRequestError extends Error {
  * pipeline (P1), not by the state transition itself.
  */
 export class PrismaRequestsRepository implements RequestsRepository {
-  constructor(private readonly db: PrismaClient) {}
+  private readonly evidence: PurposeCipher;
+
+  constructor(private readonly db: PrismaClient, crypto: EnvelopeCrypto = new AesGcmEnvelopeCrypto(kekResolver())) {
+    this.evidence = createPurposeCipher(db, crypto);
+  }
 
   async findControllerBySlug(slug: string): Promise<ControllerRef | null> {
     const c = await this.db.controller.findUnique({
@@ -224,6 +233,19 @@ export class PrismaRequestsRepository implements RequestsRepository {
       | 'postal'
       | 'web_form';
 
+    // Sealed BEFORE the transaction: `PurposeCipher` reads the key through its own client, and a key
+    // lookup inside an interactive transaction would not see rows the transaction has not committed.
+    // Nothing is written yet, so a failure here simply refuses the request — which is right, because
+    // a request row whose subject snapshot could not be sealed is a request with no audit trail.
+    const subjectSnapshotEnc = await this.evidence.sealText(
+      String(row.userId),
+      'EVIDENCE',
+      JSON.stringify({
+        legalName: String(row.subjectLegalName ?? ''),
+        dateOfBirth: row.subjectDateOfBirth instanceof Date ? row.subjectDateOfBirth.toISOString() : String(row.subjectDateOfBirth ?? ''),
+      }),
+    );
+
     try {
       const [created] = await this.db.$transaction([
         this.db.rightsRequest.create({
@@ -250,9 +272,22 @@ export class PrismaRequestsRepository implements RequestsRepository {
             actor: 'SYSTEM',
             // The derived subject snapshot — audit trail of WHOSE data this request is about,
             // guaranteed derived from the verified identity (guards ran before insert).
+            //
+            // SEALED UNDER THE EVIDENCE KEY, and this is the reason that key exists. `RequestEvent`
+            // is append-only by trigger, so this payload can never be edited or deleted: written in
+            // plaintext, it would leave the user's legal name and date of birth in the database
+            // FOREVER, and a crypto-shred of the dossier would erase the identity row while the
+            // ledger still named the person. That is not an erasure.
+            //
+            // EVIDENCE rather than DOSSIER because of what this snapshot is FOR: it proves the
+            // request we sent was about the verified account holder and nobody else, which is the
+            // anti-stalker binding (CLAUDE.md's one rule) and the Art. 17(3)(e) defence in one
+            // record. It must therefore outlive an erasure — to a bounded window, not forever.
             payload: {
-              subjectLegalName: String(row.subjectLegalName ?? ''),
-              subjectDateOfBirth: row.subjectDateOfBirth instanceof Date ? row.subjectDateOfBirth.toISOString() : String(row.subjectDateOfBirth ?? ''),
+              subjectSnapshotEnc: subjectSnapshotEnc.toString('base64'),
+              // The identity id stays in the clear: it is an opaque cuid that identifies a ROW, not
+              // a person, and correlating a request to its identity record after an erasure is how
+              // an abuse investigation reconstructs what happened without reading anyone's name.
               subjectIdentityId: String(row.subjectIdentityId ?? ''),
             },
           },
