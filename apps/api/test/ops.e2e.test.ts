@@ -338,6 +338,75 @@ describe.skipIf(!url)('the ops review queue', () => {
       expect(await db.evidenceRecord.count({ where: { requestId: id, kind: 'POSTAL_PROOF' } })).toBe(1);
     });
 
+    /**
+     * THE SUCCESS PATH — the only place in this product where an Art. 12(3) clock actually starts.
+     *
+     * Everything above proves the route fails closed. That is the important half, but a route whose
+     * happy path is never exercised is a route nobody has run: mint → chain → transition → arm the
+     * timer is four steps and any one of them could be wrong while all six refusals stay correct.
+     *
+     * The service is constructed directly with a QUALIFIED timestamper rather than going over HTTP,
+     * because the HTTP layer (role guard, body validation, date parsing) is already covered by the
+     * cases above and this needs the one thing a deployment cannot supply: a qualified anchor. That
+     * is a test-only injection through the same DI token a real eIDAS client will use — NOT a dev
+     * switch. `provableSendEvidenceIdOf()` is untouched and still demands a CARRIER origin AND a
+     * QUALIFIED anchor AND a storageRef naming the receipt.
+     */
+    it('with a qualified anchor it mints, chains, transitions, and dates the month from DELIVERY', async () => {
+      const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
+      const { OpsService } = await import('../dist/ops/ops.service.js');
+      const armed: { key: string; at: Date }[] = [];
+      const qualified = {
+        async anchor(hash: string) {
+          return { kind: 'QUALIFIED' as const, tsaRef: `qtsp:${hash.slice(0, 12)}`, signedAt: new Date(), algorithm: 'SHA-256' };
+        },
+      };
+      const service = new OpsService(
+        db,
+        { schedule: async (key: string, at: Date) => void armed.push({ key, at }), cancel: async () => undefined },
+        qualified,
+      );
+
+      // Delivered four days ago; recorded by ops today. That gap is the whole point of the async
+      // path — it is our processing latency, and it must not become the controller's extra time.
+      const deliveredAt = new Date(Date.now() - 4 * 86_400_000);
+      const out = await service.recordDeliveryProof(
+        id,
+        { trackingRef: 'RR987654321DE', deliveredAt, storageRef: 's3://evidence/ops/beleg-qualified.pdf' },
+        opsUserId,
+      );
+
+      expect(out.state).toBe('AWAITING_RESPONSE');
+      expect(out.clockStarted).toBe(true);
+
+      const row = await db.rightsRequest.findUniqueOrThrow({ where: { id } });
+      expect(row.state).toBe('AWAITING_RESPONSE');
+      // The clock is measured from the receipt, not from now. Asserted against the same pure
+      // function the state machine uses, so this cannot drift from the Art. 12(3) calendar rules.
+      const { statutoryDeadlineAt } = await import('@scraper/core');
+      expect(row.deadlineAt).toEqual(statutoryDeadlineAt(deliveredAt));
+      expect(row.provableSendConfirmedAt).toEqual(deliveredAt);
+      // 0015's CHECK: the retrieval hint is spent on the way out.
+      expect(row.proofDueAt).toBeNull();
+
+      // The receipt is chained and QUALIFIED, and it is the POSTAL_PROOF id that authorised the clock.
+      const proof = await db.evidenceRecord.findFirstOrThrow({ where: { requestId: id, kind: 'POSTAL_PROOF' } });
+      expect(proof.anchorKind).toBe('QUALIFIED');
+      expect(out.evidenceId).toBe(proof.id);
+
+      // The transition is on the append-only log with the attesting human named.
+      const event = await db.requestEvent.findFirstOrThrow({
+        where: { requestId: id, type: 'provableSendConfirmed' },
+      });
+      expect(event.actor).toBe('HUMAN_OPS');
+      expect((event.payload as { opsUserId?: string }).opsUserId).toBe(opsUserId);
+
+      // A statutory timer is armed — and it is the statutory one, not the spent proof timer.
+      expect(armed).toHaveLength(1);
+      expect(armed[0]!.key).toMatch(/:statutory:/);
+      expect(armed[0]!.at).toEqual(row.deadlineAt);
+    });
+
     it('(0015) the database itself refuses a clock in AWAITING_DELIVERY_PROOF', async () => {
       const id = await seedRequest('AWAITING_DELIVERY_PROOF', { proofDueAt: new Date() });
       // The legal rule as a CHECK constraint: a lodgement whose receipt has not come back may not

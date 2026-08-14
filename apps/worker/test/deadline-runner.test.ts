@@ -104,4 +104,88 @@ describe.skipIf(!url)('pg-boss deadline runner (integration)', () => {
     const again = await handleDeadlineExpiry(deadlineDeps, { requestId: created.id, kind: 'provisional' });
     expect(again).toMatch(/stale/);
   }, 30_000);
+
+  /**
+   * The THIRD timer (audit F3a) — and the one whose expiry must not escalate anything.
+   *
+   * It is worth an integration test of its own rather than trusting the unit coverage, because the
+   * bug it guards against is a wiring bug, not a logic bug: `deadline-expiry` carries the kind in
+   * its payload, and before the DUE_FIELD table existed the handler read `deadlineAt` for every kind
+   * that was not `provisional`. A proof timer would then have checked the STATUTORY clock, found it
+   * null on a request that has none by definition, concluded nothing was pending, and fired
+   * unconditionally. That is exactly the class of defect that survives unit tests written against
+   * the same wrong assumption.
+   */
+  it('a proof-retrieval timer fires into NEEDS_HUMAN — a missing receipt never drafts a complaint', async () => {
+    const { PrismaRequestsRepository } = await import('@scraper/api/repository');
+    const { RequestsService } = await import('@scraper/api/dist/requests/requests.service.js');
+    const { DEV_IDENTITY, DEV_USER_ID } = await import('@scraper/api/dist/common/dev-fixtures.js');
+    const { handleDeadlineExpiry } = await import('../dist/main.js');
+    const repo = new PrismaRequestsRepository(db);
+    const service = new RequestsService(repo);
+    const deadlineDeps = {
+      load: (id: string) => repo.load(id),
+      applyTransition: (id: string, result: unknown) => repo.applyTransition(id, result),
+      now: () => new Date(),
+    };
+
+    // A different (controller, requestType) triple from the test above: one user may hold one
+    // non-terminal request per triple (ADR-013), and that guard is not suspended for tests.
+    const created = (await service.create({
+      userId: DEV_USER_ID, identity: DEV_IDENTITY, controllerSlug: 'schufa',
+      requestType: 'ACCESS_ART15', cause: 'USER_INITIATED',
+    })) as { id: string };
+    await service.simulate(DEV_USER_ID, created.id, { kind: 'dispatch', channel: 'email' });
+
+    // Move it onto the lodged path as a fixture. `provisionalDeadlineAt` MUST be nulled in the same
+    // statement — 0015's CHECK refuses a request sitting in AWAITING_DELIVERY_PROOF with any clock
+    // set, which is the legal rule ("a lodgement starts nothing") expressed where application code
+    // cannot route around it. A fixture that forgot it would be rejected by the database, which is
+    // the constraint doing its job.
+    await db.rightsRequest.update({
+      where: { id: created.id },
+      data: {
+        state: 'AWAITING_DELIVERY_PROOF',
+        provisionalDeadlineAt: null,
+        deadlineAt: null,
+        proofDueAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    await boss.createQueue('deadline-expiry').catch(() => undefined);
+    const fired: string[] = [];
+    await boss.work('deadline-expiry', { pollingIntervalSeconds: 1 }, async (jobs) => {
+      for (const job of jobs) fired.push(await handleDeadlineExpiry(deadlineDeps, job.data as never));
+    });
+    await engine.schedule(`deadline:${created.id}:proof`, new Date(Date.now() + 1000), {
+      name: 'deadline-expiry',
+      payload: { requestId: created.id, kind: 'proof' },
+    });
+
+    const until = Date.now() + 20_000;
+    let state = '';
+    while (Date.now() < until) {
+      const r = await repo.load(created.id);
+      state = r?.state ?? '';
+      if (state === 'NEEDS_HUMAN') break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+
+    // A HUMAN, never an Art. 77 draft. Not knowing whether a letter arrived is the opposite of
+    // evidence that it did, and a complaint founded on our own ignorance is worse than none.
+    expect(state).toBe('NEEDS_HUMAN');
+    expect(state).not.toBe('ESCALATION_DRAFTED');
+    expect(fired.some((f) => f.includes('proof deadline expired'))).toBe(true);
+
+    // No clock was started on the way out, and the spent hint is cleared.
+    const row = await db.rightsRequest.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.deadlineAt).toBeNull();
+    expect(row.provableSendConfirmedAt).toBeNull();
+    expect(row.proofDueAt).toBeNull();
+
+    // And that human cannot escalate it either — invariant 4b, nothing proves receipt.
+    const { OpsService } = await import('@scraper/api/dist/ops/ops.service.js');
+    const ops = new OpsService(db, null);
+    await expect(ops.resolve(created.id, 'escalate')).rejects.toThrow();
+  }, 40_000);
 });
