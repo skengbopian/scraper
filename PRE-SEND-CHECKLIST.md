@@ -31,7 +31,13 @@ guard refuses inactive rows — activation is the human act of signing off.
       lawyer-partner white-label; adversarial routing boundary configured
       accordingly (docs/05 §2).
 - [ ] Botendienst framing for non-adversarial requests confirmed; per-type
-      mandate policy in `packages/core/src/domain/policy.ts` confirmed (OQ-A).
+      mandate policy confirmed (OQ-A). The imported wording named the pre-audit
+      line's `A:packages/core/src/domain/policy.ts`, which was never ported: in
+      this line the policy is data, not a module — `Mandate.scope` is a list of
+      request types, and `packages/core/src/state-machine/guards.ts` refuses a
+      request no live mandate covers ("no live Mandate covers <requestType>"),
+      re-checked at dispatch and not only at creation. What counsel decides is
+      therefore which request types a single signed mandate may carry.
 - [ ] Every controller endpoint in the census verified against the
       controller's CURRENT Datenschutz page (all seed rows carry
       TODO(counsel)); only then set `Controller.active = true`.
@@ -75,11 +81,22 @@ guard refuses inactive rows — activation is the human act of signing off.
       verification — the exact string those playbooks' `refusedIf` matches. Fix
       the capability or the wording BEFORE either instrument is activated.
 
-- [ ] **Verify every external link in `apps/web/src/lib/data-holders.ts`** and
-      set `urlVerified: true`. These are the self-disclosure pages we point
-      consumers at from the landing page; the UI currently labels each one
-      "Link not yet verified by us", which is honest but not shippable. A stale
-      link here sends someone to the wrong place to check their credit file.
+- [ ] **Verify every external link this product points a consumer at.** The
+      imported wording named A's `A:apps/web/src/lib/data-holders.ts` and its
+      `urlVerified` flag; neither was ported, and the "Link not yet verified by
+      us" label it describes does not exist in `apps/web-next`. The box still
+      binds, against the two surfaces this line actually serves: the Tier-1
+      self-serve removal routes in
+      `packages/core/src/leverage/broker-routes.seed.ts` (verified 2026-08-09,
+      each carrying `lastVerifiedAt`; served to the browser as `selfServe.url`
+      by `apps/api/src/census/census.controller.ts` and rendered as the guided
+      handoff), and the CC0 community contact channels in
+      `apps/api/src/census/datenanfragen.snapshot.ts`, which are sourced rather
+      than curated and are never authoritative for a send. Re-check on the
+      docs/08 §2 schedule: brokers change endpoints, a dead link starts nothing,
+      and a stale one sends someone to the wrong place to check their credit
+      file. `lastVerifiedAt` is the timestamp of a check, not a freshness
+      guarantee — only this box is the guarantee.
 
 ### Template prose defects found by adversarial review (OQ-I) — counsel-owned
 

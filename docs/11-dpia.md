@@ -72,11 +72,30 @@ achieves the outcome.**
 - A Tier-1a handoff transmits **nothing**. The user's verified details are shown
   to the user, never sent by us.
 - The router refuses to generate a statutory request when a cheaper rung
-  achieves the same outcome, and records why (`protection-router.repo.ts`,
-  tested in `protection-router.integration.test.ts`).
+  achieves the same outcome, and records the decision as evidence rather than as
+  a log line: `packages/core/src/leverage/routing.ts` returns the chosen tier
+  plus a `routingDecision` audit object, which
+  `apps/api/src/requests/prisma-requests.repository.ts` persists to
+  `LeverageAction.routingDecision` (migration 0009). Tested in
+  `packages/core/test/routing.test.ts` and `packages/core/test/ladder.test.ts`.
+  *(This bullet previously cited two files under a "protection-router" name —
+  a repository and an integration test. Neither has ever existed in this repo;
+  they are names carried over from the pre-audit line. The control is real, the
+  citation was not, and in a document a regulator reads as evidence that is the
+  worse of the two failures. The names are deliberately not repeated in code
+  formatting here, so the spec-audit reference check does not go looking for
+  them again.)*
 - The identity packet sends the *minimum* proof a controller accepts, never the
-  maximum, and refuses to send an ID document for an unconditional marketing
-  objection (`identity-packet.ts`).
+  maximum. The refusal is enforced at render time in
+  `packages/core/src/playbook/engine.ts`, which will not render a letter claiming
+  an enclosed identity proof unless a packet was genuinely attached to *that*
+  dispatch (`attachedIdentityPacketId`), and the playbook's `identityProof`
+  block is what decides whether one is required at all — an unconditional
+  Art. 21(2) marketing objection does not set it.
+  **[COUNSEL]** the packet GENERATOR (deciding which fields a given controller
+  may see, and redacting the rest) is specified in `docs/03` and is not yet
+  built; today a packet is attached or it is not. Do not describe field-level
+  minimisation within the packet as an implemented control.
 
 **[COUNSEL]** Lawful basis per operation. Working assumption: Art. 6(1)(b)
 performance of the contract for Tiers 0/1a/1b, since the user asked for exactly

@@ -6,7 +6,31 @@ const scrypt = promisify(scryptCb) as (pw: string | Buffer, salt: Buffer, keylen
 
 /**
  * Auth primitives (docs/01 P0: email + password + TOTP MFA), dependency-free on node:crypto.
- * scrypt for passwords (OWASP params), RFC 6238 TOTP (RFC 4226 HOTP under it — test-vectored).
+ * scrypt for passwords, RFC 6238 TOTP (RFC 4226 HOTP under it — test-vectored).
+ *
+ * **The scrypt parameters below are BELOW the OWASP floor.** They are N=2^14 (16384), r=8, p=1, a
+ * 32-byte key over a 32-byte random salt. This comment used to call them "OWASP params" and they have
+ * never been that; the 2026-08-13 audit caught it. A wrong reassurance in the one place a reviewer
+ * looks to decide whether this file needs attention is worse than no comment at all, so the numbers
+ * and the gap are now stated plainly: OWASP's Password Storage Cheat Sheet puts the scrypt minimum at
+ * N=2^17, r=8, p=1, and its lower-N fallbacks raise p to compensate (N=2^14 is paired with p=5). We
+ * do neither — we are a factor of eight under on work, with no compensating parallelism.
+ *
+ * Why the numbers stay anyway, deliberately and not by oversight: N=2^17 is eight times the memory
+ * and CPU of N=2^14 — on the order of 800ms per hash on the hardware this runs on, paid on every
+ * sign-in AND on every FAILED sign-in, which makes the unauthenticated login endpoint an amplifier
+ * against ourselves. Trading a login-availability regression for the margin is not a trade we take
+ * blind, so the cost of NOT taking it is recorded here beside it: an attacker who steals the
+ * `User.passwordHash` column gets roughly eight times the offline guesses per euro that a conforming
+ * deployment would hand them. What stands between that and an account today is the password policy at
+ * registration and the mandatory TOTP second factor — not this constant.
+ *
+ * TODO(safety): move to argon2id (OWASP interactive baseline m=19MiB, t=2, p=1), which reaches the
+ * intended resistance at an interactive latency instead of making us choose between the two. The
+ * stored string is self-describing — `scrypt$N$r$p$salt$hash`, algorithm label first — so a second
+ * scheme needs no migration and no schema change: verify against whatever the row declares, and
+ * rehash on the next successful login. No user is ever forced through a reset. Whatever lands,
+ * `verifyPassword` must keep parsing the `scrypt$…` label for as long as one un-upgraded row exists.
  */
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 } as const;

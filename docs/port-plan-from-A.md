@@ -5,6 +5,17 @@ audit trail). A is `~/Downloads/scraper` at **`cc9dcb4`**; B is this repo, tagge
 **`port-baseline-2026-08-11`**. Derived from an eight-domain read-only assessment of both trees on
 2026-08-11; every hazard below cites a file that was actually opened.
 
+**Path convention — read this before following any path below.** A path written `A:apps/worker/src/channels/email.ts`
+is a path in **A's tree**, not in this repo; an unprefixed path is this repo's and resolves here. The
+prefix is not decoration: the two trees share basenames while the files behind them disagree about the
+clock — this repo also has an `apps/worker/src/channels/email.ts`, and hazard 1 below is precisely that
+opening the wrong one re-imports C1. It also keeps the reference-integrity gate honest.
+`tools/spec-audit/audit.mjs` §4 resolves every backticked path against this repo and warns when it
+finds nothing; before this convention it reported this document's citations of A as *our* missing
+files — twenty warnings that were never defects, in the one channel that is supposed to tell a reader
+a doc has gone stale. A path carrying the prefix is deliberately not a path here, so the gate stops
+claiming it should be one.
+
 **The one-line summary: nothing ports verbatim.** All eight domains came back `REFIT`. A is ~36.4k
 LOC of TS/TSX against B's ~8.2k, but it is built on a 13-state machine in which an email send starts
 the statutory clock, so a "just copy it and fix the build" port silently re-imports the exact
@@ -13,9 +24,9 @@ contradiction ADR-012 exists to remove.
 ## The five hazards that make this a refit, not a copy
 
 1. **A starts the statutory clock from an email, in code, today.**
-   `apps/worker/src/channels/email.ts:22` returns `{ providerRef: messageId, provable: true }` — its
-   own comment at :18-21 admits `provable` is hardcoded. `workflows/dispatch.ts:100-122` then applies
-   the provable transition, and `gateway/controller-gateway.ts:114-137` anchors `OUTBOUND_COPY` for
+   `A:apps/worker/src/channels/email.ts:22` returns `{ providerRef: messageId, provable: true }` — its
+   own comment at :18-21 admits `provable` is hardcoded. `A:workflows/dispatch.ts:100-122` then applies
+   the provable transition, and `A:gateway/controller-gateway.ts:114-137` anchors `OUTBOUND_COPY` for
    both channels alike. **Three files reintroduce C1 if ported unchanged, and the first two suffice.**
 2. **Fake proof becomes real proof under B's rules.** A's `StubPostalProvider` returns
    `proofRef: 'stub:einwurf-proof-N'` for any `registered:true` call. Inert in A. In B the presence
@@ -23,12 +34,12 @@ contradiction ADR-012 exists to remove.
    legal deadline. Same shape hazard in the `Mailer` refit, where the obvious defaults
    (`accepted:true, dkimAligned:true`) map an email onto the provable edge.
 3. **The UI fails silently, not loudly.** A's wire type carries one clock
-   (`apps/web/src/lib/types.ts:71 deadlineAt`); B emits `statutoryDeadlineAt` + `provisionalDeadlineAt`.
+   (`A:apps/web/src/lib/types.ts:71 deadlineAt`); B emits `statutoryDeadlineAt` + `provisionalDeadlineAt`.
    A ported page reads a field B never sends, renders "—", and a reviewer clicking through sees
-   "no deadline yet" rather than an error. `app/requests/[id]/page.tsx:48-53` additionally equates
-   `AWAITING_RESPONSE` with the statutory clock, and `lib/dashboard-insights.ts:122` recommends
+   "no deadline yet" rather than an error. `A:app/requests/[id]/page.tsx:48-53` additionally equates
+   `AWAITING_RESPONSE` with the statutory clock, and `A:lib/dashboard-insights.ts:122` recommends
    "gesetzliche Frist überschritten" straight off that state.
-4. **Replies to emailed requests would be dropped.** `workflows/ingest-response.ts:109` gates ingest
+4. **Replies to emailed requests would be dropped.** `A:workflows/ingest-response.ts:109` gates ingest
    on `state === 'AWAITING_RESPONSE'`. In B an emailed send lands in `AWAITING_RESPONSE_PROVISIONAL`,
    so every controller reply to an emailed request would be silently ignored.
 5. **0 of A's 45 playbooks pass B's validator.** Run against B's real gate. Failure groups: missing
@@ -65,7 +76,7 @@ needs. The API's user-facing messages now resolve through it, so `Accept-Languag
 
 **2b status.** The shell and the core product loop are live in `apps/web-next` against the real API:
 company list → the three engine outcomes → a tracked Vorgang → the chase step → the statutory clock.
-Hazard 3 is answered structurally rather than by review: `src/lib/clock.ts` exposes a **discriminated
+Hazard 3 is answered structurally rather than by review: `apps/web-next/src/lib/clock.ts` exposes a **discriminated
 union** (`none | provisional | statutory`), `resolveDeadline()` **throws** if the API ever sends a
 statutory deadline without `clockIsProvable`, and `DeadlineCard` is the only component permitted to
 turn a deadline into words. A test forbids any page from calling `clockCopy` or touching
@@ -117,7 +128,7 @@ mislabelled legal deadline.
 ### Wave-4 detail — start where B currently dead-ends
 `packages/core/src/provenance/ledger.ts:107-145` already proposes an Art. 17(1)(d) partial erasure at
 the bureau, and B has neither the playbook nor the template to execute it — the flagship provenance
-chain stops there. A's `templates/art17-loeschung-herkunft.de.md` plus the four
+chain stops there. `A:templates/art17-loeschung-herkunft.de.md` plus the four
 `loeschung-herkunft.{boniversum,crif,infoscore,schufa}.yaml` close it. Highest value per file in the
 whole port.
 
@@ -163,16 +174,16 @@ inherit them:
 
 ## Refuse list — do not port these
 
-- **`scripts/generate-playbooks.mjs`.** Running it in B regenerates the corpus in A's shape (no
+- **`A:scripts/generate-playbooks.mjs`.** Running it in B regenerates the corpus in A's shape (no
   `kind`, scalar `registered`, `onDeadlineExpiry: DRAFT_ART77` on email-primary playbooks). It would
   undo the validator's work in one command.
-- **`packages/core/src/subject/verified-subject.ts`.** Its `deriveSubjectSnapshot()` returns an
+- **`A:packages/core/src/subject/verified-subject.ts`.** Its `deriveSubjectSnapshot()` returns an
   unbranded plain object — importing it creates a second subject constructor and defeats ADR-019's
-  unforgeable brand.
-- **A's `schema.prisma` and its migration chain** (see wave 1b).
-- **A's `docs/AUDIT-2026-08-07-spec.md`** — this line already resolved that audit into spec edits
-  (ADR-011); the file stays in A's history.
-- **A's cost-model and request-accounting modules** under `packages/core/src/leverage/` (ADR-036). The first prices a legal request partly
+  unforgeable brand. This line's one constructor is `packages/core/src/identity/subject.ts`.
+- **`A:schema.prisma` and its migration chain** (see wave 1b).
+- **`A:docs/AUDIT-2026-08-07-spec.md`** — this line already resolved that audit into spec edits
+  (ADR-011) and keeps the resolution as `AUDIT-2026-08-07.md`; A's file stays in A's history.
+- **A's cost-model and request-accounting modules** under `A:packages/core/src/leverage/` (ADR-036). The first prices a legal request partly
   on "it permanently consumes the ONE (user, controller, requestType) idempotency slot" — the
   pre-ADR-013 model in a constant; the second books on `provableSendConfirmed` and imports the 13-state
   clock vocabulary. Note the trap the plan did not name: A's expected-cost walk cannot simply be ported
@@ -185,10 +196,15 @@ inherit them:
 
 ## Port with a fix, never as-is
 
-- **`scripts/readiness.mjs`** — its `filesUnder()` swallows a missing-directory throw and returns
+- **`A:scripts/readiness.mjs`** — its `filesUnder()` swallows a missing-directory throw and returns
   `[]`, so a grep-based check reports **PASS on a directory that does not exist**. Fix that before
   trusting it, and add gates for B's invariants (the three-way C1 clock agreement, "no silence
   escalation without a provable channel") which A's version has no concept of.
+  **Outcome (2026-08-13 audit): it was not ported at all.** This line's `scripts/readiness.mjs` is
+  written from scratch against B's gates — it shells the four spec-audit gates by exit code instead
+  of grepping directories, so the failure mode above cannot occur, and it adds the env/posture and
+  counsel tracks A had no concept of. Recorded here because "port with a fix" and "re-derive" look
+  the same from the outside and only one of them leaves A's defect behind.
 - **A's `docs/11-dpia.md`** (imported in wave 1) is scoped to "the leverage ladder only". B already
   processes credit files and parses hostile documents, so the DPIA **understates B's actual
   processing today** — it needs the amendment its own scope note anticipates before it goes to
@@ -222,33 +238,55 @@ The port is closed. This section exists so nobody re-opens a question that was a
 something below looks like an oversight, it is not, and the reason is here.
 
 **Refused on the merits** (the refuse list above, unchanged and still binding):
-`scripts/generate-playbooks.mjs`, `packages/core/src/subject/verified-subject.ts`, A's `schema.prisma`
-and migration chain, `docs/AUDIT-2026-08-07-spec.md`, the `packages/core/src/leverage/` cost-model and
+`A:scripts/generate-playbooks.mjs`, `A:packages/core/src/subject/verified-subject.ts`, `A:schema.prisma`
+and its migration chain, `A:docs/AUDIT-2026-08-07-spec.md`, the `A:packages/core/src/leverage/` cost-model and
 request-accounting modules, the three `boniversum` playbooks, and `VerifiedContactIdentifier`. Wave 5
-adds one more: **`packages/db/src/repositories/rights-request.repo.ts`**, whose
+adds one more: **`A:packages/db/src/repositories/rights-request.repo.ts`**, whose
 `OPEN_OR_COMPLETE_EXCLUDED` semantics contradict ADR-013 and would permanently block a lawful second
-cycle after `COMPLIED`.
+cycle after `COMPLIED`. (There is no `packages/db/src` here at all — `packages/db` is the Prisma
+schema and migration chain, and the repositories live with their consumers:
+`apps/api/src/requests/prisma-requests.repository.ts` and `apps/worker/src/repo/prisma-worker.repo.ts`.)
 
 **Superseded by a re-derivation** — A's file exists, this line has its own, and they are not
-interchangeable. `channels/email.ts`, `channels/postal.ts`, `workflows/dispatch.ts`,
-`workflows/deadline-sweep.ts`, `workflows/ingest-response.ts` and `gateway/controller-gateway.ts` were
-all rewritten against the 16-state machine (ADR-037). A's versions are written against a 13-state
-machine in which an email starts the statutory clock; copying any one of them back re-imports C1.
-A's `engine/factory.ts` and `bullmq-engine.ts` are the exception — adopted, with the default changed
-(ADR-031).
+interchangeable. All of these were rewritten against the 16-state machine (ADR-037); A's versions are
+written against a 13-state machine in which an email starts the statutory clock, so copying any one of
+them back re-imports C1. Two of the pairs also differ in name, which is exactly where a careless
+"the file is already there" reading goes wrong:
+
+| A's file | this line's file |
+|---|---|
+| `A:channels/email.ts` | `apps/worker/src/channels/email.ts` |
+| `A:channels/postal.ts` | `apps/worker/src/channels/postal.ts` |
+| `A:workflows/dispatch.ts` | `apps/worker/src/workflows/dispatch.ts` |
+| `A:workflows/deadline-sweep.ts` | `apps/worker/src/workflows/deadline.ts` |
+| `A:workflows/ingest-response.ts` | `apps/worker/src/workflows/ingest.ts` |
+| `A:gateway/controller-gateway.ts` | `apps/worker/src/gateway/controller-gateway.ts` |
+
+`A:engine/factory.ts` and `A:bullmq-engine.ts` are the exception — adopted rather than re-derived, with
+the default changed (ADR-031); they live here as `apps/worker/src/engine/factory.ts` and
+`apps/worker/src/engine/bullmq-engine.ts`. `apps/worker/src/engine/temporal-engine.ts` exists beside
+them but is a typed placeholder that **throws** on `schedule()` — deliberately, because a scheduler
+that accepts a Frist timer and drops it produces a request whose deadline never expires and which
+looks healthy in every view. Do not read its presence as "Temporal is wired".
 
 **Not ported because the backing capability does not exist here**, and a screen or worker for a
 capability the product lacks is a mock-up (the wave-2c rule):
 - A's `herkunft`, `schutz`, `schufa` and `report` screens — product surfaces whose endpoints this API
   does not have. They belong with the features, not with the shell.
-- A's `workflows/alias-relay.ts`, `suppression-renewal.ts`, `route-staleness.ts` and `anomaly-sweep.ts`
+- `A:workflows/alias-relay.ts`, `A:suppression-renewal.ts`, `A:route-staleness.ts` and `A:anomaly-sweep.ts`
   — Tier-1 ladder machinery. The rungs exist here (ADR-036) but nothing yet produces the entities
   these sweeps maintain, so porting them would ship four cron jobs over empty tables.
-- A's `workflows/purge-raw-docs.ts` — the retention window is enforced as a DB constraint here
-  (`raw_document_requires_purge_date`, 0005) but the sweep that acts on `purgeRawAt` is **not built**.
-  This is the one genuine gap in the list rather than a decision: **TODO(safety)** — every raw
-  document currently carries a purge date nothing enforces.
-- A's `workflows/art77-draft.ts` — this line records that a complaint is DUE (`ESCALATION_DRAFTED`)
+- `A:workflows/purge-raw-docs.ts` — the retention window is enforced as a DB constraint here
+  (`raw_document_requires_purge_date`, 0005). When this plan was written the sweep that acts on
+  `purgeRawAt` was **not built**, and this bullet named it the one genuine gap in the list rather than
+  a decision. **Closed by the 2026-08-13 audit (M1)**, after the port: `apps/worker/src/workflows/purge.ts` is the executor
+  (delete-then-tombstone, blob first — a tombstone without a delete would only *look* purged), wired
+  into the 15s sweep in `apps/worker/src/main.ts` beside dispatch and the deadline sweep. It was
+  re-derived, not ported. One qualification, kept visible because it is the part that still fails
+  silently: `deleteObject` is a logged no-op until the EU object-store adapter exists, so today the
+  tombstone is the whole of the work — carried as a `TODO(safety)` at the wiring site in
+  `apps/worker/src/main.ts`, not here.
+- `A:workflows/art77-draft.ts` — this line records that a complaint is DUE (`ESCALATION_DRAFTED`)
   and evidences the human's filing, but does not render the complaint text. That is counsel-owned
   prose (`CLAUDE.md`), and A's generator writes it in code.
 

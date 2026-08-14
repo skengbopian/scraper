@@ -567,19 +567,33 @@ having; it is simply built on a foundation that cannot express the corrected clo
   that make every domain a refit rather than a copy, the refuse list, and the two files that must be
   ported only with a fix. That plan supersedes the sketch in this ADR where they differ.
 - **Expected side effect:** `tools/spec-audit` now emits `[WARN DOC-REF]` for every file these ADRs
-  name that has not landed yet (`docs/11-dpia.md`, `PRE-SEND-CHECKLIST.md`, `engine/factory.ts`, …).
+  name that has not landed yet (`docs/11-dpia.md`, `PRE-SEND-CHECKLIST.md`, the engine factory, …).
   Those warnings are the port's own checklist and clear themselves wave by wave — do **not** silence
   them by deleting the references. Failures (not warnings) remain the CI gate.
+  **Amended 2026-08-14 (D8), because the checklist outlived its purpose.** The port closed with wave 5,
+  so the remaining warnings stopped clearing themselves and settled into a permanent floor of 33 — and a
+  warning channel that never reaches zero is one people learn to scroll past, which costs more than it
+  ever bought. Two things were wrong with it. First, the resolver tries exactly two paths (repo-root and
+  doc-relative), so a shorthand like "engine/factory.ts" was reported missing while
+  `apps/worker/src/engine/factory.ts` sat on disk — a false absence. Second, this plan and
+  `docs/port-plan-from-A.md` cite A's tree by path, and A's files are *supposed* not to exist here — a
+  true absence that is not a defect. Both are now written so a reader can tell them apart: this line's
+  files carry their full repo-relative path, and A's carry the `A:` prefix defined in
+  `docs/port-plan-from-A.md`. The rule the bullet was defending is unchanged and still binding — a
+  reference is never deleted to silence a warning; it is corrected, or the claim around it is rewritten
+  to say what is actually true.
 
 ### ADR-031 · Workflow engine: keep A's interface+factory, default to pg-boss, Temporal stays the target
 **Status:** ACCEPTED · **Decided:** 2026-08-11 · **Supersedes:** A's `D2 — Workflow engine: BullMQ
 first, Temporal target` (its default only, not its structure) · **Closes:** OQ-12.
 
-The merge collides two answers: A ships `WorkflowEngine` with an engine **factory** and both a
-`bullmq-engine.ts` and a `temporal-engine.ts`; B ships a single pg-boss implementation (ADR-029)
+The merge collides two answers: A ships `WorkflowEngine` with an engine **factory** and both adapters
+(`A:bullmq-engine.ts`, `A:temporal-engine.ts`); B ships a single pg-boss implementation (ADR-029)
 proven against the corrected 16-state machine with a state-guarded handler and an integration test.
+(Wave 5 adopted the shape: those two live here as `apps/worker/src/engine/bullmq-engine.ts` and
+`apps/worker/src/engine/temporal-engine.ts`, the latter a typed placeholder that throws.)
 
-- **Adopt A's shape:** the interface plus `engine/factory.ts` selecting an adapter from config is
+- **Adopt A's shape:** the interface plus `apps/worker/src/engine/factory.ts` selecting an adapter from config is
   better than B's single hard-wired engine, and it is what makes the Temporal migration a config
   change. Port it in wave 5 with the worker.
 - **Change A's default to pg-boss** for the interim. Reasons, in order: a statutory 30+ day timer
@@ -964,18 +978,18 @@ because "was this anchor qualified?" is a question the audit trail must answer m
 **Two expiry paths, not one.** A has a single path: `AWAITING_RESPONSE` past `deadlineAt` → draft an
 Art. 77 complaint. Coherent in a 13-state machine where email started the clock; here the same code on a
 provisional deadline would found a DPA complaint on a deadline that was never legally established. So
-`workflows/deadline.ts` has a table, not an if-chain: provisional → `AWAITING_REGISTERED_RESEND` (the
+`apps/worker/src/workflows/deadline.ts` has a table, not an if-chain: provisional → `AWAITING_REGISTERED_RESEND` (the
 user decides, ADR-012); statutory → `ESCALATION_DRAFTED`. The handler also refuses to fire *early*,
 because pg-boss `startAfter` is a floor rather than a guarantee.
 
 **Ingest accepts a reply from every state that has the edge.** A gates on
-`state === 'AWAITING_RESPONSE'` (`ingest-response.ts:109`). Ported unchanged that would have silently
+`state === 'AWAITING_RESPONSE'` (`A:ingest-response.ts:109`). Ported unchanged that would have silently
 discarded every controller reply to an emailed request — the most common case — as an info-level skip,
 leaving an answered request displaying "waiting" forever. `INGESTIBLE_STATES` is derived from the
 transition table and a test binds the two, so it also recovers the late-reply states (H1) the
 single-state gate lost.
 
-**Adopted from A rather than re-derived:** the engine interface + `engine/factory.ts` shape (ADR-031 —
+**Adopted from A rather than re-derived:** the engine interface + `apps/worker/src/engine/factory.ts` shape (ADR-031 —
 pg-boss stays the default, the BullMQ adapter is retained but demoted and lazily imported so Redis is
 not a build dependency, Temporal remains the target); the gateway's *ordering* (evidence before the
 wire, at-most-once via existing outbound evidence); `assertStartupSafe`'s positive-check insight (an
@@ -983,10 +997,12 @@ unset provider selector also defaults to a stub, so production must configure ev
 and the human-queue rule that a request which never reached the wire stays `READY` rather than
 inventing a `READY → NEEDS_HUMAN` edge.
 
-**Refused, again:** A's `packages/db/src/repositories/rights-request.repo.ts`. Its
+**Refused, again:** `A:packages/db/src/repositories/rights-request.repo.ts`. Its
 `OPEN_OR_COMPLETE_EXCLUDED` semantics (line 34) contradict ADR-013 and would block a lawful second
 cycle. The gateway's send-level idempotency here asks "did *this* request already reach the wire",
-never "has this triple ever been used".
+never "has this triple ever been used". There is no `packages/db/src` in this line at all: `packages/db`
+is the Prisma schema and migration chain, and the request repositories live with their consumers —
+`apps/api/src/requests/prisma-requests.repository.ts` and `apps/worker/src/repo/prisma-worker.repo.ts`.
 
 **Nothing leaves the process.** Every playbook is `active: false` and `renderRequest()` refuses an
 inactive one, so a real dispatch job renders nothing and lands in the ops queue with that reason —

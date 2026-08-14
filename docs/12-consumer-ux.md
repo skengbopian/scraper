@@ -4,7 +4,14 @@
 > per ADR-030. **Renumbered 10 → 12 by ADR-032**: this line's `docs/10` is the utility roadmap, which
 > the ADR log and `CLAUDE.md` reference throughout, so the incoming file moves rather than the
 > incumbent. Its internal "docs/10" self-references are the author's originals — read them as this
-> file. Cross-references `apps/web/src/lib/data-holders.ts`, which arrives in wave 2 with the web app.
+> file. Where the original cross-references `A:apps/web/src/lib/data-holders.ts`, read
+> `apps/api/src/census/census.ts`: the web app landed in wave 2 as `apps/web-next` and that catalogue
+> did not come with it. The controller list this document designs around — plain-German name, category,
+> risk label, "what they hold about you" — is served by the API and rendered by
+> `apps/web-next/app/firmen/page.tsx`, because it is also the sending address book (`docs/07`) and a
+> second client-side copy would be a second answer to "which controllers exist" (D35: the census is a
+> sending address book, not consumer advice). The path convention is `docs/port-plan-from-A.md`'s: an
+> `A:`-prefixed path is A's tree, not this repo's.
 
 Distilled from competitor/pattern research (Incogni, DeleteMe, Optery, Kanary;
 bonify/meineSchufa/Finanztip/Verbraucherzentrale; GOV.UK/CFPB/Leichte Sprache).
