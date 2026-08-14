@@ -15,7 +15,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "dev": "pnpm -r --parallel dev"
+    "dev": "pnpm -r --parallel dev",
+    "readiness": "node scripts/readiness.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

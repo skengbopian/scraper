@@ -206,6 +206,57 @@ for (const [f, pb] of Object.entries(playbooks)) {
   walk(pb.provenance);
 }
 
+// ---------- 9. Dev-fixture playbook documents pass the SAME gate (audit P1c/P2) ----------
+// The seed writes Playbook.document JSON that the worker later casts to `Playbook` with no runtime
+// validation — so fixture documents must clear the identical schema+lint gate the shipped corpus
+// does. Requires apps/api to be built; warns (rather than fails) when it is not, so the YAML-only
+// CI path keeps working.
+{
+  const seedDist = path.join(ROOT, 'apps/api/dist/db/seed.js');
+  const fixturesDist = path.join(ROOT, 'apps/api/dist/common/dev-fixtures.js');
+  if (fs.existsSync(seedDist) && fs.existsSync(fixturesDist)) {
+    try {
+      const { demoPlaybookDocument, DEMO_PLAYBOOK_VERSION } = await import(seedDist);
+      const { DEV_DEMO_PLAYBOOK_PAIRS } = await import(fixturesDist);
+      for (const pair of DEV_DEMO_PLAYBOOK_PAIRS) {
+        const slug = `demo.${pair.controllerSlug}.${pair.requestType.toLowerCase()}`;
+        const doc = demoPlaybookDocument(slug, pair.controllerSlug, pair.requestType);
+        const problems = validatePlaybook(doc, ajvValidate).filter((p) => p.severity === 'error');
+        if (problems.length) {
+          for (const p of problems) F('SEED-GATE', `${slug}: [${p.id}] ${p.message}`);
+        } else {
+          O(`${slug} (seed fixture document) passes the full validation gate`);
+        }
+        if (doc.active !== false) F('SEED-GATE', `${slug}: fixture document must ship active:false — the counsel gate applies to fixtures`);
+        if (doc.version !== DEMO_PLAYBOOK_VERSION) F('SEED-GATE', `${slug}: document.version ${doc.version} != DEMO_PLAYBOOK_VERSION ${DEMO_PLAYBOOK_VERSION}`);
+        if (pair.requestType === 'ERASURE_ART17' && doc.scopeSource !== 'PROVENANCE_ANSWER') {
+          F('SEED-GATE', `${slug}: a bureau-erasure fixture must carry the BOUNDED shape (scopeSource: PROVENANCE_ANSWER) — docs/07 forbids the unbounded letter`);
+        }
+      }
+    } catch (e) {
+      F('SEED-GATE', `could not evaluate seed fixture documents: ${e.message}`);
+    }
+  } else {
+    W('SEED-GATE', 'apps/api/dist not built — seed fixture playbook documents were NOT validated this run');
+  }
+}
+
+// ---------- 10. Templates carry no outcome promise (docs/05 §3; audit P7) ----------
+// The i18n suite sweeps UI copy for outcome promises; templates — the HIGHEST-blast-radius prose in
+// the repo — were outside every sweep. Same regex as packages/i18n/test/strings.test.ts.
+{
+  const FORBIDDEN_PROMISES = /(we will get|we guarantee|garantier|wir werden daf|raise your score|Score verbessern|Score erhöhen|100\s?%|sicher gelöscht)/i;
+  const tplDir = path.join(ROOT, 'templates');
+  for (const f of fs.readdirSync(tplDir).filter((t) => t.endsWith('.md'))) {
+    const body = fs.readFileSync(path.join(tplDir, f), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    if (FORBIDDEN_PROMISES.test(body)) {
+      F('TPL-PROMISE', `templates/${f} contains outcome-promise language (docs/05 §3 — never promise an outcome)`);
+    } else {
+      O(`templates/${f} carries no outcome promise`);
+    }
+  }
+}
+
 // ---------- report ----------
 console.log('==================== FAILURES ====================');
 fail.forEach((l) => console.log(l));
