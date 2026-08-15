@@ -3,7 +3,9 @@
   "private": true,
   "description": "Scraper (The Right to Be Forgotten) — Phase 0 monorepo. Germany-first consumer data-rights platform.",
   "packageManager": "pnpm@9.15.9",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "//workspaces": "Documentation only. pnpm reads workspace members from pnpm-workspace.yaml, NOT from this array. pnpm-workspace.yaml is authoritative — keep the two in sync.",
   "workspaces": [
     "apps/*",
@@ -13,10 +15,11 @@
   "scripts": {
     "//": "Scaffolding placeholder — Claude Code fills these in during M0. Do not add real deps until the layout is confirmed.",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "lint": "pnpm -r lint",
     "dev": "pnpm -r --parallel dev",
-    "readiness": "node scripts/readiness.mjs"
+    "readiness": "node scripts/readiness.mjs",
+    "//test": "--workspace-concurrency=1 because apps/api, apps/worker and packages/corpus-cli all run their integration suites against ONE Postgres. pnpm runs sibling packages concurrently, so without this they interleave: corpus-cli stands every playbook down to reach a fresh-node state while the worker's deadline runner is mid-seed. That is a race, not a fixture bug — it would surface in CI as an intermittent failure in whichever suite lost, which is strictly worse than a slower run."
   },
   "devDependencies": {
     "typescript": "^5.6.0"

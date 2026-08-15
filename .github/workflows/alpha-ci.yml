@@ -76,7 +76,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://scraper:scraper@localhost:5432/scraper3_test
 
-      - run: pnpm -r test
+      # `pnpm test`, not `pnpm -r test`: the root script pins --workspace-concurrency=1, because
+      # apps/api, apps/worker and packages/corpus-cli all drive integration suites against this one
+      # Postgres service. Run concurrently they interleave — corpus-cli standing every playbook down
+      # to reach a fresh-node state while the worker's deadline runner is mid-seed — and the loser
+      # fails for reasons unrelated to the change under test.
+      - run: pnpm test
 
   a11y:
     runs-on: ubuntu-latest
