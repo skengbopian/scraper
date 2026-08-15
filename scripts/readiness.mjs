@@ -82,6 +82,15 @@ for (const [track, name, args] of [
   }
 }
 
+// A licence is repo-answerable, so it is a row and not a ☐. WARN rather than FAIL outside a
+// deployment: the licence is an open owner decision (docs/15 D3), and a gate that is red by
+// construction on every commit is one people stop reading. In DEPLOY posture it is a hard failure,
+// because under default copyright nobody but the author may run, copy or modify this software — and
+// "EU citizens self-host it" is the entire launch model.
+const licence = ['LICENSE', 'LICENSE.md', 'LICENCE', 'LICENCE.md', 'COPYING'].find((f) => fs.existsSync(path.join(ROOT, f)));
+add('LEGAL', licence ? PASS : isDeployPosture ? FAIL : WARN, 'a LICENSE file exists (docs/15 §3, decision D3)',
+  licence ? `= ${licence}` : 'none — distributing this repo is unlawful today, and distribution IS the launch model');
+
 // ---------- IDENTITY / EVIDENCE / CRYPTO (deploy posture only where env-shaped) ----------
 const providerSeams = ['SCRAPER_MAILER', 'SCRAPER_POSTAL', 'SCRAPER_TIMESTAMPER', 'SCRAPER_IDENTITY', 'SCRAPER_DOC_SANDBOX'];
 for (const seam of providerSeams) {
@@ -130,7 +139,8 @@ for (const label of [
   'RDG posture decided per deployment model (docs/14: posture A = self-representation, OQ-29; operated nodes = Inkasso vs lawyer white-label)',
   'DPIA signed AFTER §6 reflects implementation (identity + erasure landed 2026-08-14; credit-file sealing, DB-role split and the backup window are open)',
   'ident/QTSP/postal contracts signed; stubs disabled; dry run against a test controller done',
-  'deployment posture declared (docs/14 A/B/C); for operated nodes the DPIA instantiated with that node\'s own stack (docs/11 §4)',
+  'deployment posture declared (docs/14 §1 — record A/B/C, operator and date there); for operated nodes the DPIA instantiated with that node\'s own stack (docs/11 §4)',
+  'docs/15 decisions D1–D9 answered, or at least the ones this send depends on (D5 first letter, D6 QTSP, D7 mandate form)',
 ]) add('COUNSEL', HUMAN, label);
 
 // ---------- report ----------

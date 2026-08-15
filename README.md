@@ -13,7 +13,10 @@ captures tamper-evident proof, and escalates on statutory deadlines.
 > citizens self-host (or run for a community) to exercise their own data rights, not a central
 > business. Nothing phones home; every node holds its own keys, census copy and statistics. What
 > that simplifies, what it weakens, and the open counsel questions it creates are in
-> [`docs/14-decentralised-deployment.md`](docs/14-decentralised-deployment.md).
+> [`docs/14-decentralised-deployment.md`](docs/14-decentralised-deployment.md); the entity, licence
+> and funding half — all of it still open, including the **absence of a LICENSE file, which makes
+> distribution unlawful today** — is in
+> [`docs/15-entity-and-governance.md`](docs/15-entity-and-governance.md).
 
 ## What Phase 0 is (and is not)
 

@@ -24,6 +24,14 @@ postures get names and the other documents refer to them by letter.
 The codebase is identical across all three. What differs is who holds the KEK, who owes the GDPR
 duties, and — critically — who the safety controls can and cannot bind (§4).
 
+**Declared posture of the first node:** `TODO(owner):` — record A, B or C here, with the operator's
+name and the date, before that node sends anything. This is not paperwork. Almost everything a
+reviewer needs to know forks on it: whether `docs/11-dpia.md` binds at all (OQ-28), whether the RDG
+is engaged (OQ-29), who the controller is, and which of §5's operator duties apply. Readiness carries
+it as a `☐` COUNSEL row precisely because no script can answer it — the software cannot tell whose
+hardware it is running on, which is the whole point of §4.
+`docs/15-entity-and-governance.md` holds the entity, licence and funding decisions this depends on.
+
 ## 2. What gets legally SIMPLER, and why it is honest to say so
 
 Posture A collapses the hardest legal questions this project carries, and not by wishful thinking —
