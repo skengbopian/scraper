@@ -1,4 +1,4 @@
-import type { IdentityProvider, PostalProvider, PostalSendResult, QualifiedTimestamp, Timestamper, VerifiedIdentity } from '@scraper/core';
+import type { IdentityProvider, PostalProvider, PostalSendResult, TimestampAnchor, Timestamper, VerifiedIdentity } from '@scraper/core';
 
 /**
  * Real provider adapters (docs/10 §4 picks): LetterXpress (postal, Einwurf-Einschreiben `r1`),
@@ -12,7 +12,8 @@ import type { IdentityProvider, PostalProvider, PostalSendResult, QualifiedTimes
  * Nothing wires them into dispatch until then: the alpha's only "send" remains the simulate surface.
  *
  * The honest split per CLAUDE.md §6 stays visible in the types: only a registered postal send
- * returns a `proof`, and only the QTSP anchor makes a timestamp qualified.
+ * returns a `proof`, and only a QUALIFIED anchor from an endpoint on `QUALIFIED_QTSP_HOSTS` makes a
+ * timestamp legal time. Both of those are refusals a vendor's own response cannot talk us out of.
  */
 class CredentialsMissingError extends Error {
   constructor(vendor: string, vars: string[]) {
@@ -64,30 +65,114 @@ export class LetterXpressPostalProvider implements PostalProvider {
   }
 }
 
-/** eIDAS qualified timestamps via Openapi/InfoCert (docs/10 §4; ~€0.10/stamp, RFC 3161 under REST). */
-export class OpenapiTimestamper implements Timestamper {
-  private readonly base = env('QTSP_BASE') ?? 'https://test.timestamp.openapi.com';
+export const DEFAULT_QTSP_BASE = 'https://test.timestamp.openapi.com';
 
-  async anchor(sha256Hex: string): Promise<QualifiedTimestamp> {
-    const token = env('QTSP_TOKEN');
-    if (!token) throw new CredentialsMissingError('Openapi/InfoCert QTSP', ['QTSP_TOKEN']);
-    const res = await fetch(`${this.base}/timestamp`, {
+/**
+ * Endpoints whose tokens are QUALIFIED eIDAS timestamps.
+ *
+ * ADDING A HOST HERE IS A LEGAL ASSERTION, not a configuration change: it says the operator of that
+ * endpoint is on an EU member state's Trusted List as a qualified trust service provider for
+ * timestamps, and that the account issuing our tokens is a qualified one. That is a counsel-checkable
+ * fact about a company, which is why it lives in reviewed code and not in an environment variable an
+ * operator can set to anything.
+ *
+ * TODO(credentials): `timestamp.openapi.com` is the production sibling of the test host by naming
+ * convention and has not been confirmed against a live account — confirm at onboarding. The failure
+ * direction of a wrong entry here is safe: an endpoint that does not exist returns an HTTP error and
+ * yields no anchor at all. The dangerous direction would be a TEST host on this list, and the whole
+ * point of the list is that adding one requires someone to type it.
+ */
+export const QUALIFIED_QTSP_HOSTS: readonly string[] = ['timestamp.openapi.com'];
+
+/** Does `base` name an endpoint whose tokens establish legal time? Unparseable or unknown → no. */
+export function isQualifiedQtspBase(base: string): boolean {
+  try {
+    return QUALIFIED_QTSP_HOSTS.includes(new URL(base).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export interface OpenapiTimestamperOptions {
+  readonly base?: string;
+  readonly token?: string;
+  /** Injected so the adapter is testable without a network and without a vendor account. */
+  readonly fetchImpl?: typeof globalThis.fetch;
+}
+
+/**
+ * eIDAS timestamps via Openapi/InfoCert (docs/10 §4; ~€0.10/stamp, RFC 3161 under REST).
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE DEFECT THIS CLASS USED TO CARRY
+ * ---------------------------------------------------------------------------------------------
+ * It returned `kind: 'QUALIFIED'` unconditionally, and its own comment admitted the claim was true
+ * "only against the PRODUCTION endpoint" — while `QTSP_BASE` defaulted to the TEST service. The two
+ * facts that authorise an Art. 12(3) deadline are a carrier-issued receipt and a qualified anchor
+ * (`provableSendEvidenceIdOf`), and they are deliberately sourced from two different vendors so that
+ * no single misconfigured seam can produce both. This adapter dissolved that: a sandbox token plus a
+ * real carrier receipt minted a real statutory deadline against a real controller — a deadline we
+ * could never evidence at a DPA, on a letter whose anchor came from a test service.
+ *
+ * It is the same shape as the stub-postal hazard `stub-providers.ts` documents, except the stub was
+ * honest about being a stub and this was not. The fix is the one the type system was already built
+ * for: return the UNION, and let the host decide which arm.
+ *
+ * The degraded no-QTSP mode stays the shipped default (owner decision D6, docs/15): a node with no
+ * qualified account still sends, still evidences, still chases — it just cannot start a statutory
+ * clock, and says so in the anchor's own `reason`. That is reachable deliberately, via
+ * `SCRAPER_TIMESTAMPER=simulated`, and never by omission.
+ */
+export class OpenapiTimestamper implements Timestamper {
+  private readonly base: string;
+  private readonly token: string | undefined;
+  private readonly fetchImpl: typeof globalThis.fetch;
+
+  constructor(opts: OpenapiTimestamperOptions = {}) {
+    this.base = opts.base ?? env('QTSP_BASE') ?? DEFAULT_QTSP_BASE;
+    this.token = opts.token ?? env('QTSP_TOKEN');
+    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  }
+
+  async anchor(sha256Hex: string): Promise<TimestampAnchor> {
+    if (!this.token) throw new CredentialsMissingError('Openapi/InfoCert QTSP', ['QTSP_TOKEN']);
+
+    // The endpoint is called either way. A sandbox anchor is still worth having — it evidences
+    // integrity and it exercises the whole path on a dry run — it just may not claim to be time.
+    const res = await this.fetchImpl(`${this.base}/timestamp`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.token}` },
       body: JSON.stringify({ hash: sha256Hex, hash_algorithm: 'SHA-256' }),
     });
     if (!res.ok) throw new Error(`QTSP: HTTP ${res.status} — ${await res.text()}`);
     const body = (await res.json()) as { id?: string; timestamp?: string };
-    // `kind: 'QUALIFIED'` is the claim that this anchor can establish legal time, and it is the
-    // second of the two facts that authorise a statutory deadline (ADR-037). It is true only against
-    // the PRODUCTION endpoint: `QTSP_BASE` defaults to the test service above, whose tokens are not
-    // qualified. TODO(credentials): assert the production base at onboarding rather than trusting env.
-    return {
-      kind: 'QUALIFIED' as const,
+    const common = {
       tsaRef: String(body.id ?? ''),
       signedAt: body.timestamp ? new Date(body.timestamp) : new Date(),
       algorithm: 'SHA-256',
     };
+
+    if (!isQualifiedQtspBase(this.base)) {
+      let host: string;
+      try {
+        host = new URL(this.base).hostname;
+      } catch {
+        host = this.base;
+      }
+      return {
+        kind: 'SIMULATED',
+        ...common,
+        // Surfaced verbatim by UnprovableSendError when the machine refuses the send, so it names
+        // the host and the fix rather than saying "not qualified".
+        reason:
+          `QTSP_BASE names ${host}, which is not one of the endpoints whose tokens are qualified ` +
+          `eIDAS timestamps (QUALIFIED_QTSP_HOSTS in apps/worker/src/providers/real-providers.ts` +
+          `${this.base === DEFAULT_QTSP_BASE ? '; QTSP_BASE is unset, so this is the TEST service' : ''}) — ` +
+          'this establishes integrity, not legal time',
+      };
+    }
+
+    return { kind: 'QUALIFIED', ...common };
   }
 }
 

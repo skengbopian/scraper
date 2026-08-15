@@ -106,6 +106,15 @@ add('IDENTITY', env.SCRAPER_KEK_MODE === 'env' ? PASS : isDeployPosture ? FAIL :
 add('IDENTITY', env.LETTERXPRESS_MODE === 'sandbox' || !env.LETTERXPRESS_MODE ? WARN : HUMAN,
   'LetterXpress live mode requires the Auslieferungsbeleg fetch (OQ-11) — adapter returns proof:null until then',
   `LETTERXPRESS_MODE=${env.LETTERXPRESS_MODE ?? '(unset)'}`);
+// The failure this row describes is otherwise invisible: an operator selects the real QTSP adapter,
+// pays for a token, and every anchor still comes back SIMULATED because QTSP_BASE points at the
+// vendor's test host — so no send can ever start an Art. 12(3) clock, and nothing says so. Which
+// hosts qualify is decided in reviewed code (QUALIFIED_QTSP_HOSTS), not here, because it is an
+// assertion about an EU Trusted List; readiness can only report what was selected.
+add('IDENTITY',
+  env.SCRAPER_TIMESTAMPER === 'openapi' ? (env.QTSP_BASE ? HUMAN : isDeployPosture ? FAIL : WARN) : WARN,
+  'QTSP anchors are QUALIFIED only against a reviewed production endpoint — anything else anchors SIMULATED, which starts no statutory clock (owner decision D6: that degraded mode is the shipped default)',
+  `SCRAPER_TIMESTAMPER=${env.SCRAPER_TIMESTAMPER ?? '(unset)'} · QTSP_BASE=${env.QTSP_BASE || '(unset → the vendor TEST host)'}`);
 
 // ---------- COMPLIANCE / INFRA ----------
 add('COMPLIANCE', (env.MODEL_REGION ?? 'eu') === 'eu' ? PASS : FAIL, 'MODEL_REGION=eu (no non-EU inference on personal data)',
