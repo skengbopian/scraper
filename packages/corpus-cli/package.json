@@ -1,0 +1,29 @@
+{
+  "name": "@scraper/corpus-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Give a node its corpus: import the playbooks, and activate one as a deliberate, recorded human act.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && vitest run --passWithNoTests",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "corpus:import": "node dist/cli.js import",
+    "corpus:activate": "node dist/cli.js activate",
+    "corpus:deactivate": "node dist/cli.js deactivate",
+    "corpus:status": "node dist/cli.js status"
+  },
+  "dependencies": {
+    "@scraper/core": "workspace:*",
+    "@scraper/api": "workspace:*",
+    "@prisma/client": "^5.20.0",
+    "yaml": "^2.6.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  }
+}

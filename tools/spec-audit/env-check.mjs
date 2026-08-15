@@ -66,8 +66,13 @@ const INDIRECT_READS = {
   },
 };
 
-/** Names a deployment never sets: they come from the CI runner or the test harness. */
-const NOT_OPERATOR_CONFIG = new Set(['CI', 'DATABASE_URL_TEST', 'SCRAPER_ROOT']);
+/**
+ * Names a deployment never sets: they come from the CI runner, the test harness, or the shell.
+ *
+ * `USER` is the last of those — `corpus-cli` falls back to it to label who performed an activation,
+ * and asking an operator to declare their own login name in `.env` would be noise.
+ */
+const NOT_OPERATOR_CONFIG = new Set(['CI', 'DATABASE_URL_TEST', 'SCRAPER_ROOT', 'USER']);
 
 function* sourceFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
