@@ -34,6 +34,12 @@ const REQUIRED = {
     'docs/03: the event log is the audit trail. Corrections are new rows; a deletable audit trail is not one.',
   evidence_record_append_only:
     'CLAUDE.md §6: evidence is chained and anchored. Mutable evidence cannot support a deadline assertion to a DPA.',
+  corpus_activation_append_only:
+    'docs/14 §5.2: activation is a deliberate human act, and 0019 is the only record of who took responsibility for a letter going out. An editable activation ledger answers nothing a controller or an authority would ask.',
+  corpus_activation_no_truncate:
+    'Row-level triggers do not fire on TRUNCATE (the lesson 0013 learned about the evidence chain). One statement would otherwise erase every activation record while the append-only trigger stayed green.',
+  activation_records_the_letter:
+    '0019: an ACTIVATED row must carry the hash of the letter the operator was shown. Without it the ledger records that someone authorised something, not what.',
   escalation_requires_human_send:
     'CLAUDE.md §5 / ADR-008: an Art. 77 complaint reaches ESCALATED only via a HUMAN_OPS humanSend. Auto-escalation must be unrepresentable, not merely discouraged.',
   credit_file_snapshot_identity_binding:

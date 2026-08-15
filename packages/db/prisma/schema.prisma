@@ -838,3 +838,59 @@ model AnomalyEvent {
   @@index([createdAt])
   @@index([userId])
 }
+
+/// The corpus activation ledger (migration 0019).
+///
+/// `docs/14` §5.2: "Activation remains a deliberate act against the node's own DATABASE row, never
+/// the YAML; on posture A the human taking responsibility is the user." That sentence describes a
+/// human act, and until this table existed the act left no trace — a `Playbook.active` boolean
+/// records the RESULT of a decision and nothing about the decision. Who made it, on what day, having
+/// been shown which letter, with the template sealed or not: all unrecoverable.
+///
+/// It matters most in the case the product is designed around. On posture A the person taking
+/// responsibility is the data subject, and if a controller or an authority later asks why a
+/// particular letter went out in their name, "the operator activated this playbook on this date,
+/// having read this exact letter, whose bound template carried this seal" is the answer. A boolean
+/// is not.
+///
+/// Deliberately NO foreign key to `Playbook`, for the same reason `AnomalyEvent` has none: an audit
+/// row must outlive whatever it describes. It carries the slug and version as opaque values, never
+/// subject data — the rendered letter is recorded as a HASH, never as text, because the preview is
+/// rendered against a dummy subject and storing letter bodies here would be a second copy of
+/// personal data in a table nothing purges.
+model CorpusActivation {
+  id              String                 @id @default(cuid())
+  playbookSlug    String
+  playbookVersion Int
+  action          CorpusActivationAction
+  controllerSlug  String
+  requestType     ActionType
+
+  /// The bound template and the seal it carried AT THE MOMENT OF THE ACT (templates/.signoff.json).
+  /// Recording the hash here is what makes "the letter was edited after this activation" detectable.
+  templateName    String
+  templateStatus  String
+  templateSha256  String
+
+  /// SHA-256 of the letter the operator was shown, rendered against a dummy subject. NULL only on a
+  /// DEACTIVATE that could not render — the kill switch must never be blocked by a broken template.
+  letterSha256    String?
+
+  /// Free text identifying the human. On posture A this is the data subject themselves.
+  actor           String
+  /// The attestation they confirmed, stored verbatim, plus its hash so a change of wording is
+  /// visible. The wording is counsel-owned (TODO(counsel) in packages/corpus-cli).
+  attestation       String
+  attestationSha256 String
+  /// `NODE_ENV` at the time: a DRAFT template may only be activated in a dev posture.
+  posture         String
+  createdAt       DateTime               @default(now())
+
+  @@index([playbookSlug, createdAt])
+  @@index([createdAt])
+}
+
+enum CorpusActivationAction {
+  ACTIVATED
+  DEACTIVATED
+}
