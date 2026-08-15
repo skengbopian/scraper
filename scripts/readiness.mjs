@@ -21,6 +21,7 @@
 // were checked anywhere but in someone's terminal, on the day they remembered to look.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -111,8 +112,69 @@ add('COMPLIANCE', (env.MODEL_REGION ?? 'eu') === 'eu' ? PASS : FAIL, 'MODEL_REGI
   `= ${env.MODEL_REGION ?? 'eu (default)'}`);
 add('COMPLIANCE', env.SCRAPER_CORS_ORIGINS ? PASS : isDeployPosture ? FAIL : WARN,
   'SCRAPER_CORS_ORIGINS set (dev list must never serve a deployment)', env.SCRAPER_CORS_ORIGINS ? '' : '(unset)');
-add('COMPLIANCE', env.OBJECT_STORE_ENDPOINT ? PASS : isDeployPosture ? FAIL : WARN,
-  'EU object store configured (evidence artefacts + purge sweep need a real store)', env.OBJECT_STORE_ENDPOINT ? '' : '(unset)');
+// ---------- OBJECT STORE: a round trip, not a non-empty string ----------
+//
+// This row used to test that `OBJECT_STORE_ENDPOINT` was truthy. Setting the variable to any value
+// at all turned a launch gate green while changing nothing — and there was no adapter behind it, so
+// the worker wrote `unconfigured://<key>` into every evidence record: a well-formed reference to
+// nothing. PRE-SEND-CHECKLIST §5.2 carried it as a known-unverified gate for exactly that reason.
+//
+// The question the gate is supposed to answer is "will the letter we hashed still be there, and can
+// we destroy a raw document when its retention window expires" (CLAUDE.md §6 and §4). Only a round
+// trip answers it: write, read back, compare the SHA-256, delete, confirm it is gone. For the
+// filesystem store that needs no network and no account, so it happens here. For S3 it needs signed
+// requests and credentials a build machine does not have, so this names the command instead of
+// pretending — `pnpm --filter @scraper/worker probe:store` runs the same four steps through the
+// adapter itself.
+//
+// Deliberately NOT folded into the `providerSeams` loop above even though `SCRAPER_OBJECT_STORE` is
+// the sixth entry of the worker's REQUIRED_REAL_PROVIDERS: that loop can only check that a string
+// is not "stub", and here we can do better.
+function probeFilesystemObjectStore(configuredRoot) {
+  const root = path.resolve(configuredRoot);
+  const dir = path.join(root, 'readiness-probe');
+  const file = path.join(dir, `${crypto.randomBytes(8).toString('hex')}.txt`);
+  const body = `scraper readiness probe ${new Date().toISOString()}\n`;
+  const expected = crypto.createHash('sha256').update(body).digest('hex');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, body, { mode: 0o600 });
+    const readBack = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    if (readBack !== expected) return { ok: false, detail: `read-back hashed to ${readBack.slice(0, 12)}…, not ${expected.slice(0, 12)}…` };
+    fs.unlinkSync(file);
+    // A store that cannot DELETE is a store on which CLAUDE.md §4 retention silently fails.
+    if (fs.existsSync(file)) return { ok: false, detail: 'the object is still readable after delete' };
+    try { fs.rmdirSync(dir); } catch { /* other probes may be running; an empty dir is harmless */ }
+    return { ok: true, detail: `round trip ok under ${root}` };
+  } catch (e) {
+    return { ok: false, detail: `${e.code ?? ''} ${e.message}`.trim() };
+  }
+}
+
+const objectStore = env.SCRAPER_OBJECT_STORE;
+if (!objectStore) {
+  add('COMPLIANCE', isDeployPosture ? FAIL : WARN,
+    'SCRAPER_OBJECT_STORE selects a store (evidence artefacts + the purge sweep need one)', '(unset)');
+} else if (objectStore === 'fs') {
+  const root = env.OBJECT_STORE_FS_ROOT;
+  const probe = root ? probeFilesystemObjectStore(root) : { ok: false, detail: 'OBJECT_STORE_FS_ROOT is unset' };
+  add('COMPLIANCE', probe.ok ? PASS : FAIL,
+    'object store round-trips (put → read back → SHA-256 → delete → gone)', probe.detail);
+  // A disk is EU-resident by construction only in the sense that the operator knows where the
+  // machine is. Nothing here can check that, and neither can anything else — see docs/14 posture A.
+  add('COUNSEL', HUMAN, 'the filesystem object store is on EU-resident, encrypted, backed-up storage that survives a restart');
+} else if (objectStore === 's3') {
+  const missing = ['OBJECT_STORE_ENDPOINT', 'OBJECT_STORE_BUCKET', 'OBJECT_STORE_REGION', 'OBJECT_STORE_ACCESS_KEY_ID', 'OBJECT_STORE_SECRET_ACCESS_KEY'].filter((k) => !env[k]);
+  add('COMPLIANCE', missing.length === 0 ? PASS : isDeployPosture ? FAIL : WARN,
+    'S3 object store fully configured', missing.length ? `missing: ${missing.join(', ')}` : `= ${env.OBJECT_STORE_ENDPOINT}/${env.OBJECT_STORE_BUCKET} (${env.OBJECT_STORE_REGION})`);
+  add('COMPLIANCE', HUMAN,
+    'object store round trip — readiness cannot sign a request from here; run `pnpm --filter @scraper/worker probe:store`');
+  // The adapter refuses a non-EU region STRING. It cannot tell where a host is: a MinIO instance in
+  // Virginia answers to `eu-central-1` perfectly happily (CLAUDE.md §3).
+  add('COUNSEL', HUMAN, 'the S3 endpoint is physically in the EU and the bucket is private, encrypted and un-versioned');
+} else {
+  add('COMPLIANCE', FAIL, 'SCRAPER_OBJECT_STORE names a known store', `= ${objectStore} (expected fs | s3)`);
+}
 
 // Persistence and durable time. These three mirror `assertApiStartupSafe()`
 // (apps/api/src/common/startup-safety.ts), which is NORMATIVE — it refuses the boot; this only

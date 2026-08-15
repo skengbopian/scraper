@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "//probe:store": "A real round trip against the configured object store — write, read back, verify the SHA-256, delete, confirm gone. readiness runs the equivalent inline for `fs`; for `s3` it needs credentials and a network, so it names this command instead of guessing.",
+    "probe:store": "node dist/providers/object-store/probe.js"
   },
   "dependencies": {
     "@scraper/core": "workspace:*",

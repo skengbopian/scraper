@@ -25,21 +25,58 @@ export interface PurgeDeps {
   readonly now: () => Date;
 }
 
-/** Delete-then-tombstone, blob first: a tombstone without a delete would LOOK purged. */
+/**
+ * Delete-then-tombstone, blob first: a tombstone without a delete would LOOK purged.
+ *
+ * ONE ROW'S FAILURE IS NOT EVERY ROW'S. The sweep used to abort at the first `deleteObject` throw,
+ * which was harmless while the deleter was a logged no-op. Against a real store it is not: a single
+ * reference the configured store refuses — the shape an operator produces by moving from `fs` to
+ * `s3` without moving the blobs — would stop every OTHER due document from being destroyed, so an
+ * unrelated misconfiguration would quietly extend the retention window of everything behind it.
+ *
+ * So each row is isolated: a failure leaves that row untombstoned (still due, still visible on the
+ * next sweep) and the others proceed. The sweep then RAISES with every failure named, because a
+ * document we promised to destroy and could not is not a log line.
+ */
 export async function sweepDueRawPurges(deps: PurgeDeps, limit = 50): Promise<number> {
   const now = deps.now();
   let purged = 0;
-  for (const r of await deps.findDueControllerResponsePurges(now, limit)) {
-    await deps.deleteObject(r.rawDocumentRef);
-    await deps.tombstoneControllerResponseRaw(r.id);
-    deps.log(`controller-response ${r.id}: raw document purged (was due ${now.toISOString()})`);
+  const failures: string[] = [];
+
+  const purgeOne = async (label: string, ref: string, tombstone: () => Promise<void>, note: string): Promise<void> => {
+    try {
+      await deps.deleteObject(ref);
+    } catch (e) {
+      failures.push(`${label} (${ref}): ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    await tombstone();
+    deps.log(note);
     purged += 1;
+  };
+
+  for (const r of await deps.findDueControllerResponsePurges(now, limit)) {
+    await purgeOne(
+      `controller-response ${r.id}`,
+      r.rawDocumentRef,
+      () => deps.tombstoneControllerResponseRaw(r.id),
+      `controller-response ${r.id}: raw document purged (was due ${now.toISOString()})`,
+    );
   }
   for (const d of await deps.findDueInboundDocumentPurges(now, limit)) {
-    await deps.deleteObject(d.storageRef);
-    await deps.tombstoneInboundDocumentRaw(d.id, now);
-    deps.log(`inbound-document ${d.id}: raw document purged`);
-    purged += 1;
+    await purgeOne(
+      `inbound-document ${d.id}`,
+      d.storageRef,
+      () => deps.tombstoneInboundDocumentRaw(d.id, now),
+      `inbound-document ${d.id}: raw document purged`,
+    );
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      `${failures.length} raw document(s) are past their retention window and could NOT be destroyed ` +
+        `(CLAUDE.md §4); ${purged} other(s) were purged. ${failures.join(' · ')}`,
+    );
   }
   return purged;
 }

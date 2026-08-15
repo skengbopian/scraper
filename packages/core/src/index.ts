@@ -13,6 +13,7 @@ export * from './template/signoff.js';
 export * from './playbook/types.js';
 export * from './playbook/engine.js';
 export * from './providers/index.js';
+export * from './providers/object-store.js';
 export * from './evidence/chain.js';
 export * from './evidence/provable-send.js';
 export * from './provenance/ledger.js';

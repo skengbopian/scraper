@@ -2,11 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import PgBoss from 'pg-boss';
 import { PrismaClient } from '@prisma/client';
-import type { DocSandbox, RawDocument, SandboxParseResult, TransitionResult } from '@scraper/core';
+import { routeObjectRef, type DocSandbox, type ObjectStore, type RawDocument, type SandboxParseResult, type TransitionResult } from '@scraper/core';
 import { PrismaRequestsRepository } from '@scraper/api/repository';
 import { loadWorkerConfig, type WorkerConfig } from './config.js';
 import { createWorkflowEngine } from './engine/factory.js';
 import { ControllerGateway } from './gateway/controller-gateway.js';
+import { createObjectStore } from './providers/object-store/resolve.js';
 import { SimulatedTimestamper, StubMailer, StubPostalProvider } from './providers/stub-providers.js';
 import { PrismaWorkerRepository } from './repo/prisma-worker.repo.js';
 import { handleDeadlineExpiry, sweepExpiredDeadlines, type DeadlinePayload } from './workflows/deadline.js';
@@ -53,7 +54,13 @@ class RefusingDocSandbox implements DocSandbox {
   }
 }
 
-function buildDispatchDeps(config: WorkerConfig, repo: PrismaWorkerRepository, requests: PrismaRequestsRepository, engine: DispatchDeps['engine']): DispatchDeps {
+function buildDispatchDeps(
+  config: WorkerConfig,
+  repo: PrismaWorkerRepository,
+  requests: PrismaRequestsRepository,
+  engine: DispatchDeps['engine'],
+  objectStore: ObjectStore,
+): DispatchDeps {
   const gateway = new ControllerGateway({
     mailer: new StubMailer(),
     postal: new StubPostalProvider(),
@@ -63,9 +70,11 @@ function buildDispatchDeps(config: WorkerConfig, repo: PrismaWorkerRepository, r
     hasOutboundEvidence: (id) => repo.hasOutboundEvidence(id),
     countOutboundForControllerSince: (controllerId, since) => repo.countOutboundForControllerSince(controllerId, since),
     maxSendsPerControllerPerHour: config.maxSendsPerControllerPerHour,
-    // No object store is configured; the ref is recorded so the chain is well-formed and the
-    // artefact's absence is visible rather than implied.
-    objectStorePut: async (key) => `unconfigured://${key}`,
+    // Until this seam existed the ref was `unconfigured://<key>` — a well-formed reference to
+    // nothing. The chain verified, the seal was green, and the letter we would have to produce at a
+    // DPA existed nowhere. `put` throwing here is caught by the gateway BEFORE the channel call, so
+    // a store that cannot keep the artefact stops the send instead of losing the evidence for it.
+    objectStorePut: (key, bytes) => objectStore.put(key, bytes),
     idFactory: () => `ev_${Math.random().toString(36).slice(2, 12)}`,
     now: () => new Date(),
   });
@@ -109,11 +118,12 @@ async function main(): Promise<void> {
   const db = new PrismaClient();
   const requests = new PrismaRequestsRepository(db);
   const repo = new PrismaWorkerRepository(db);
+  const objectStore = createObjectStore(process.env);
 
   // ADR-031: the engine is a config choice. pg-boss by default; the queue the worker CONSUMES from
   // is pg-boss regardless, since that is what the API's scheduler produces into.
   const handle = createWorkflowEngine({ engine: config.engine, databaseUrl: config.databaseUrl, redisUrl: config.redisUrl });
-  const dispatchDeps = buildDispatchDeps(config, repo, requests, handle.engine);
+  const dispatchDeps = buildDispatchDeps(config, repo, requests, handle.engine, objectStore);
   const ingestDeps = buildIngestDeps(config, repo, requests);
   const deadlineDeps = {
     load: (id: string) => requests.load(id),
@@ -150,15 +160,21 @@ async function main(): Promise<void> {
   // paths re-check state per row, and the repository compare-and-swaps the transition, so a sweep
   // can never double-apply what a job already did.
   // CLAUDE.md §4: the raw-document purge, previously a schema promise with no executor (audit M1).
-  // deleteObject is a logged no-op until the S3-EU adapter exists — the refs it sees today are
-  // `unconfigured://`/`sim://` markers, so there is no blob to delete; the tombstone is the real
-  // work. TODO(safety): implement the EU object-store delete alongside the put.
+  // The delete is real now. `routeObjectRef` is what keeps it honest in the middle case: a marker
+  // reference has no blob and is skipped, a reference the configured store owns is deleted, and a
+  // reference some OTHER store wrote is REFUSED — because tombstoning that row would record a purge
+  // that did not happen while the raw hostile document stayed wherever it actually is.
   const purgeDeps: PurgeDeps = {
     findDueControllerResponsePurges: (now, limit) => repo.findDueControllerResponsePurges(now, limit),
     findDueInboundDocumentPurges: (now, limit) => repo.findDueInboundDocumentPurges(now, limit),
     deleteObject: async (ref) => {
-      if (!ref.includes('://') || ref.startsWith('unconfigured://') || ref.startsWith('sim://')) return;
-      console.warn(`[purge] no object-store adapter — blob NOT deleted, only tombstoned: ${ref}`);
+      const routing = routeObjectRef(ref, objectStore);
+      if (routing.action === 'SKIP') return;
+      // TODO(safety): a refused purge should raise an ops-queue entry, not only halt this row.
+      // There is no surface for "retention could not be honoured" yet; the sweep names it on every
+      // pass until an operator acts.
+      if (routing.action === 'REFUSE') throw new Error(routing.reason);
+      await objectStore.delete(ref);
     },
     tombstoneControllerResponseRaw: (id) => repo.tombstoneControllerResponseRaw(id),
     tombstoneInboundDocumentRaw: (id, at) => repo.tombstoneInboundDocumentRaw(id, at),
@@ -188,7 +204,8 @@ async function main(): Promise<void> {
   timer.unref?.();
 
   console.log(
-    `worker up: engine=${handle.name} queues=dispatch,deadline-expiry,ingest-response — ` +
+    `worker up: engine=${handle.name} object-store=${objectStore.name} ` +
+      'queues=dispatch,deadline-expiry,ingest-response — ' +
       'providers are stubs, so a registered send CANNOT start a statutory clock (ADR-037)',
   );
 }

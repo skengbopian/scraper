@@ -11,6 +11,9 @@ coverage/
 .DS_Store
 # never commit user data, evidence, or scanned documents
 /data/
+# the object store's default development root (.env.example: OBJECT_STORE_FS_ROOT=./.data/objects).
+# It holds rendered letters and raw controller documents — personal data of a real person.
+/.data/
 /evidence/
 /inbound/
 *.pem

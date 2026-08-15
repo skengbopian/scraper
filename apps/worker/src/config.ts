@@ -52,6 +52,11 @@ const REQUIRED_REAL_PROVIDERS = [
   'SCRAPER_TIMESTAMPER',
   'SCRAPER_IDENTITY',
   'SCRAPER_DOC_SANDBOX',
+  // The sixth seam. Neither of its values (`fs`, `s3`) is a stub — a filesystem store is the honest
+  // posture-A answer — so this entry is here for the UNSET case: without a store the worker writes
+  // an evidence reference to nothing, and PLAN §2 puts "object store actually holding the rendered
+  // copy the evidence chain hashes" inside the first-real-send gate.
+  'SCRAPER_OBJECT_STORE',
 ] as const;
 
 export function assertStartupSafe(env: NodeJS.ProcessEnv): void {

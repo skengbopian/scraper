@@ -154,8 +154,10 @@ columns. This list is the gate; that file is the workspace.
       deadline fires. *Verified by:* the three readiness COMPLIANCE rows;
       `apps/api/test/startup-safety.test.ts` asserts readiness and the boot gate agree.
 - [ ] **Object store holding evidence, verified by a round trip.** *Verified by:* readiness
-      COMPLIANCE `EU object store configured` — **which today only checks the env string is
-      non-empty.** See §5.2.
+      COMPLIANCE `object store round-trips (put → read back → SHA-256 → delete → gone)` for a
+      filesystem store, which readiness performs itself; for an S3 store readiness cannot sign a
+      request, so run `pnpm --filter @scraper/worker probe:store`, which runs the same four steps
+      through the adapter. What neither proves is **where the store physically is** — see §5.2.
 - [ ] **Retention jobs verified:** raw response documents purge after the normalisation window;
       evidence and normalised records survive. *Verified by:* `apps/worker/test/purge.test.ts`; the
       SQL `raw_document_requires_purge_date` constraint (`apps/api/test/db-invariants.test.ts`).
@@ -198,19 +200,32 @@ playbook until this is done" — **was never written, and there is no migration 
 today records an intention and gates nothing. `TODO(safety)`: the check belongs in `corpus:activate`,
 where activation actually happens.
 
-### 5.2 The object-store readiness row does not probe the store
+### 5.2 No check can tell where the object store physically is
 
-It tests that `OBJECT_STORE_ENDPOINT` is a non-empty string. Setting the variable to any value turns a
-launch gate green while changing nothing, and there is no object-store adapter yet — the worker writes
-`unconfigured://` evidence refs. Until that lands, treat this row as unverified regardless of colour.
+The row this section used to warn about — "tests that `OBJECT_STORE_ENDPOINT` is a non-empty string,
+so setting the variable to any value turns a launch gate green while changing nothing" — is gone. The
+adapters exist, and readiness now performs a real round trip (put → read back → SHA-256 → delete →
+confirm gone).
+
+What remains unverifiable is **residency**, and it is worth being precise about why. The S3 adapter
+refuses a region string that is not on an EU allow-list, and it fails closed on an unknown one — but
+a region string is an input to a signature, not a fact about geography. A MinIO instance in Virginia
+answers to `eu-central-1` perfectly happily, and a filesystem store is only as EU-resident as the
+machine it runs on. CLAUDE.md §3 is therefore enforced here by two ☐ COUNSEL rows and by the
+operator's own knowledge of their infrastructure, not by a green tick.
+
+Two operator-side settings can also defeat the retention sweep silently, and nothing in the repo can
+see them: **bucket versioning** and a **lifecycle rule that retains deleted objects**. Either one
+keeps a raw controller document alive after the sweep has deleted it and tombstoned the row.
 
 ### 5.3 There is no `Controller.active`
 
 Only `Playbook.active` exists, so "activation" is per playbook, not per controller. The old final
 gate — "flip the first `Controller.active` to `true`" — was an instruction that could not be carried
-out. Nothing in the tree parses `playbooks/*.yaml` at runtime either, so on a real node the `Playbook`
-table is empty and every request routes `NO_ROUTE`; the importer is the next stage of the operational
-plan.
+out. A fresh node's `Playbook` table is empty until a human imports the corpus and activates exactly
+one row: `packages/corpus-cli` (`corpus:import` / `:activate` / `:deactivate`) is that act, and it
+records who performed it in the activation ledger (migration 0019). Without it every request routes
+`NO_ROUTE`.
 
 ### 5.4 The reply half of the pipeline is not built
 

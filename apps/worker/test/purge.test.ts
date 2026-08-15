@@ -40,6 +40,21 @@ describe('the retention sweep', () => {
     expect(calls).toEqual([]); // nothing tombstoned — the row stays due
   });
 
+  it('one undeletable blob does not extend the retention window of every row behind it', async () => {
+    const calls: string[] = [];
+    // The shape an operator produces by moving from `fs` to `s3` without moving the blobs: the
+    // configured store refuses one reference permanently. Every OTHER due document must still go.
+    const partly = deps(calls, {
+      deleteObject: async (ref) => {
+        if (ref === 's3://raw/1.pdf') throw new Error('written by a different store than the configured one');
+        calls.push(`delete:${ref}`);
+      },
+    });
+    await expect(sweepDueRawPurges(partly)).rejects.toThrow(/1 raw document\(s\).*could NOT be destroyed/);
+    // doc1 was purged; cr1 was not tombstoned and stays due for the next sweep.
+    expect(calls).toEqual(['delete:s3://raw/2.pdf', `tomb-doc:doc1@${NOW.toISOString()}`]);
+  });
+
   it('nothing due is a quiet no-op', async () => {
     const calls: string[] = [];
     const empty = deps(calls, {
