@@ -1,7 +1,15 @@
 # Counsel review packet — everything that blocks a real send
 
-**Snapshot:** repo state at commit `d0941af`, compiled 2026-08-12; **amended 2026-08-13 for port wave 4**
-(§8, plus the new rows in §3/§4 and OQ-23…OQ-26). File/line references are to this snapshot; re-run
+**Snapshot:** compiled 2026-08-12 at commit `d0941af`; amended 2026-08-13 for port wave 4 (§8);
+**amended 2026-08-15** — the OQ collision resolved (§2), and §3/§4 made GENERATED from the corpus.
+
+Those two tables are no longer transcribed. `tools/spec-audit/counsel-packet.mjs` derives their
+mechanical columns from `playbooks/*.yaml`, `playbooks/.shipped.json` and `templates/.signoff.json`,
+and CI fails when they drift — because they had. §3 asserted "all bindings are at v1" and §4 "all 19
+at `version: 1`" while thirteen playbooks had shipped v2 or v3, and the `werbewiderspruch.az-direct`
+row — the first letter this product intends to send — said "no `seatDpa` field declared" against a
+playbook declaring `seatDpa: LDI_NRW`. Your sign-off, Datum and Notizen cells are never touched by
+the generator. Other file/line references are to the snapshot above; re-run
 `grep -rn "TODO(counsel)"` after any edit.
 
 This packet is the single organised handoff for German data-protection **and RDG** counsel. It compiles —
@@ -10,7 +18,7 @@ activation decision currently recorded in the repo, so that counsel can clear, i
 that stands between the built engine and the first real outbound request. It is a compilation with
 citations, not a legal analysis: nothing in it takes a position, and **nothing it lists is enabled until
 signed** — every playbook ships `active: false` (verified against `playbooks/.shipped.json`), all eight
-templates are marked DRAFT in their own headers, and flipping any playbook to `active: true` is a
+templates are `DRAFT` in `templates/.signoff.json`, and flipping any playbook to `active: true` is a
 deliberate human act recorded against that playbook's `version` (`ARCHITECTURE-DECISIONS.md` §4,
 `docs/04-playbook-spec.md`). How to use it: work through §§1–5 in order, mark each row's sign-off box with
 date and notes; §6 names the governing legal frame; §7 orders the shortest route to the first real send.
@@ -160,60 +168,76 @@ carries the allocation table; the next number to mint is 32.
 
 ## 3. Template sign-off matrix
 
-Every file in `templates/` is marked DRAFT in its own header and requires German data-protection + RDG
-counsel approval before any use (`ARCHITECTURE-DECISIONS.md` §4 item 1; `docs/05` checklist). Templates
-carry no version field of their own; per `docs/04` ("legal wording lives only in `templates/`,
-counsel-reviewed") sign-off is recorded against the **binding playbook's `version`** — all bindings are
-at v1 per `playbooks/.shipped.json`. Bindings verified by grep over `playbooks/*.yaml` `template:` keys;
-all 19 playbooks and all 8 templates are covered, no orphans in either direction.
+Every file in `templates/` requires German data-protection + RDG counsel approval before any use
+(`ARCHITECTURE-DECISIONS.md` §4 item 1; `docs/05` checklist). Sign-off is recorded in
+**`templates/.signoff.json`**, against the SHA-256 of the letter's prose after the doc-comment header
+is stripped — the exact bytes the worker renders. That is what makes a signature bind to wording
+rather than to a filename: `tools/spec-audit/signoff-check.mjs` fails the build if a sealed letter
+changes, and `SIGNED` requires a named counsel and a date. Templates carry no version of their own, so
+the binding playbook's `version` is shown alongside (`playbooks/.shipped.json`).
 
-| Template | Bound playbooks | Statutory basis (from the file's own content) | Sign-off status | Version | Sign-off | Datum | Notizen |
+The **Seal** and **Binding playbook versions** columns are generated from the corpus; the statutory
+basis and the sign-off columns are yours.
+
+<!-- GENERATED:templates BEGIN — do not hand-edit the generated columns; run `npm run packet:write` in tools/spec-audit -->
+
+| Template | Bound playbooks | Statutory basis (from the file's own content) | Seal | Binding playbook versions | Sign-off | Datum | Notizen |
 |---|---|---|---|---|---|---|---|
-| `templates/art21-werbewiderspruch.de.md` | `werbewiderspruch.az-direct` | Art. 21 Abs. 2 DSGVO (unbedingter Werbewiderspruch, inkl. Profiling); Umsetzung Art. 21 Abs. 3; Frist Art. 12 Abs. 3; Ausweis nicht erforderlich (Überschusserhebung-Hinweis) | PENDING | DRAFT / unversioned (binding at playbook v1) | [ ] | | |
-| `templates/art15-datenkopie.de.md` | `datenkopie.schufa` | Art. 15 DSGVO Auskunft + kostenlose Datenkopie nach Art. 15 Abs. 3; enumeriert Art. 15 Abs. 1 lit. c, d, g, h; engine-derived `{{#if identityProofEnclosed}}` wrapper (confirm meaning when omitted, `:12`) | PENDING | DRAFT / unversioned (v1) | [ ] | | |
-| `templates/art15g-herkunft.de.md` | `provenance.schufa`, `provenance.infoscore` | Art. 15 Abs. 1 lit. g DS-GVO (Herkunft, quellenscharf pro Datenkategorie); Abgleich mit der eigenen Art.-14-Information (Schufa-Variante zitiert Ziffer 2.3 "Datenlieferanten" wörtlich); same wrapper confirmation (`:13`) | PENDING | DRAFT / unversioned (v1 ×2) | [ ] | | |
-| `templates/art15h-22-3.de.md` | `explanation.hirevue`, `explanation.retorio` | Art. 15 Abs. 1 lit. h DS-GVO (Logik, tatsächlich angewandte Grundsätze — EuGH C-203/22, kein pauschales Geschäftsgeheimnis) i.V.m. Art. 22 Abs. 3 (menschliches Eingreifen, Standpunkt, Anfechtung); Controller/Processor-Adressat per case (`:13`) | PENDING | DRAFT / unversioned (v1 ×2) | [ ] | | |
-| `templates/art15-17-screening.de.md` | `loeschung.hireright` | Art. 15 DS-GVO Auskunft (inkl. lit. g) + Art. 17 Abs. 1 lit. d Löschung unrechtmäßig erhobener Screening-Daten; Grenzen: Art. 10 DS-GVO + §§ 32, 51, 53 BZRG, Art. 9, private Social-Media, Schufa-in-hiring; Controller/Processor per case (`:16`) | PENDING | DRAFT / unversioned (v1) | [ ] | | |
-| `templates/art17-datenhaendler.de.md` | `loeschung.zoominfo`, `loeschung.apollo`, `loeschung.lusha`, `loeschung.cognism`, `loeschung.peopledatalabs`, `loeschung.rocketreach`, `loeschung.generic-datenhaendler` (stencil) | Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1 DSGVO; Unrechtmäßigkeit geführt über den Art.-14-Transparenzverstoß, Art. 17(1)(d) (KASPR-Argument sekundär/hedged) + Art. 21(1)→17(1)(c)-Brücke; identifies by `legalName` only (minimisation, OQ-19); open: KASPR citation, English variant (`:31`, `:33`) | PENDING | DRAFT / unversioned (v1 ×7) | [ ] | | |
-| `templates/art17-loeschung.de.md` | `loeschung.generic-adresshaendler` (stencil) | Art. 17 Abs. 1 DSGVO Löschung, aufbauend auf erklärtem Art. 21 Abs. 2 Widerspruch; NICHT für Auskunfteien (`:20`); optional objection-date variant (`:15`) | PENDING | DRAFT / unversioned (v1) | [ ] | | |
-| `templates/art17-loeschung-herkunft.de.md` | `loeschung-herkunft.schufa`, `loeschung-herkunft.infoscore`, `loeschung-herkunft.crif` | **Art. 17 Abs. 1 lit. d DS-GVO — TEILlöschung bei einer Auskunftei**, begrenzt auf die Kategorien, deren Quelle die Auskunftei in ihrer eigenen Art.-15-Abs.-1-lit.-g-Antwort benannt hat; ausdrücklicher Ausschluss des Gesamtbestands und der Vertragsdaten; flankierend Art. 19 (Empfängerunterrichtung) und hilfsweise Art. 18 Abs. 1 lit. b/d (Einschränkung); Begründung: fehlende Rechtsgrundlage nach Art. 6 Abs. 1 bei Erhebung über einen Adress-/Datenhändler | PENDING | DRAFT / unversioned (v1 ×3) | [ ] | | |
+| `templates/art15-17-screening.de.md` | `loeschung.hireright` | Art. 15 DS-GVO Auskunft (inkl. lit. g) + Art. 17 Abs. 1 lit. d Löschung unrechtmäßig erhobener Screening-Daten; Grenzen: Art. 10 DS-GVO + §§ 32, 51, 53 BZRG, Art. 9, private Social-Media, Schufa-in-hiring; Controller/Processor per case (`:16`) | DRAFT · `06639ae9` | v2 | [ ] |  |  |
+| `templates/art15-datenkopie.de.md` | `datenkopie.schufa` | Art. 15 DSGVO Auskunft + kostenlose Datenkopie nach Art. 15 Abs. 3; enumeriert Art. 15 Abs. 1 lit. c, d, g, h; engine-derived `{{#if identityProofEnclosed}}` wrapper (confirm meaning when omitted, `:12`) | DRAFT · `d7985bb8` | v2 | [ ] |  |  |
+| `templates/art15g-herkunft.de.md` | `provenance.crif`, `provenance.infoscore`, `provenance.schufa` | Art. 15 Abs. 1 lit. g DS-GVO (Herkunft, quellenscharf pro Datenkategorie); Abgleich mit der eigenen Art.-14-Information (Schufa-Variante zitiert Ziffer 2.3 "Datenlieferanten" wörtlich); same wrapper confirmation (`:13`) | DRAFT · `ca5fd42d` | v1 ×3 | [ ] |  |  |
+| `templates/art15h-22-3.de.md` | `explanation.hirevue`, `explanation.retorio` | Art. 15 Abs. 1 lit. h DS-GVO (Logik, tatsächlich angewandte Grundsätze — EuGH C-203/22, kein pauschales Geschäftsgeheimnis) i.V.m. Art. 22 Abs. 3 (menschliches Eingreifen, Standpunkt, Anfechtung); Controller/Processor-Adressat per case (`:13`) | DRAFT · `b8bdf890` | v2 ×2 | [ ] |  |  |
+| `templates/art17-datenhaendler.de.md` | `loeschung.apollo`, `loeschung.cognism`, `loeschung.generic-datenhaendler` (stencil), `loeschung.lusha`, `loeschung.peopledatalabs`, `loeschung.rocketreach`, `loeschung.zoominfo` | Art. 17 Abs. 1 i.V.m. Art. 21 Abs. 1 DSGVO; Unrechtmäßigkeit geführt über den Art.-14-Transparenzverstoß, Art. 17(1)(d) (KASPR-Argument sekundär/hedged) + Art. 21(1)→17(1)(c)-Brücke; identifies by `legalName` only (minimisation, OQ-19); open: KASPR citation, English variant (`:31`, `:33`) | DRAFT · `ea1bd3cb` | v3 ×7 | [ ] |  |  |
+| `templates/art17-loeschung-herkunft.de.md` | `loeschung-herkunft.crif`, `loeschung-herkunft.infoscore`, `loeschung-herkunft.schufa` | **Art. 17 Abs. 1 lit. d DS-GVO — TEILlöschung bei einer Auskunftei**, begrenzt auf die Kategorien, deren Quelle die Auskunftei in ihrer eigenen Art.-15-Abs.-1-lit.-g-Antwort benannt hat; ausdrücklicher Ausschluss des Gesamtbestands und der Vertragsdaten; flankierend Art. 19 (Empfängerunterrichtung) und hilfsweise Art. 18 Abs. 1 lit. b/d (Einschränkung); Begründung: fehlende Rechtsgrundlage nach Art. 6 Abs. 1 bei Erhebung über einen Adress-/Datenhändler | DRAFT · `a446f6e8` | v1 ×3 | [ ] |  |  |
+| `templates/art17-loeschung.de.md` | `loeschung.generic-adresshaendler` (stencil) | Art. 17 Abs. 1 DSGVO Löschung, aufbauend auf erklärtem Art. 21 Abs. 2 Widerspruch; NICHT für Auskunfteien (`:20`); optional objection-date variant (`:15`) | DRAFT · `5e48a547` | v3 | [ ] |  |  |
+| `templates/art21-werbewiderspruch.de.md` | `werbewiderspruch.az-direct` | Art. 21 Abs. 2 DSGVO (unbedingter Werbewiderspruch, inkl. Profiling); Umsetzung Art. 21 Abs. 3; Frist Art. 12 Abs. 3; Ausweis nicht erforderlich (Überschusserhebung-Hinweis) | DRAFT · `55ca594b` | v2 | [ ] |  |  |
+
+<!-- GENERATED:templates END -->
 
 ---
 
 ## 4. Playbook activation checklist
 
-Source: `ARCHITECTURE-DECISIONS.md` §4 (the human checklist) + `playbooks/.shipped.json` (all 19 at
-`version: 1`, hashes sealed) + each playbook's own header. All 19 are `active: false`; the two stencils
-(`parameterised: true`) may **never** be `active: true` (ADR-018) — they are cloned per controller and the
-clone enters this list. Common preconditions for every flip, before the per-row items:
+Source: `ARCHITECTURE-DECISIONS.md` §4 (the human checklist), `playbooks/*.yaml` and
+`playbooks/.shipped.json`. The stencils (`parameterised: true`) may **never** be `active: true`
+(ADR-018) — they are cloned per controller and the clone enters this list. Common preconditions for
+every flip, before the per-row items:
 
-1. Bound template signed (§3) — `ARCHITECTURE-DECISIONS.md:547`.
+1. Bound template `SIGNED` in `templates/.signoff.json` (§3) — `ARCHITECTURE-DECISIONS.md:547`.
 2. Every recipient address/endpoint re-verified against the controller's **live Datenschutz page**
    (`docs/07-controllers-seed.md:3–5`; `docs/09-pivot-modules.md:61`; `ARCHITECTURE-DECISIONS.md:548`).
 3. Seat/DPA confirmed where the playbook can escalate (`docs/07-controllers-seed.md:12–15`).
 4. The flip recorded against the playbook `version` (§4 last item; `docs/04`: never mutate a shipped version).
 
-| Playbook (slug) | v | requestType | Channel(s) | Escalation venue | active | Counsel must verify before flipping | Sign-off | Datum | Notizen |
-|---|---|---|---|---|---|---|---|---|---|
-| `werbewiderspruch.az-direct` | 1 | OBJECTION_ART21 | email → postal (registered fallback) | LDI NRW per `docs/07:35` (no `seatDpa` field declared) | false | Endpoints (`:18–19`); template §3; venue confirm | [ ] | | |
-| `datenkopie.schufa` | 1 | ACCESS_ART15 | postal (registered primary) → web_form | HBDI per `docs/07:21` (no `seatDpa` field declared) | false | Endpoints + current Datenkopie route (`:18–19`, header NOTE); OQ-10 (redacted_id required); venue confirm | [ ] | | |
-| `provenance.schufa` | 1 | ACCESS_ART15_SOURCE | postal (registered primary) → web_form | `seatDpa: HBDI` (Wiesbaden) | false | Endpoints (`:20–21`); OQ-10; "Datenlieferanten"-Klausel framing in template §3; venue confirm | [ ] | | |
-| `provenance.infoscore` | 1 | ACCESS_ART15_SOURCE | postal (registered primary) → web_form | `seatDpa: LFDI_BW` (Stuttgart) | false | **OQ-8 (blocking per ADR §3)**: verify the Art.-14 notice version (V7, Aug 2026) before the `contradictsArt14` Art.-77 trigger is live; endpoints (`:21–22`); OQ-10; Boniversum→infoscore routing; venue confirm | [ ] | | |
-| `loeschung.generic-adresshaendler` | 1 | ERASURE_ART17 | email → postal (registered fallback) | per instantiated controller | false (stencil — never activatable) | Template `art17-loeschung.de` §3; per-clone endpoints + venue (`:20`, `:22`) | [ ] | | |
-| `loeschung.generic-datenhaendler` | 1 | ERASURE_ART17 | email → web_form | user's habitual-residence Land-DPA (OQ-20) | false (stencil — never activatable) | OQ-17 instrument sign-off; OQ-20 venue; OQ-21 silence posture (`onDeadlineExpiry: NONE`) | [ ] | | |
-| `loeschung.zoominfo` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20); Art.-27 rep VeraSafe IE | false | OQ-17; OQ-20; OQ-21; endpoints (`:18–19`) | [ ] | | |
-| `loeschung.apollo` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20) | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`); suppression-list demand stands | [ ] | | |
-| `loeschung.lusha` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20); Art.-27 rep DP-Dock GmbH, Hamburg | false | OQ-17; OQ-20 (rep ≠ main establishment); OQ-21; endpoints (`:17–18`) | [ ] | | |
-| `loeschung.cognism` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA lodging; **OSS/lead-SA nuance open (OQ-20)** — UK controller, EU estabs Cognism GmbH/DE + KASPR SAS/FR | false | OQ-17; **OQ-20 controller entity + OSS**; OQ-21; endpoints (`:20–21`) | [ ] | | |
-| `loeschung.peopledatalabs` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20); no EU rep disclosed | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`); Art.-19 recipient-notification demand relevance | [ ] | | |
-| `loeschung.rocketreach` | 1 | ERASURE_ART17 | email → web_form | user's Land-DPA (OQ-20); Art.-27 rep VeraSafe IE | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`) | [ ] | | |
-| `loeschung.hireright` | 1 | ERASURE_ART17 | email → web_form | not declared; refusal-only escalation (`onDeadlineExpiry: NONE`) | false | OQ-17 (per file header); controller-vs-processor per case (template `:16`); endpoints (`:18–19`); §7.4 screening-limits framing | [ ] | | |
-| `explanation.hirevue` | 1 | ACCESS_ART15 | email only | not declared; refusal-only escalation (US vendor) | false | **OQ-22 (blocking per ADR §3)**; OQ-17 (per file header); DSAR intake / EU representative (`:17`); controller = employer vs vendor per case | [ ] | | |
-| `provenance.crif` | 1 | ACCESS_ART15_SOURCE | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-25 (blocking)**: the shipped postal address is in München (BayLDA), while `docs/07:22` and `CLAUDE.md` put CRIF's venue at LfDI BW — confirm the registered seat and correct one of the two; endpoints (`:32–33`); OQ-10 | [ ] | | |
-| `loeschung-herkunft.schufa` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: HBDI` | false | **OQ-23 (blocking)**: the Art. 17(1)(d) partial-erasure framing at a bureau + Art. 12(5) chaining; **OQ-24**: the shipped address is the Kormoranweg street address, not the Postfach used by `datenkopie.schufa`/`provenance.schufa` — confirm which is correct for an Einwurf-Einschreiben; OQ-10 | [ ] | | |
-| `loeschung-herkunft.infoscore` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-23**; endpoints (`:41–42`); OQ-10; the chain is reachable only after `provenance.infoscore` — confirm that dependency is intended and lawful | [ ] | | |
-| `loeschung-herkunft.crif` | 1 | ERASURE_ART17 (`scopeSource: PROVENANCE_ANSWER`) | postal (registered primary) → email | `seatDpa: LFDI_BW` | false | **OQ-23**; **OQ-25** (same venue/address tension as `provenance.crif`); endpoints (`:29–30`); OQ-10 | [ ] | | |
-| `explanation.retorio` | 1 | ACCESS_ART15 | email only (upgrade path in header) | to be set: `seatDpa: BAYLDA` on activation (header `:4–7`) | false | **OQ-22**; OQ-17; pre-activation bundle `:4`: verify Munich postal address, add registered postal fallback, switch `onDeadlineExpiry: DRAFT_ART77`, note Art. 9 (biometric) exposure; DSAR intake (`:18`) | [ ] | | |
+The **v**, **requestType**, **Channel(s)**, **Declared venue**, **Escalates on** and **active**
+columns are generated from the YAML and the version lockfile; "Counsel must verify" and the sign-off
+columns are yours.
+
+<!-- GENERATED:playbooks BEGIN — do not hand-edit the generated columns; run `npm run packet:write` in tools/spec-audit -->
+
+| Playbook (slug) | v | requestType | Channel(s) | Declared venue | Escalates on | active | Counsel must verify before flipping | Sign-off | Datum | Notizen |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `datenkopie.schufa` | 2 | ACCESS_ART15 | postal (registered) → web_form | `seatDpa: HBDI` | silence + refusal | false | Endpoints + current Datenkopie route (`:18–19`, header NOTE); OQ-10 (redacted_id required); venue confirm | [ ] |  |  |
+| `explanation.hirevue` | 2 | ACCESS_ART15 | email only | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | **OQ-22 (blocking per ADR §3)**; OQ-17 (per file header); DSAR intake / EU representative (`:17`); controller = employer vs vendor per case; US vendor with no German establishment — confirm the Land-DPA lodging route | [ ] |  |  |
+| `explanation.retorio` | 2 | ACCESS_ART15 | email only | `seatDpa: BAYLDA` | refusal | false | **OQ-22**; OQ-17; pre-activation bundle `:4`: verify Munich postal address, add registered postal fallback, switch `onDeadlineExpiry: DRAFT_ART77`, note Art. 9 (biometric) exposure; DSAR intake (`:18`) | [ ] |  |  |
+| `loeschung-herkunft.crif` | 1 | ERASURE_ART17 | postal (registered) → email | `seatDpa: LFDI_BW` | silence + refusal | false | **OQ-23**; **OQ-25** (same venue/address tension as `provenance.crif`); endpoints (`:29–30`); OQ-10 | [ ] |  |  |
+| `loeschung-herkunft.infoscore` | 1 | ERASURE_ART17 | postal (registered) → email | `seatDpa: LFDI_BW` | silence + refusal | false | **OQ-23**; endpoints (`:41–42`); OQ-10; the chain is reachable only after `provenance.infoscore` — confirm that dependency is intended and lawful | [ ] |  |  |
+| `loeschung-herkunft.schufa` | 1 | ERASURE_ART17 | postal (registered) → email | `seatDpa: HBDI` | silence + refusal | false | **OQ-23 (blocking)**: the Art. 17(1)(d) partial-erasure framing at a bureau + Art. 12(5) chaining; **OQ-24**: the shipped address is the Kormoranweg street address, not the Postfach used by `datenkopie.schufa`/`provenance.schufa` — confirm which is correct for an Einwurf-Einschreiben; OQ-10 | [ ] |  |  |
+| `loeschung.apollo` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`); suppression-list demand stands | [ ] |  |  |
+| `loeschung.cognism` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; **OQ-20 controller entity + OSS**; OQ-21; endpoints (`:20–21`); UK controller with EU establishments Cognism GmbH/DE + KASPR SAS/FR — the OSS/lead-SA question is OQ-20 | [ ] |  |  |
+| `loeschung.generic-adresshaendler` | 3 | ERASURE_ART17 | email → postal (registered) | `venue: USER_RESIDENCE` (user's Land-DPA) | silence + refusal | false (stencil — never activatable) | Template `art17-loeschung.de` §3; per-clone endpoints + venue (`:20`, `:22`) | [ ] |  |  |
+| `loeschung.generic-datenhaendler` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false (stencil — never activatable) | OQ-17 instrument sign-off; OQ-20 venue; OQ-21 silence posture (`onDeadlineExpiry: NONE`) | [ ] |  |  |
+| `loeschung.hireright` | 2 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17 (per file header); controller-vs-processor per case (template `:16`); endpoints (`:18–19`); §7.4 screening-limits framing | [ ] |  |  |
+| `loeschung.lusha` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; OQ-20 (rep ≠ main establishment); OQ-21; endpoints (`:17–18`); Art.-27 rep DP-Dock GmbH, Hamburg | [ ] |  |  |
+| `loeschung.peopledatalabs` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`); Art.-19 recipient-notification demand relevance; no EU rep disclosed | [ ] |  |  |
+| `loeschung.rocketreach` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; OQ-20; OQ-21; endpoints (`:16–17`); Art.-27 rep VeraSafe IE | [ ] |  |  |
+| `loeschung.zoominfo` | 3 | ERASURE_ART17 | email → web_form | `venue: USER_RESIDENCE` (user's Land-DPA) | refusal | false | OQ-17; OQ-20; OQ-21; endpoints (`:18–19`); Art.-27 rep VeraSafe IE | [ ] |  |  |
+| `provenance.crif` | 1 | ACCESS_ART15_SOURCE | postal (registered) → email | `seatDpa: LFDI_BW` | silence + refusal + incomplete | false | **OQ-25 (blocking)**: the shipped postal address is in München (BayLDA), while `docs/07:22` and `CLAUDE.md` put CRIF's venue at LfDI BW — confirm the registered seat and correct one of the two; endpoints (`:32–33`); OQ-10 | [ ] |  |  |
+| `provenance.infoscore` | 1 | ACCESS_ART15_SOURCE | postal (registered) → web_form | `seatDpa: LFDI_BW` | silence + refusal + incomplete | false | **OQ-8 (blocking per ADR §3)**: verify the Art.-14 notice version (V7, Aug 2026) before the `contradictsArt14` Art.-77 trigger is live; endpoints (`:21–22`); OQ-10; Boniversum→infoscore routing; venue confirm | [ ] |  |  |
+| `provenance.schufa` | 1 | ACCESS_ART15_SOURCE | postal (registered) → web_form | `seatDpa: HBDI` | silence + refusal + incomplete | false | Endpoints (`:20–21`); OQ-10; "Datenlieferanten"-Klausel framing in template §3; venue confirm | [ ] |  |  |
+| `werbewiderspruch.az-direct` | 2 | OBJECTION_ART21 | email → postal (registered) | `seatDpa: LDI_NRW` | silence + refusal | false | Endpoints (`:18–19`); template §3; venue confirm | [ ] |  |  |
+
+<!-- GENERATED:playbooks END -->
 
 The remaining ADR §4 items that are not per-playbook (provider contracts, DPIA, EU residency
 confirmation) are carried in §7.

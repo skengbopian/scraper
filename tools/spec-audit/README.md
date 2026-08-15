@@ -16,6 +16,7 @@ npm install && npm run all
 | `env-check.mjs` | `.env.example` against what the code reads, **both directions**: nothing declared that no code reads, nothing read that the file does not declare |
 | `oq-check.mjs` | one OQ number, one question: no number defined in two registers, no number cited that resolves to none |
 | `signoff-check.mjs` | the template seal: every letter still hashes to the prose recorded in `templates/.signoff.json`, and `SIGNED` means a named counsel on a date |
+| `counsel-packet.mjs` | §3/§4 of `docs/counsel-review-packet.md` still describe the corpus. `--write` regenerates the derived columns; the human ones are never touched |
 | `db-invariants.mjs` | the migration chain still declares every constraint and trigger the safety spec relies on |
 | `playbook-lint.mjs` | shared module: the semantic invariants JSON Schema **cannot** express. Not a script |
 | `root.mjs` | repo root, derived from the script location; override with `SCRAPER_ROOT` |

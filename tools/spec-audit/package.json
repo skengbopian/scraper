@@ -13,7 +13,9 @@
     "oq": "node oq-check.mjs",
     "signoff": "node signoff-check.mjs",
     "seal:templates": "node signoff-check.mjs --seal",
-    "all": "node audit.mjs && node negative.mjs && node statemachine.mjs && node version-check.mjs && node env-check.mjs && node oq-check.mjs && node signoff-check.mjs",
+    "packet": "node counsel-packet.mjs",
+    "packet:write": "node counsel-packet.mjs --write",
+    "all": "node audit.mjs && node negative.mjs && node statemachine.mjs && node version-check.mjs && node env-check.mjs && node oq-check.mjs && node signoff-check.mjs && node counsel-packet.mjs",
     "db-invariants": "node db-invariants.mjs"
   },
   "dependencies": {
