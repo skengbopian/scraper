@@ -59,6 +59,12 @@ jobs:
       # before anything can talk to the database.
       - run: pnpm -r build
 
+      # New to CI because it could not have run before: `pnpm -r lint` exited non-zero for everyone,
+      # always, on a packages/db script that type-checked a package containing no TypeScript. A task
+      # that is red by construction gates nothing — and the cost was never the missing schema check,
+      # it was every real lint failure in the other seven packages that nobody would ever see.
+      - run: pnpm -r lint
+
       # `migrate deploy`, NEVER `db push`. The invariants under test are not in schema.prisma — they
       # are raw SQL inside the migration chain: the append-only and TRUNCATE-guard triggers (0001,
       # 0013), `playbook_freeze` and `playbook_one_active` (0005), `identity_freeze` (0005/0018), the
