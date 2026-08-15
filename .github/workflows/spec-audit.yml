@@ -13,6 +13,9 @@ name: spec-audit
 #   versions     — no shipped playbook version was mutated in place (docs/04 authoring rule).
 #   db-invariants— the migration chain still declares every constraint/trigger the safety spec
 #                  relies on. Until port wave 1b nothing gated the database at all.
+#   env          — .env.example against what the code reads, BOTH directions. The file is the only
+#                  description a self-hosting operator (docs/14) has of the environment a node needs,
+#                  and it had drifted to seventeen variables nothing read plus five missing seams.
 
 on:
   push:
@@ -52,6 +55,9 @@ jobs:
 
       - name: Database invariants (migration chain)
         run: npm run db-invariants
+
+      - name: Environment surface (.env.example ↔ code)
+        run: npm run env
 
   a11y-placeholder:
     # docs/09 makes accessibility a launch gate and asks for an axe check in CI. There is no UI yet,

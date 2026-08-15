@@ -13,6 +13,8 @@ npm install && npm run all
 | `negative.mjs` | 28 playbooks that must never be sendable, run through the full gate |
 | `statemachine.mjs` | transcribes `schema/request-state-machine.md` as a graph; dead-end and reachability analysis; **anti-journeys** (paths that must NOT exist); asserts `ESCALATED` has exactly one, human-gated, inbound edge |
 | `version-check.mjs` | `docs/04`'s "never mutate a shipped version" rule, against the `playbooks/.shipped.json` lockfile |
+| `env-check.mjs` | `.env.example` against what the code reads, **both directions**: nothing declared that no code reads, nothing read that the file does not declare |
+| `db-invariants.mjs` | the migration chain still declares every constraint and trigger the safety spec relies on |
 | `playbook-lint.mjs` | shared module: the semantic invariants JSON Schema **cannot** express. Not a script |
 | `root.mjs` | repo root, derived from the script location; override with `SCRAPER_ROOT` |
 
@@ -25,6 +27,13 @@ cross-field value comparison (do `compliedIf` and `refusedIf` match the same str
 the filesystem (does the bound template render a variable `subjectFields` doesn't supply?), and anything
 needing history (was a shipped version mutated?). Those live in `playbook-lint.mjs` and are enforced by
 the same CI job. `validatePlaybook()` is the entry point — **calling Ajv on its own is not validation.**
+
+**1b. `env-check.mjs`'s indirect list is checked, and must stay that way.** Some variables are read
+through a helper, an array of selector names, or a template string, where no regex over `env.NAME`
+can see them. Those live in `INDIRECT_READS`, and each entry names a `probe` — text that must still
+appear in non-test source. Deleting the read fails the check instead of quietly keeping a dead
+variable alive. An exception list nothing verifies is just a second thing to rot; do not add an entry
+without a probe that would break if the read went away.
 
 **2. `negative.mjs` can pass while testing nothing.** Every case is the `base` fixture mutated in one
 way. If `base` itself becomes invalid — which is exactly what happened when `kind` and `active` became
