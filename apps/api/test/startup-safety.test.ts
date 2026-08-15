@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -79,6 +82,95 @@ describe('assertApiStartupSafe', () => {
     const { assertApiStartupSafe } = await load();
     const env = { NODE_ENV: 'production', ...DEPLOY, SCRAPER_REPOSITORY: 'memory' } as NodeJS.ProcessEnv;
     expect(() => assertApiStartupSafe(env)).toThrow(/"memory"/);
+  });
+});
+
+/**
+ * `scripts/readiness.mjs` states the same three requirements as `assertApiStartupSafe` — repository,
+ * scheduler, DATABASE_URL — and states them in a second language, in a script that is deliberately
+ * dependency-free so it can run before the toolchain exists. Two copies of a rule are two copies of
+ * a rule.
+ *
+ * So this drives the actual script over the actual environments and asserts the two agree: whenever
+ * readiness marks one of those rows ✗ in DEPLOY posture, the boot gate refuses, and whenever it
+ * marks them ✓, the boot gate accepts. A readiness report that is greener than the boot is the
+ * dangerous direction — an operator ticks the pre-send checklist and then cannot start the process,
+ * or worse, believes a warning-free report means the node is sound.
+ */
+describe('readiness.mjs agrees with the boot gate', () => {
+  const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const DEPLOY_ENV = {
+    NODE_ENV: 'production',
+    SCRAPER_KEK_MODE: 'env',
+    SCRAPER_CORS_ORIGINS: 'https://app.example',
+    SCRAPER_REPOSITORY: 'prisma',
+    SCRAPER_SCHEDULER: 'pgboss',
+    DATABASE_URL: 'postgresql://scraper:scraper@localhost:5432/scraper3',
+  };
+
+  /** The three shared rows, as readiness prints them. */
+  const ROWS = [
+    { label: 'DATABASE_URL set', drop: 'DATABASE_URL' },
+    { label: 'SCRAPER_REPOSITORY=prisma', drop: 'SCRAPER_REPOSITORY' },
+    { label: 'SCRAPER_SCHEDULER=pgboss', drop: 'SCRAPER_SCHEDULER' },
+  ] as const;
+
+  function readiness(env: Record<string, string>): string {
+    try {
+      return execFileSync(process.execPath, ['scripts/readiness.mjs'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        // A clean environment, not the runner's: an ambient DATABASE_URL on the developer's machine
+        // would make this test pass for the wrong reason.
+        env: { PATH: process.env.PATH ?? '', ...env },
+      });
+    } catch (e) {
+      // Exit 1 is expected whenever a row FAILs — the report is on stdout either way.
+      return String((e as { stdout?: string }).stdout ?? '');
+    }
+  }
+
+  const rowStatus = (report: string, label: string): '✓' | '✗' | '•' | undefined =>
+    report.split('\n').find((l) => l.includes(label))?.trim().charAt(0) as never;
+
+  it('reports all three green on an environment the boot gate accepts', async () => {
+    const { assertApiStartupSafe } = await load();
+    expect(() => assertApiStartupSafe(DEPLOY_ENV as NodeJS.ProcessEnv)).not.toThrow();
+    const report = readiness(DEPLOY_ENV);
+    for (const { label } of ROWS) expect(rowStatus(report, label), `${label} in a good deployment`).toBe('✓');
+  });
+
+  for (const { label, drop } of ROWS) {
+    it(`marks "${label}" ✗ exactly where the boot gate refuses`, async () => {
+      const { assertApiStartupSafe } = await load();
+      const env = { ...DEPLOY_ENV } as Record<string, string>;
+      delete env[drop];
+      const report = readiness(env);
+      expect(rowStatus(report, label)).toBe('✗');
+      // DATABASE_URL is the one the API does not itself refuse — DbModule throws when the client is
+      // constructed, not at boot — so the two are only required to agree on the two selectors.
+      if (drop !== 'DATABASE_URL') {
+        expect(() => assertApiStartupSafe(env as NodeJS.ProcessEnv)).toThrow(new RegExp(drop));
+      }
+    });
+  }
+
+  it('demotes them to warnings in --ci posture, where no deployment values exist', () => {
+    const report = (() => {
+      try {
+        return execFileSync(process.execPath, ['scripts/readiness.mjs', '--ci'], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '' },
+        });
+      } catch (e) {
+        return String((e as { stdout?: string }).stdout ?? '');
+      }
+    })();
+    for (const { label } of ROWS) expect(rowStatus(report, label), `${label} in CI`).toBe('•');
+    // …and the repo-answerable rows still gate, which is the whole point of running it in CI.
+    expect(report).toContain('no mechanical failures');
+    expect(report).toContain('spec-audit green');
   });
 });
 
