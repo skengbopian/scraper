@@ -144,6 +144,27 @@ DATABASE_URL_TEST=postgresql://scraper:scraper@localhost:5433/scraper3_test pnpm
 migration chain, not in `schema.prisma`, and a pushed schema would have none of them. Throwaway means
 throwaway — the suites TRUNCATE ledgers and disable append-only triggers to do it.
 
+## Standing up a node
+
+Everything a node needs beyond `.env` is checked by one command:
+
+```bash
+pnpm readiness
+```
+
+The ops surfaces — review queue, anomaly panel, and the delivery-proof route that is the only path
+to an Art. 12(3) clock — read `User.role` from the database, and nothing grants it over HTTP. Register
+through the application, confirm the second factor, then:
+
+```bash
+DATABASE_URL=... pnpm --filter @scraper/api grant-ops you@example.com
+```
+
+`--list` shows who holds it, `--revoke <email>` takes it away. There is deliberately no HTTP
+equivalent: a bootstrap endpoint would be a privilege-escalation surface guarding the most privileged
+surface in the product, reachable by anyone who reaches the web server. This needs the database
+credential instead.
+
 The four guardrail tests worth knowing about, because they are the ones that fail loudly if someone
 erodes a safety property rather than merely breaking a feature:
 
