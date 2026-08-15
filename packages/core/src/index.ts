@@ -9,6 +9,7 @@ export * from './auth/recovery-codes.js';
 export * from './identity/subject.js';
 export * from './identity/sealed-identity.js';
 export * from './template/render.js';
+export * from './template/signoff.js';
 export * from './playbook/types.js';
 export * from './playbook/engine.js';
 export * from './providers/index.js';

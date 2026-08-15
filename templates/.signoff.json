@@ -1,0 +1,50 @@
+{
+  "art15-17-screening.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "06639ae91ff01b830c091e9eb1c385babe60595f0232dc193a75244feb45ccae",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art15-datenkopie.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "d7985bb854055ba7f16f28bbdcd5af3cf3e546ce222b646ba5ad8acb9f688b82",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art15g-herkunft.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "ca5fd42d12082f33b5319d4ee76aee318455232cc9b6355906cf0d5601b60173",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art15h-22-3.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "b8bdf89081e5478d06e6936e2d18a165893733b4a99975575d970bd80cd501c9",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art17-datenhaendler.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "ea1bd3cb66bb4b17b2e10bb10127bb0ee4e66774bf8ba142ecf408b03a571c9f",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art17-loeschung-herkunft.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "a446f6e8ee31660da04064a07bea2bd1a64eaae440003301e8dbfa4330c259a5",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art17-loeschung.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "5e48a5470fd7fc6d563b243cf48ae6d525f867ce6a2ac53b6a6b09f8b37f0985",
+    "counsel": null,
+    "signedAt": null
+  },
+  "art21-werbewiderspruch.de.md": {
+    "status": "DRAFT",
+    "sha256_stripped": "55ca594b3f43081a4d48fcb2db65830d62c0609480cc1755c3ba869f58441c0d",
+    "counsel": null,
+    "signedAt": null
+  }
+}

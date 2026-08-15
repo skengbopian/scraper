@@ -64,6 +64,11 @@ jobs:
       - name: Open-question register
         run: npm run oq
 
+      # The counsel signature binds to PROSE, not to a filename. Before this, editing a signed
+      # template silently changed what a sealed playbook sends with every other seal still green.
+      - name: Template seal
+        run: npm run signoff
+
       # PRE-SEND-CHECKLIST.md opens with "run `pnpm readiness` first", and until now no workflow ran
       # it — so every mechanical claim in the checklist was verified only when a human remembered to
       # verify it, which is the state the script was written to end. --ci posture, because a build

@@ -15,6 +15,7 @@ npm install && npm run all
 | `version-check.mjs` | `docs/04`'s "never mutate a shipped version" rule, against the `playbooks/.shipped.json` lockfile |
 | `env-check.mjs` | `.env.example` against what the code reads, **both directions**: nothing declared that no code reads, nothing read that the file does not declare |
 | `oq-check.mjs` | one OQ number, one question: no number defined in two registers, no number cited that resolves to none |
+| `signoff-check.mjs` | the template seal: every letter still hashes to the prose recorded in `templates/.signoff.json`, and `SIGNED` means a named counsel on a date |
 | `db-invariants.mjs` | the migration chain still declares every constraint and trigger the safety spec relies on |
 | `playbook-lint.mjs` | shared module: the semantic invariants JSON Schema **cannot** express. Not a script |
 | `root.mjs` | repo root, derived from the script location; override with `SCRAPER_ROOT` |
@@ -42,6 +43,30 @@ required — then every case is rejected for that reason instead of its own, and
 triumphant `0 holes` while exercising not one defect. The **BASE SELF-CHECK** at the top of the run
 exists solely to catch this and must not be removed. If you add a required field to the schema, add it
 to `base` in the same commit.
+
+## Sealing templates
+
+`templates/.signoff.json` records `{filename: {status, sha256_stripped, counsel, signedAt}}`. The hash
+is over the body **after `stripDocComment`** — exactly the bytes `render()` starts from — so a counsel
+signature binds to the letter's prose rather than to its filename. Before this, editing a signed
+template silently changed what a sealed playbook sends: the worker resolves the letter by filename at
+dispatch, and every other seal in the repo stayed green.
+
+```bash
+npm run signoff          # verify: does every letter still say what was signed?
+npm run seal:templates   # record the current bodies (hashes only — never invents a signature)
+```
+
+Signing a template is two edits in one commit: set `status: "SIGNED"` with the counsel's name and
+date, and delete the `DRAFT` marker from the file's header. The header is outside the hash (an
+engineer must be able to fix a typo in documentation without invalidating a legal signature), so the
+verifier cross-checks the two: `SIGNED` with the marker still present FAILs, and so does `DRAFT` with
+the marker deleted.
+
+**`--seal` refuses to re-seal a SIGNED template whose prose changed.** Rewriting the hash under a
+status that still says SIGNED would turn this tool into the laundry — edit, seal, every gate green
+over wording no lawyer has read. Revert the edit, or downgrade the entry to `DRAFT` (visible in the
+diff, and it re-blocks activation and dispatch) and take it back to counsel.
 
 ## Sealing playbook versions
 

@@ -44,10 +44,20 @@ for (const f of fs.readdirSync(pbDir).filter((f) => f.endsWith('.yaml'))) {
 add('LEGAL', activeInRepo === 0 ? PASS : FAIL, 'no playbook ships active:true in the repo',
   activeInRepo ? `${activeInRepo} active — activation is a counsel act against the DATABASE row, never the YAML` : '');
 
-const draftTemplates = fs.readdirSync(path.join(ROOT, 'templates')).filter((f) => f.endsWith('.md'))
-  .filter((f) => /\bDRAFT\b/.test(fs.readFileSync(path.join(ROOT, 'templates', f), 'utf8')));
-add('LEGAL', draftTemplates.length ? HUMAN : PASS, 'templates counsel-signed (DRAFT marker removed)',
-  draftTemplates.length ? `${draftTemplates.length} still DRAFT: ${draftTemplates.join(', ')}` : '');
+// Sign-off comes from `templates/.signoff.json`, not from grepping the file for the word DRAFT. The
+// marker lives in the doc-comment header, which the worker STRIPS before rendering — so it was a
+// claim about a comment, and deleting the comment turned this row green while changing nothing about
+// whether counsel had seen the letter. The manifest records a signatory, a date, and the hash of the
+// prose signed; `signoff-check.mjs` below fails if any of the three stops describing what is sent.
+const signoffPath = path.join(ROOT, 'templates', '.signoff.json');
+const signoff = fs.existsSync(signoffPath) ? JSON.parse(fs.readFileSync(signoffPath, 'utf8')) : null;
+if (!signoff) {
+  add('LEGAL', FAIL, 'templates/.signoff.json exists', 'missing — no template sign-off is recorded anywhere');
+} else {
+  const unsigned = Object.entries(signoff).filter(([, e]) => e.status !== 'SIGNED').map(([f]) => f);
+  add('LEGAL', unsigned.length ? HUMAN : PASS, 'templates counsel-signed (templates/.signoff.json)',
+    unsigned.length ? `${unsigned.length}/${Object.keys(signoff).length} still DRAFT: ${unsigned.join(', ')}` : '');
+}
 
 // The spec harnesses, run rather than cited. Each is repo-answerable — the verdict depends on the
 // checkout and nothing else — which is why these gate in every posture, CI included.
@@ -56,6 +66,8 @@ for (const [track, name, args] of [
   ['LEGAL', 'negative fixtures', ['tools/spec-audit/negative.mjs']],
   ['LEGAL', 'state-machine graph', ['tools/spec-audit/statemachine.mjs']],
   ['LEGAL', 'playbook version seal', ['tools/spec-audit/version-check.mjs']],
+  ['LEGAL', 'template seal (prose matches what was signed)', ['tools/spec-audit/signoff-check.mjs']],
+  ['LEGAL', 'open-question register (one number, one question)', ['tools/spec-audit/oq-check.mjs']],
   // Not LEGAL: this one is about the operator's environment, not the legal pipeline. It is here so
   // `pnpm readiness` is a single command that answers "is this checkout deployable", rather than a
   // command an operator has to remember to run a second harness alongside.
