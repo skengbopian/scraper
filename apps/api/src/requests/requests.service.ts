@@ -26,6 +26,7 @@ import {
   SIMULATED_TIMESTAMPER,
 } from '../common/dev-fixtures.js';
 import { DuplicateRequestError } from './prisma-requests.repository.js';
+import { nextActionFor } from './next-action.js';
 import { createHash } from 'node:crypto';
 import type { WorkflowEngine } from '@scraper/core';
 
@@ -445,32 +446,10 @@ export class RequestsService {
       provisionalDeadlineAt: r.provisionalDeadlineAt,
       clockIsProvable: r.provableSendConfirmedAt !== null,
       outcome: r.outcome,
-      nextAction: this.nextActionFor(r.state),
+      // docs/09 usability gate: every state names the user's next action. No dead ends. The map is
+      // in next-action.ts, where `satisfies Record<RequestState, ...>` makes a missing state a build
+      // failure instead of a 500 on this line.
+      nextAction: nextActionFor(r.state),
     };
-  }
-
-  /** docs/09 usability gate: every state names the user's next action. No dead ends. */
-  private nextActionFor(state: string): string {
-    const map: Record<string, string> = {
-      DRAFT: 'AWAIT_VALIDATION',
-      BLOCKED_IDENTITY: 'START_IDENTITY_VERIFICATION',
-      READY: 'AWAIT_DISPATCH',
-      SENT: 'AWAIT_SEND_CONFIRMATION',
-      AWAITING_RESPONSE_PROVISIONAL: 'AWAIT_REPLY',
-      AWAITING_RESPONSE: 'AWAIT_REPLY',
-      AWAITING_REGISTERED_RESEND: 'CONFIRM_REGISTERED_RESEND',
-      RESPONSE_RECEIVED: 'AWAIT_VALIDATION',
-      NEEDS_HUMAN: 'AWAIT_OPS_REVIEW',
-      COMPLIED: 'NONE',
-      INCOMPLETE: 'AWAIT_ESCALATION_DRAFT',
-      REFUSED: 'AWAIT_ESCALATION_DRAFT',
-      ESCALATION_DRAFTED: 'AWAIT_OPS_SEND',
-      ESCALATED: 'AWAIT_DPA_RESPONSE',
-      CLOSED_FAILED: 'NONE',
-      WITHDRAWN: 'NONE',
-    };
-    const next = map[state];
-    if (!next) throw new Error(`no next action defined for state ${state} — every state must name one`);
-    return next;
   }
 }
