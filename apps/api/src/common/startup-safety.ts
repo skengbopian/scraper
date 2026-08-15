@@ -29,6 +29,33 @@ export function assertApiStartupSafe(env: NodeJS.ProcessEnv = process.env): void
         'The built-in list is dev-shaped (localhost + the file:// "null" origin) and must never serve a deployment.',
     );
   }
+  // The same allow-list doctrine applied to persistence and to time. Both of these default to the
+  // dev-shaped value when unset, and both fail in a way that looks like the product working.
+  if (env.SCRAPER_REPOSITORY !== 'prisma') {
+    throw new Error(
+      'refusing to boot: SCRAPER_REPOSITORY must be "prisma" outside development/test (got ' +
+        `${env.SCRAPER_REPOSITORY ? `"${env.SCRAPER_REPOSITORY}"` : 'unset'}). The in-memory adapter is a ` +
+        'process-lifetime Map: every request, evidence record and provenance entry is lost on restart, ' +
+        'and an evidence chain that does not survive a deploy cannot support anything asserted to a ' +
+        'controller or a DPA. AuthModule and OpsModule also mount only in prisma mode, so a deployment ' +
+        'in memory mode has no sign-in, no ops queue and no delivery-proof route — the operator would ' +
+        'discover this from an empty screen rather than from a boot failure. `.env.example` shipped ' +
+        '`SCRAPER_REPOSITORY=memory`, so this is the posture an operator following the documented setup ' +
+        'would have deployed.',
+    );
+  }
+  if (env.SCRAPER_SCHEDULER !== 'pgboss') {
+    throw new Error(
+      'refusing to boot: SCRAPER_SCHEDULER must be "pgboss" outside development/test (got ' +
+        `${env.SCRAPER_SCHEDULER ? `"${env.SCRAPER_SCHEDULER}"` : 'unset'}). Without it the scheduler ` +
+        'provider resolves to null and `scheduleDeadline()` returns silently: requests still send, and ' +
+        'NO durable timer is ever armed. Nothing then expires a provisional deadline into the ' +
+        'registered-re-send chase, and nothing stops waiting for an Auslieferungsbeleg that never ' +
+        "arrives — the receipt that must reach a human (CLAUDE.md §6) reaches nobody, and the user's " +
+        'request waits forever on a controller that has already ignored it. A deadline product whose ' +
+        'deadlines do not fire fails silently and in the direction that costs the user the right.',
+    );
+  }
 }
 
 /**
