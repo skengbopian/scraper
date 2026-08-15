@@ -1,7 +1,10 @@
 name: alpha-ci
 
 # The testing-alpha gates (ADR-028), alongside spec-audit.yml:
-#   build-test — every workspace builds; core (164), api (11 HTTP e2e), doc-sandbox (6) suites green.
+#   build-test — every workspace builds and every suite runs, INCLUDING the ones that need a
+#                database. Counts are deliberately not written here: they go stale, and this file
+#                said "core (164), api (11 HTTP e2e)" for months while the true numbers were 310 and
+#                98. The gate is "green", not a number.
 #   a11y       — the docs/09 gate item: axe (WCAG 2.2 AA tags) over every view × theme × Leichte
 #                Sprache of apps/web. Honest scope: axe automates ~⅓ of WCAG; screen-reader,
 #                one-handed and mid-range-Android checks remain a manual pre-launch gate.
@@ -15,6 +18,34 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+
+    # WITHOUT THIS SERVICE, CI WAS GREEN AND 68 TESTS WERE NOT RUNNING. Five suites gate themselves
+    # on DATABASE_URL_TEST — auth policy (19), the ops queue (28), the database invariants (14), the
+    # Prisma adapter (5), the pg-boss deadline runner (2) — and vitest reports a `describe.skipIf`
+    # as a pass. The layers that were silently unverified are precisely the ones whose failure is
+    # expensive: MFA and step-up, the only route that can start an Art. 12(3) clock, and the SQL
+    # CHECKs and triggers that are the last line under CLAUDE.md §6. A green tick over an unrun
+    # suite is worse than a red one, because it is believed.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scraper
+          POSTGRES_PASSWORD: scraper
+          POSTGRES_DB: scraper3_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U scraper"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Only the TEST url is job-wide. DATABASE_URL stays scoped to the migrate step below, so a
+      # suite that needs it has to set it for itself (ops.e2e does) rather than inheriting one from
+      # the environment — the same discipline the app requires of an operator.
+      DATABASE_URL_TEST: postgresql://scraper:scraper@localhost:5432/scraper3_test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,7 +55,21 @@ jobs:
         with:
           version: 9.15.9
       - run: pnpm install --frozen-lockfile
+      # Before the migrations: packages/db's build IS `prisma generate`, and the client has to exist
+      # before anything can talk to the database.
       - run: pnpm -r build
+
+      # `migrate deploy`, NEVER `db push`. The invariants under test are not in schema.prisma — they
+      # are raw SQL inside the migration chain: the append-only and TRUNCATE-guard triggers (0001,
+      # 0013), `playbook_freeze` and `playbook_one_active` (0005), `identity_freeze` (0005/0018), the
+      # 0015 CHECK that forbids any clock in AWAITING_DELIVERY_PROOF. `db push` diffs the declarative
+      # schema and would produce a database with none of them, against which every invariant test
+      # would pass by having nothing to violate.
+      - name: Apply the migration chain
+        run: pnpm --filter @scraper/db db:migrate
+        env:
+          DATABASE_URL: postgresql://scraper:scraper@localhost:5432/scraper3_test
+
       - run: pnpm -r test
 
   a11y:

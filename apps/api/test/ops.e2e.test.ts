@@ -36,6 +36,15 @@ describe.skipIf(!url)('the ops review queue', () => {
 
     db = new PrismaClient({ datasources: { db: { url } } });
     await cleanUp();
+    // `seedRequest` picks a Controller off the census, and this suite creates none — it used to
+    // borrow whatever `prisma-integration` had left in the shared database. That held only because
+    // the DB suites never ran in CI: on a FRESH database with no prior seed, 23 of these 28 fail on
+    // `controllers[...]` being undefined. Seeding here makes the suite self-sufficient rather than
+    // ordered. With SCRAPER_DEV_FIXTURES deleted above, `seed()` upserts the census controllers and
+    // self-serve routes and returns before the fixture account — which this suite must not have,
+    // since it proves the ops role is a stored fact and signs its own users up.
+    const { seed } = await import('../dist/db/seed.js');
+    await seed(db);
 
     const { NestFactory } = await import('@nestjs/core');
     const { AppModule } = await import('../dist/app.module.js');

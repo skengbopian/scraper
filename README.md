@@ -123,6 +123,27 @@ pnpm install && pnpm -r build && pnpm -r test
 cd tools/spec-audit && npm install && npm run all
 ```
 
+That run **skips 68 tests** unless a Postgres is reachable, and vitest reports a skip as a pass. The
+skipped ones are not the cheap ones: MFA and step-up, the ops queue, the SQL invariants, and the
+durable-timer loop. To run the whole suite, give it a throwaway database — CI does exactly this
+(`.github/workflows/alpha-ci.yml`):
+
+```bash
+docker run -d --rm --name scraper-test-pg -e POSTGRES_USER=scraper -e POSTGRES_PASSWORD=scraper -e POSTGRES_DB=scraper3_test -p 5433:5432 postgres:16
+```
+
+```bash
+DATABASE_URL=postgresql://scraper:scraper@localhost:5433/scraper3_test pnpm --filter @scraper/db db:migrate
+```
+
+```bash
+DATABASE_URL_TEST=postgresql://scraper:scraper@localhost:5433/scraper3_test pnpm -r test
+```
+
+`migrate deploy`, never `db push`: the constraints these suites exercise live in the raw SQL of the
+migration chain, not in `schema.prisma`, and a pushed schema would have none of them. Throwaway means
+throwaway — the suites TRUNCATE ledgers and disable append-only triggers to do it.
+
 The four guardrail tests worth knowing about, because they are the ones that fail loudly if someone
 erodes a safety property rather than merely breaking a feature:
 
