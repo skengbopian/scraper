@@ -36,7 +36,7 @@ routine; describing hypothetical processing is not useful to anyone.
 > **binds whoever operates a posture-B or posture-C node** — each such operator is the controller for
 > their node and owes their own assessment, for which this document is the template. Whether posture A
 > is regulated processing at all is Art. 2(2)(c) territory and is deliberately left to counsel
-> (OQ-23); for posture A this document serves as engineering documentation of what the software does,
+> (OQ-28); for posture A this document serves as engineering documentation of what the software does,
 > which is worth having regardless of the legal answer.
 
 ---
@@ -130,7 +130,7 @@ hold on every node.
   statistics stay in the node's own database. There is no central telemetry, no update push channel,
   no install registry, and **no cross-node flow of any kind** — no aggregation of outcomes, no shared
   subject data, no federation protocol. If any of that is ever built it is a new processing activity
-  requiring its own assessment first (OQ-25).
+  requiring its own assessment first (OQ-30).
 - **No US-region inference on personal data.** The model provider is an interface whose region
   defaults to `eu` (docs/06 M11), and the ladder invokes no model at all.
 - **EU residency is a per-node duty the defaults push toward**: the boot gates refuse unset
@@ -306,7 +306,7 @@ What actually limits it, stated without flattery:
   abuse does not scale through us.
 
 **Residual risk: MEDIUM, and irreducible below that by software.** It cannot be LOW because no
-program binds its own administrator. **[SAFETY]** OQ-26 (whether posture B demands a verified
+program binds its own administrator. **[SAFETY]** OQ-31 (whether posture B demands a verified
 operator identity before any playbook activation) is the one open design lever. **[COUNSEL]** whether
 distribution of the software itself carries any duty here beyond the warnings already shipped.
 
@@ -419,7 +419,7 @@ assumption fails.
 
 ## 9. DPO
 
-**Per operating entity.** Posture A has no entity to appoint one for (if OQ-23 lands where §preamble
+**Per operating entity.** Posture A has no entity to appoint one for (if OQ-28 lands where §preamble
 suggests); every posture-B/C operator answers this for themselves.
 
 **[COUNSEL]** Whether Art. 37(1)(b)/(c) or BDSG §38 obliges a designation for an operated node.
@@ -443,7 +443,7 @@ recommended route at this size.
 - [ ] **[COUNSEL]** Privacy notice drafted, including the TEM relay (R3).
 - [ ] Deployment posture declared (A/B/C — `docs/14-decentralised-deployment.md`), and for B/C:
       this DPIA instantiated by that operator with their own stack in §4.
-- [ ] **[COUNSEL]** OQ-23/OQ-24 answered (posture-A GDPR applicability; self-representation vs RDG).
+- [ ] **[COUNSEL]** OQ-28/OQ-29 answered (posture-A GDPR applicability; self-representation vs RDG).
 - [ ] Prior-consultation question settled (§8).
 - [ ] This document signed and dated by controller + DPO (postures B/C).
 

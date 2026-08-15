@@ -10,7 +10,8 @@
     "versions": "node version-check.mjs",
     "seal": "node version-check.mjs --seal",
     "env": "node env-check.mjs",
-    "all": "node audit.mjs && node negative.mjs && node statemachine.mjs && node version-check.mjs && node env-check.mjs",
+    "oq": "node oq-check.mjs",
+    "all": "node audit.mjs && node negative.mjs && node statemachine.mjs && node version-check.mjs && node env-check.mjs && node oq-check.mjs",
     "db-invariants": "node db-invariants.mjs"
   },
   "dependencies": {

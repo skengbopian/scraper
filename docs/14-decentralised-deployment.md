@@ -34,7 +34,7 @@ by the structure of who is acting:
   our client". On posture A the sender and the subject are the same person: there is no agent, no
   Vollmacht to construct, no Botendienst framing to defend, and the RDG — which governs providing
   legal services **to others** — is not engaged by someone exercising their own rights with their own
-  tooling. `TODO(counsel):` confirm (OQ-24); the claim is deliberately stated as structural, not as a
+  tooling. `TODO(counsel):` confirm (OQ-29); the claim is deliberately stated as structural, not as a
   legal conclusion.
 - **The purpose objection weakens.** CJEU C-526/24 lets controllers refuse Art. 15 requests whose
   purpose is alien to data protection — the risk `docs/05` §1 designs against. A person running their
@@ -48,7 +48,7 @@ by the structure of who is acting:
 - **Whether posture A is GDPR-regulated processing at all** is an open counsel question, not an
   assumption: Art. 2(2)(c) exempts purely personal activity, and a person processing their own data
   to exercise their own rights is a strong candidate. `docs/11-dpia.md` therefore binds postures B/C
-  and serves posture A as engineering documentation (OQ-23).
+  and serves posture A as engineering documentation (OQ-28).
 
 ## 3. What the code already does right for this posture — found, not built
 
@@ -105,7 +105,7 @@ What this means, without flinching:
   than implying more.
 - `TODO(safety):` whether posture B (operating for OTHERS) should demand more than posture A before
   first send — e.g. the readiness gate refusing playbook activation until a real ident provider has
-  verified at least the operator's own identity. Recorded as OQ-26; do not implement ahead of the
+  verified at least the operator's own identity. Recorded as OQ-31; do not implement ahead of the
   decision.
 
 ## 5. What must stay true on EVERY node
@@ -119,7 +119,7 @@ it cannot:
    and templates ship DRAFT until *upstream* counsel review lands — that is a property of the
    published corpus, not of any node. Activation remains a deliberate act against the node's own
    DATABASE row, never the YAML; on posture A the human taking responsibility is the user. What
-   upstream sign-off means for a corpus consumed by nodes upstream never meets is OQ-25.
+   upstream sign-off means for a corpus consumed by nodes upstream never meets is OQ-30.
 3. **Evidence discipline** — the append-only ledgers, the branded provable-send id, the QTSP
    requirement for statutory clocks. A node without a QTSP account simply cannot start an Art. 12(3)
    clock (`UnprovableSendError` fails closed to the human queue); it can still send, chase, and
@@ -144,23 +144,30 @@ compliance statistics. Under the pivot:
   this repo, and building one would be a new processing activity with its own DPIA, a provenance
   problem (nodes can lie; a poisoned feed defames a controller), and a defamation exposure resting on
   evidence the aggregator does not hold. `docs/05` §7's publish-rules apply to *whoever publishes* —
-  which, with no aggregator, is nobody. Recorded as OQ-25; the census `outcome` vocabulary and the
+  which, with no aggregator, is nobody. Recorded as OQ-30; the census `outcome` vocabulary and the
   `NO_PROVABLE_CLOCK` exclusion stay exactly as specified so that any future, deliberately-designed
   aggregation has honest inputs.
 
 ## 7. Open questions this pivot creates (recorded here; indexed in `docs/counsel-review-packet.md` §2)
 
+> **Renumbered 2026-08-15: these four were OQ-23..26 and are now OQ-28..31.** ADR-036 had already
+> assigned OQ-23..26 to four unrelated questions (partial erasure at a bureau, Einwurf to a Postfach,
+> CRIF's venue, silence without a provable channel), and those numbers were already cited from
+> individual playbook rows and from `apps/worker` — so the older set kept them. If you hold notes
+> against the old numbering, add five. `tools/spec-audit/oq-check.mjs` now fails the build if any
+> number is defined twice or cited without a definition.
+
 | OQ | Question | Owner |
 |---|---|---|
-| **OQ-23** | Posture A and GDPR applicability: does Art. 2(2)(c) (purely personal activity) cover a data subject self-hosting to exercise their own rights? What residual duties (Art. 32-style care) survive even if so? | counsel |
-| **OQ-24** | Confirm the self-representation analysis: posture A engages neither RDG nor a Vollmacht requirement; define exactly where posture B crosses into Rechtsdienstleistung (extends OQ-14, which keeps the adversarial-work boundary for operated deployments) | counsel |
-| **OQ-25** | The shipped corpus under decentralisation: what upstream counsel sign-off can honestly mean for nodes we never meet; the activation-responsibility disclaimer wording; and whether any federated statistics aggregation is ever lawful/wise (lawful basis, provenance, defamation) | counsel + product |
-| **OQ-26** | Posture B safety floor: should the readiness gate demand a real ident-provider verification before an operated node may activate any playbook (see §4 `TODO(safety)`) | safety + counsel |
+| **OQ-28** | Posture A and GDPR applicability: does Art. 2(2)(c) (purely personal activity) cover a data subject self-hosting to exercise their own rights? What residual duties (Art. 32-style care) survive even if so? | counsel |
+| **OQ-29** | Confirm the self-representation analysis: posture A engages neither RDG nor a Vollmacht requirement; define exactly where posture B crosses into Rechtsdienstleistung (extends OQ-14, which keeps the adversarial-work boundary for operated deployments) | counsel |
+| **OQ-30** | The shipped corpus under decentralisation: what upstream counsel sign-off can honestly mean for nodes we never meet; the activation-responsibility disclaimer wording; and whether any federated statistics aggregation is ever lawful/wise (lawful basis, provenance, defamation) | counsel + product |
+| **OQ-31** | Posture B safety floor: should the readiness gate demand a real ident-provider verification before an operated node may activate any playbook (see §4 `TODO(safety)`) | safety + counsel |
 
 ## 8. What was deliberately NOT done in this pass
 
 - No federation protocol, no node discovery, no shared services of any kind — there is nothing to
-  design until OQ-25 answers whether there should be.
+  design until OQ-30 answers whether there should be.
 - No weakening of the identity gate to make self-hosting cheaper. The eID/POSTIDENT interface stays;
   a posture-A node that stubs it in dev posture is exercising the same honesty the fixture account
   does, and one that stubs it in production posture does not boot.

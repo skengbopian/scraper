@@ -1073,6 +1073,29 @@ lesson is the same one: this wave's tests all passed before either was fixed.
 
 Each entry names the audit item it comes from. Nothing here has been decided yet.
 
+### OQ number allocation — read this before minting a number
+
+**An OQ number identifies exactly one question.** It stopped doing so once: the 2026-08-14
+decentralisation pivot minted OQ-23..26 in `docs/14` §7 for four questions that ADR-036 had already
+given those numbers to four *others*, and both sets were then cited from playbooks, docs, code and
+the counsel packet — whose §2 listed one set while its own §8 and playbook tables listed the other.
+A counsel answering "OQ-25: confirmed" would have been confirming one of two unrelated things, and
+nobody reading the answer could have told which. Resolved 2026-08-15: the docs/14 set moved to
+**OQ-28..31** and the ADR-036 set kept **OQ-23..26**, because the older numbers were the ones already
+cited by individual playbook rows.
+
+Numbers are allocated from this table even when the question is *recorded* elsewhere. The full
+allocation, so the next mint starts at 32:
+
+| Range | Defined in | Subject |
+|---|---|---|
+| OQ-1 … OQ-10 | this table | the 2026-08-07 audit's spec questions |
+| OQ-11 … OQ-16 | `docs/10-utility-roadmap.md` §3.3 | utility-roadmap questions (flagged there to feed into this section) |
+| OQ-17 … OQ-27 | this table | ADR-024/026/036 and the ops surface |
+| OQ-28 … OQ-31 | `docs/14-decentralised-deployment.md` §7 | the decentralised-launch pivot |
+
+`docs/counsel-review-packet.md` §2 indexes all of them in one place, and is what counsel works from.
+
 | # | Question | Audit ref | Owner | Status |
 |---|---|---|---|---|
 | ~~OQ-1~~ | When does the statutory clock start? | C1 | product owner | **CLOSED** → ADR-012 |
@@ -1095,10 +1118,17 @@ Each entry names the audit item it comes from. Nothing here has been decided yet
 | OQ-25 | **CRIF's Art. 77 venue.** `docs/07` and `CLAUDE.md` place CRIF at LfDI BW, and the stated benefit of targeting it is that its escalations pool with infoscore's at one authority; the verified postal address is in München (BayLDA). Confirm the registered seat — if it is Munich, `seatDpa: LFDI_BW` on both CRIF playbooks is a misroute. | ADR-036 | **counsel** | **OPEN** — blocks `provenance.crif`, `loeschung-herkunft.crif` |
 | OQ-26 | Silence-escalation posture for a controller reachable **only by web form**: no provable send is possible, so an Art. 77 complaint founded on silence rests on a deadline that was never legally established. Is `onDeadlineExpiry: NONE` the right answer, is a standalone (non-letter-bound) complaint the instrument, or is a postal address obtainable? Concerns 12 pre-audit playbooks left unported. | ADR-036, `CLAUDE.md` §6 | **counsel** | **OPEN** |
 | OQ-22 | Art. 22(3) (human intervention / contest an automated decision) is a DISTINCT right currently carried on `requestType: ACCESS_ART15` (the AI-screener explanation playbooks). Two consequences: partial compliance (15(1)(h) explanation given, 22(3) human review refused) can read as full via `compliedIf: anyOf`, and the idempotency key collides with a plain Art. 15 Datenkopie so both cannot be in flight at one controller. A dedicated `requestType` (e.g. `HUMAN_REVIEW_ART22`) in the schema + state machine + data model would fix both — a statutory-type addition, so counsel + engineering, not an in-code call. | ADR-026 | **counsel + engineering** | **OPEN** — blocks enabling `explanation.*` |
+| OQ-27 | Dedicated ops identities. `OpsRoleGuard` reads `User.role`, so an ops operator is an ordinary account with a flag: a compromised ops password is a compromised ops surface, and the evidence chain records the act without attributing it to a distinct actor. Separate ops credentials + per-actor attribution are the answer; the shape (second account, hardware factor, separate auth realm) is the open part. | port wave 5 / ADR-037 | **safety + engineering** | **OPEN** — cited from `apps/api/src/ops/ops-role.guard.ts` and `apps/api/src/db/grant-ops.ts` |
 
 The six closed items (OQ-1..6) were resolved as spec edits before any code existed, per ADR-011. OQ-9,
-OQ-10 and OQ-17..26 are new, and exist *because* the corresponding decisions were taken — all are
+OQ-10 and OQ-17..27 are new, and exist *because* the corresponding decisions were taken — all are
 counsel/safety/engineering questions that block a real send, not the scaffold.
+
+OQ-27 is registered here as of 2026-08-15. It was minted in a source comment during port wave 5 and
+appeared in no register at all, which is how the docs/14 renumber came within one number of colliding
+with it: "renumber the pivot set to OQ-27..30" was the obvious move and would have given OQ-27 two
+meanings on the day the collision was being fixed. A number cited in shipped code and recorded
+nowhere is the same defect as two questions sharing a number, one step earlier.
 
 ---
 

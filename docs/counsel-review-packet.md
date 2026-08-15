@@ -20,7 +20,7 @@ re-enters review.
 Sections:
 
 1. [`TODO(counsel)` inventory](#1-todocounsel-inventory) — every marker in the repo, by file:line.
-2. [Open questions OQ-7 … OQ-22](#2-open-questions-oq-7--oq-22) — the decisions no coding agent may take.
+2. [Open questions OQ-7 … OQ-31](#2-open-questions-oq-7--oq-31) — the decisions no coding agent may take.
 3. [Template sign-off matrix](#3-template-sign-off-matrix) — 8 templates, their playbook bindings, statutory basis.
 4. [Playbook activation checklist](#4-playbook-activation-checklist) — 19 playbooks, per-slug verification before `active: true`.
 5. [CoC rules-engine sign-off](#5-coc-rules-engine-sign-off-s1s7--p15) — S1–S7 levers, rule-set versioning, § 37a BDSG re-audit.
@@ -111,13 +111,22 @@ ADR-026 → per-case controller question; OQ-8 row; the §4 checklist item).
 
 ---
 
-## 2. Open questions OQ-7 … OQ-26
+## 2. Open questions OQ-7 … OQ-31
 
 OQ-1 … OQ-6 are **CLOSED** (resolved as spec edits, `ARCHITECTURE-DECISIONS.md` §3 / ADR-011..017) and
-omitted. OQ-7..10 and OQ-17..22 are recorded in `ARCHITECTURE-DECISIONS.md` §3; OQ-11..16 are recorded in
-`docs/10-utility-roadmap.md` §3.3 (flagged there to feed into ADR §3); OQ-23..26 are recorded in
+omitted. OQ-7..10 and OQ-17..27 are recorded in `ARCHITECTURE-DECISIONS.md` §3; OQ-11..16 are recorded in
+`docs/10-utility-roadmap.md` §3.3 (flagged there to feed into ADR §3); OQ-28..31 are recorded in
 `docs/14-decentralised-deployment.md` §7 (the 2026-08-14 decentralised-launch pivot). Nothing in this
 table may be resolved in code — each needs the named owner's decision.
+
+**This table is the complete index; every number resolves to exactly one question.** It did not until
+2026-08-15: the pivot minted OQ-23..26 for four questions ADR-036 had already given those numbers to,
+and this very section listed the pivot's meanings while §8 and the §4 playbook table listed ADR-036's.
+A counsel writing "OQ-25: confirmed" would have been confirming one of two unrelated things. The
+pivot's four moved to OQ-28..31 (the ADR-036 numbers were the ones already cited from individual
+playbook rows and from `apps/worker`), and OQ-27 — minted in a source comment during port wave 5 and
+registered nowhere — was written into the register rather than reused. `ARCHITECTURE-DECISIONS.md` §3
+carries the allocation table; the next number to mint is 32.
 
 | OQ | Question (condensed) | Owner | What it blocks | Sign-off | Datum | Notizen |
 |---|---|---|---|---|---|---|
@@ -137,10 +146,15 @@ table may be resolved in code — each needs the named owner's decision.
 | OQ-20 | Art. 77 venue for non-EU brokers = user's habitual-residence Land-DPA; resolve one-stop-shop nuance for brokers WITH an EU establishment (Cognism GmbH/DE, KASPR SAS/FR) | **counsel** | Drafting escalations for the broker playbooks; `seatDpa` values | [ ] | | |
 | OQ-21 | Clock/escalation model for controllers with no German postal channel: is `onDeadlineExpiry: NONE` (no silence-escalation) the intended posture, or model a standalone Art.-14/unlawful-processing complaint path? | engineering + counsel | The silence posture of all US/UK-broker playbooks | [ ] | | |
 | OQ-22 | Art. 22(3) is a distinct right currently carried on `requestType: ACCESS_ART15` — partial compliance can read as full, and the idempotency key collides with a plain Datenkopie; dedicated `requestType` (e.g. `HUMAN_REVIEW_ART22`)? | counsel + engineering | Enabling `explanation.hirevue` / `explanation.retorio` | [ ] | | |
-| OQ-23 | Decentralised posture A (self-host): does Art. 2(2)(c) (purely personal activity) cover a data subject self-hosting to exercise their own rights, and what residual care duties survive if so? (`docs/14-decentralised-deployment.md` §2) | **counsel** | The posture-A launch story; whether `docs/11-dpia.md` binds posture A at all | [ ] | | |
-| OQ-24 | Confirm self-representation on posture A engages neither RDG nor a Vollmacht requirement; define where posture B (operating for others) crosses into Rechtsdienstleistung — extends OQ-14 | **counsel** | The launch framing in every user-facing legal description; posture-B viability | [ ] | | |
-| OQ-25 | The shipped corpus under decentralisation: what upstream template/playbook sign-off can honestly mean for nodes we never meet; activation-responsibility disclaimer wording; whether any federated statistics aggregation is ever lawful/wise (provenance, defamation, lawful basis) | counsel + product | Corpus release notes; any future aggregation feature (deliberately unbuilt) | [ ] | | |
-| OQ-26 | Posture-B safety floor: should readiness refuse playbook activation on an operated node until a real ident provider has verified at least the operator's identity? (`docs/14-decentralised-deployment.md` §4 TODO(safety)) | **safety + counsel** | Posture-B deployment guidance; a possible readiness-gate change | [ ] | | |
+| OQ-23 | Art. 17 Abs. 1 lit. d as the instrument for a **partial** erasure at an Auskunftei, scoped to the categories the bureau itself attributed to a Datenlieferant; and whether chaining it after an Art. 15 request risks being "exzessiv" under Art. 12 Abs. 5. Full text in §8 | **counsel** | All three `loeschung-herkunft.*` playbooks | [ ] | | |
+| OQ-24 | Is an **Einwurf-Einschreiben deliverable to a Postfach**? One controller (SCHUFA) now carries two postal endpoints in the corpus. Full text in §8 | **counsel + ops** | The provable clock on 3 SCHUFA playbooks | [ ] | | |
+| OQ-25 | **CRIF's Art. 77 venue** — seat vs the shipped München address. Full text in §8; partially resolved 2026-08-14 (`docs/13`: the venue is right, the address is the stale artefact) | **counsel** | `provenance.crif`, `loeschung-herkunft.crif` | [ ] | | |
+| OQ-26 | Silence-escalation posture for a controller reachable **only by web form**, where no provable send is possible. Full text in §8b | **counsel** | 12 pre-audit playbooks, deliberately not ported | [ ] | | |
+| OQ-27 | Dedicated ops identities: `OpsRoleGuard` reads `User.role`, so an ops operator is an ordinary account with a flag and a compromised ops password is a compromised ops surface. Separate credentials + per-actor attribution in the evidence chain | **safety + engineering** | Not a send blocker; it bounds what an ops compromise costs (`ARCHITECTURE-DECISIONS.md` §3) | [ ] | | |
+| OQ-28 | Decentralised posture A (self-host): does Art. 2(2)(c) (purely personal activity) cover a data subject self-hosting to exercise their own rights, and what residual care duties survive if so? (`docs/14-decentralised-deployment.md` §2) | **counsel** | The posture-A launch story; whether `docs/11-dpia.md` binds posture A at all | [ ] | | |
+| OQ-29 | Confirm self-representation on posture A engages neither RDG nor a Vollmacht requirement; define where posture B (operating for others) crosses into Rechtsdienstleistung — extends OQ-14 | **counsel** | The launch framing in every user-facing legal description; posture-B viability | [ ] | | |
+| OQ-30 | The shipped corpus under decentralisation: what upstream template/playbook sign-off can honestly mean for nodes we never meet; activation-responsibility disclaimer wording; whether any federated statistics aggregation is ever lawful/wise (provenance, defamation, lawful basis) | counsel + product | Corpus release notes; any future aggregation feature (deliberately unbuilt) | [ ] | | |
+| OQ-31 | Posture-B safety floor: should readiness refuse playbook activation on an operated node until a real ident provider has verified at least the operator's identity? (`docs/14-decentralised-deployment.md` §4 TODO(safety)) | **safety + counsel** | Posture-B deployment guidance; a possible readiness-gate change | [ ] | | |
 
 ---
 

@@ -59,6 +59,11 @@ jobs:
       - name: Environment surface (.env.example ↔ code)
         run: npm run env
 
+      # One OQ number, one question. Two sets of four shared OQ-23..26 for a day; a counsel writing
+      # "OQ-25: confirmed" would have been answering one of two unrelated questions.
+      - name: Open-question register
+        run: npm run oq
+
       # PRE-SEND-CHECKLIST.md opens with "run `pnpm readiness` first", and until now no workflow ran
       # it — so every mechanical claim in the checklist was verified only when a human remembered to
       # verify it, which is the state the script was written to end. --ci posture, because a build

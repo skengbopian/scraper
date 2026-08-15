@@ -14,6 +14,7 @@ npm install && npm run all
 | `statemachine.mjs` | transcribes `schema/request-state-machine.md` as a graph; dead-end and reachability analysis; **anti-journeys** (paths that must NOT exist); asserts `ESCALATED` has exactly one, human-gated, inbound edge |
 | `version-check.mjs` | `docs/04`'s "never mutate a shipped version" rule, against the `playbooks/.shipped.json` lockfile |
 | `env-check.mjs` | `.env.example` against what the code reads, **both directions**: nothing declared that no code reads, nothing read that the file does not declare |
+| `oq-check.mjs` | one OQ number, one question: no number defined in two registers, no number cited that resolves to none |
 | `db-invariants.mjs` | the migration chain still declares every constraint and trigger the safety spec relies on |
 | `playbook-lint.mjs` | shared module: the semantic invariants JSON Schema **cannot** express. Not a script |
 | `root.mjs` | repo root, derived from the script location; override with `SCRAPER_ROOT` |
