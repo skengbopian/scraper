@@ -4,10 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import Ajv2020 from 'ajv/dist/2020.js';
-import addFormats from 'ajv-formats';
 import { ROOT } from './root.mjs';
 import { validatePlaybook } from './playbook-lint.mjs';
+import { compileSchema, SCHEMA as schema } from './validator.mjs';
 
 const fail = [], warn = [], ok = [];
 const F = (id, msg) => fail.push(`[FAIL ${id}] ${msg}`);
@@ -15,12 +14,12 @@ const W = (id, msg) => warn.push(`[WARN ${id}] ${msg}`);
 const O = (msg) => ok.push(`[ok] ${msg}`);
 
 // ---------- 1. Schema compiles ----------
-const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'schema/playbook.schema.json'), 'utf8'));
-const ajv = new Ajv2020({ allErrors: true, strict: false });
-addFormats(ajv);
+// The Ajv setup lives in validator.mjs so `packages/corpus-cli` — which writes playbooks into a real
+// node's database — validates through the SAME compiler with the SAME options. A corpus that passes
+// here and is rejected by the importer would mean the gate everyone trusts is not the gate that runs.
 let ajvValidate;
 try {
-  ajvValidate = ajv.compile(schema);
+  ajvValidate = compileSchema();
   O('playbook.schema.json compiles under JSON Schema draft 2020-12');
 } catch (e) {
   F('SCHEMA-COMPILE', `schema does not compile: ${e.message}`);
