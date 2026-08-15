@@ -1,35 +1,43 @@
-# PROMPT-OPERATIONAL — parallel session kickoff prompts (2026-08-15)
+# PROMPT-OPERATIONAL — sequential stage briefs (2026-08-15)
 
-Four self-contained prompts, one per Claude Code session, each in its own git worktree. House
+Four stages, worked **in order in a single session lineage** on branch `ops/operational`. House
 convention: this file follows `PROMPT.md` / `PROMPT-FEATURES.md` / `PROMPT-PIVOT.md` as a
-copy-paste session brief. Paste the one-liner for your session, or the full section.
+copy-paste session brief. The stages were originally scoped as four parallel worktree sessions;
+the owner chose sequential on 2026-08-15, so the old merge order is now the stage order.
 
-## Common rules — every session
+Stage 4 alone is 3–4 weeks and will outlast a context window. That is expected: commit at every
+stage boundary, and a fresh session re-pastes the same kickoff prompt and resumes from `git log`.
+
+## Common rules — every stage
 
 1. Read `PLAN-OPERATIONAL.md` first. `CLAUDE.md` (auto-loaded) outranks it and this file.
-2. First command: `pnpm install` (worktrees do not share `node_modules`).
+2. **Resume, don't restart.** Before any edit, run `git log --oneline -20` and check the tree for
+   which stages already landed. Work the lowest-numbered stage that is not complete. Never redo
+   completed work; if a stage is partially done, finish it before moving on.
 3. **Verify every cited file:line before editing** — citations come from an audit and may have
-   drifted a few lines. If a cited thing does not exist, investigate before assuming.
-4. Touch only the files your session owns (PLAN §5). If a fix genuinely requires another session's
-   file, leave a `// TODO(session-X):` note and record it in your summary instead.
+   drifted. If a cited thing does not exist, investigate before assuming.
+4. **One stage at a time, committed before the next begins.** Do not interleave stages: the
+   ordering exists because stage 3 consumes stage 2's `templates/.signoff.json` and stage 4's
+   dispatch check consumes it too. Within a stage, order is yours.
 5. Tests-first for anything touching `packages/core` state machine or playbook engine
-   (CLAUDE.md convention). No session in this wave should need a transition change — if you think
-   you do, stop and flag it.
+   (CLAUDE.md convention). No stage here should need a transition change — if you think you do,
+   stop and flag it.
 6. If any task appears to weaken identity binding or a CLAUDE.md guardrail, treat it as a blocker
    and say so. Leave `// TODO(counsel):` / `// TODO(safety):` rather than guessing.
-7. Definition of done, all sessions: `pnpm -r build` clean, `pnpm -r test` green (report the new
-   test count), `cd tools/spec-audit && npm run all` green, plus your session-specific DoD.
+7. Definition of done, every stage: `pnpm -r build` clean, `pnpm -r test` green (report the new
+   test count), `cd tools/spec-audit && npm run all` green, plus the stage-specific DoD.
 8. Commit style: conventional commits, small multi-commit series with reasoning-heavy bodies
-   (match `git log` house style). Commit on your branch; do not push, do not merge.
-9. End with a summary: what landed, what you deliberately did not do, every TODO added, and
-   anything the other sessions or the owner must know.
+   (match `git log` house style). Commit on `ops/operational`; do not push, do not merge.
+9. End every session with: stages completed, where the next session picks up, what you
+   deliberately did not do, every TODO added, and anything the owner must decide.
 
 ---
 
-## Session A — boot, CI, and the live 500 (branch `ops/A-boot-ci`)
+## Stage 1 — boot, CI, and the live 500
 
-You are session A of a four-session parallel wave (PLAN-OPERATIONAL.md §5). Your job: make the node
-bootable, persistent, and honestly tested. Everything here is decision-independent.
+Make the node bootable, persistent, and honestly tested. Everything here is decision-independent,
+which is why it goes first — and the CI database work makes every later stage's test run mean
+something.
 
 1. **Fix the live 500 first.** `apps/api/src/requests/requests.service.ts` — `nextActionFor` maps
    16 of the 17 states in `packages/core/src/state-machine/states.ts` and throws on
@@ -72,19 +80,19 @@ with a drift-proof test.
 
 ---
 
-## Session B — counsel-facing truth + the template seal (branch `ops/B-counsel-docs`)
+## Stage 2 — counsel-facing truth + the template seal
 
-You are session B of a four-session parallel wave (PLAN-OPERATIONAL.md §5). Your job: make the
-documents counsel will be instructed from tell the truth, and build the mechanism that binds a
-counsel signature to the prose it approved. **You edit no template prose** — legal wording is
-counsel-only; you add metadata and tooling around it.
+Make the documents counsel will be instructed from tell the truth, and build the mechanism that
+binds a counsel signature to the prose it approved. **You edit no template prose** — legal wording
+is counsel-only; you add metadata and tooling around it. This precedes stages 3 and 4 because both
+consume the `templates/.signoff.json` you create here.
 
 1. **Resolve the OQ number collision.** `docs/14` §7 assigns OQ-23..26 to four questions that
    `ARCHITECTURE-DECISIONS.md` (~lines 1084–1100) already assigned to four *different* questions —
    and the older set is cited by individual playbook rows. Renumber the docs/14 set to OQ-27..30,
    then `grep -rn 'OQ-2[3-9]'` across the repo and fix every citing site (expect hits in docs/05,
    docs/11, docs/13, docs/14, CLAUDE.md's pivot section, `scripts/readiness.mjs:81` — that last is
-   a one-line comment; note it for the merge with session A). A counsel who answers "OQ-25:
+   a one-line comment, already yours to edit since stage 1 landed). A counsel who answers "OQ-25:
    confirmed" must be answering exactly one question.
 2. **Fix `docs/counsel-review-packet.md`.** It contradicts itself: §2 rows use the docs/14 OQ
    meanings while §8 and the playbook table use the ARCHITECTURE-DECISIONS meanings. It also
@@ -114,7 +122,7 @@ counsel-only; you add metadata and tooling around it.
    (~:16, ~:74 incl. the M3 "Subscription + billing (Stripe EU)" deliverable, ~:104). Add
    supersession notes citing the 2026-08-14/15 non-profit pivot and docs/15 — do not silently
    delete history; the repo's convention is honest supersession. (`STRIPE_SECRET_KEY` removal from
-   `.env.example` belongs to session A.)
+   `.env.example` was stage 1's — verify it is gone rather than redoing it.)
 
 DoD: `grep -rn 'OQ-2[3-9]'` resolves every number to exactly one question; spec-audit green
 including the new signoff verifier; counsel packet regenerable by script; docs/15 exists with all
@@ -122,10 +130,9 @@ nine decisions recorded as OPEN.
 
 ---
 
-## Session C — corpus importer + activation (branch `ops/C-corpus`)
+## Stage 3 — corpus importer + activation
 
-You are session C of a four-session parallel wave (PLAN-OPERATIONAL.md §5). Your job: give a real
-node a corpus. Today nothing parses `playbooks/*.yaml` at runtime (`apps/api/src/common/dev-fixtures.ts:119`
+Give a real node a corpus. Today nothing parses `playbooks/*.yaml` at runtime (`apps/api/src/common/dev-fixtures.ts:119`
 states the design intent), so the `Playbook` table is empty on any real node and every request
 routes `NO_ROUTE` — and docs/14's claim that activation is "a deliberate act against the node's own
 database row" is currently a raw psql UPDATE against a row that does not exist.
@@ -142,8 +149,8 @@ A owns). Three commands:
    `playbook_freeze` will reject it and the version seal must stay green.
 2. **`corpus:activate <slug>`** — prints the controller, request type, the fully rendered letter
    against a dummy subject, the bound template's signoff status + hash from
-   `templates/.signoff.json` (schema in PLAN §6 — implement against the schema, session B builds
-   the file), the Art. 77 venue, and the docs/14 §5.2 responsibility statement; requires the
+   `templates/.signoff.json` (stage 2 built it; schema in PLAN §6), the Art. 77 venue, and the
+   docs/14 §5.2 responsibility statement; requires the
    operator to retype the slug as confirmation; writes an auditable activation record (investigate
    the existing evidence/audit mechanisms first; an additive migration is acceptable if none
    fits); then flips exactly one row. **Refuse activation outside dev posture if the bound
@@ -162,13 +169,13 @@ spec-audit + version seal stay green; no `apps/api` files touched.
 
 ---
 
-## Session D — provider seams + the worker factory (branch `ops/D-providers`)
+## Stage 4 — provider seams + the worker factory
 
-You are session D of a four-session parallel wave (PLAN-OPERATIONAL.md §5) — the largest chunk.
-Your job: build the real provider adapters and the factory, then delete the deliberate boot
-refusal at `apps/worker/src/config.ts:90` **last, in the same commit as the factory that replaces
-it** — never before: a stub provider records a send that never happened and destroys the user's
-statutory clock. Rebase on session A's branch before touching `readiness.mjs` or `.env.example`.
+The largest stage by far — 3–4 weeks, expect it to span several sessions, and it subdivides
+cleanly along the numbered items below. Build the real provider adapters and the factory, then
+delete the deliberate boot refusal at `apps/worker/src/config.ts:90` **last, in the same commit as
+the factory that replaces it** — never before: a stub provider records a send that never happened
+and destroys the user's statutory clock.
 
 1. **Object store.** Interface in `packages/core` (put/get/delete) + two adapters: filesystem
    (the honest posture-A default — the operator's own disk, EU residency by construction) and
@@ -199,10 +206,10 @@ statutory clock. Rebase on session A's branch before touching `readiness.mjs` or
    worker-side consumer — either drop it from the worker's required list or move the seam to the
    API, with a comment saying why. Only then delete the `config.ts:90` throw, keeping the five
    positive checks above it.
-6. **Template signoff at dispatch.** Once `templates/.signoff.json` exists (session B; schema in
-   PLAN §6), make dispatch refuse to render a template whose status is not `SIGNED` outside dev
-   posture — the runtime mirror of "production refuses stub identity". Build it tolerant of the
-   file not existing yet on your branch (feature-detect, test both paths).
+6. **Template signoff at dispatch.** Using `templates/.signoff.json` (stage 2; schema in PLAN §6),
+   make dispatch refuse to render a template whose status is not `SIGNED` outside dev posture —
+   the runtime mirror of "production refuses stub identity". Test both the signed and unsigned
+   paths.
 7. **Do NOT wire `services/doc-sandbox` into the worker yet.** `RefusingDocSandbox`'s
    confidence-0 → `NEEDS_HUMAN` is currently the only thing preventing shape-mismatched entries
    reaching the provenance ledger as INCOMPLETE-answer escalation material. It stays until the

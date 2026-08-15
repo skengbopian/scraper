@@ -3,7 +3,7 @@
 **Date:** 2026-08-15 · **Derived from:** the 15-agent deployment audit run against branch
 `audit/2026-08-13` (clean, suite 484/0, spec-audit 76 green). **Authority:** this file plans; it
 overrides nothing. `CLAUDE.md` outranks everything here. Companion: `PROMPT-OPERATIONAL.md`
-(copy-paste kickoff prompts for parallel sessions A–D).
+(copy-paste kickoff brief for the four sequential stages).
 
 ## 1. Where we are (verified against the tree, 2026-08-15)
 
@@ -70,7 +70,7 @@ controller's *reply* (ingest currently enqueues `bytes: []`), a second user, or 
 |---|---|---|---|
 | 0 | **Parallel engineering, decision-independent** — sessions A–D (see §5) | eng | A: 2–4d · B: 2–3d · C: 3–5d · D: 3–4wk |
 | 1 | Owner decisions D1–D9; declare posture/operator/money in docs/14 §1 + docs/15 | owner | hours; D1 procurement starts immediately |
-| 2 | **Counsel instruction** — the long pole; brief the day session B lands. First target scoped small: art21 template sign-off + az-direct endpoint verification + RDG opinion (3 questions) + mandate form + Art. 13 notice + Art. 30 ROPA template + per-seam AVV checklist | counsel | weeks–months elapsed; cash |
+| 2 | **Counsel instruction** — the long pole; brief the day stage 2 lands. First target scoped small: art21 template sign-off + az-direct endpoint verification + RDG opinion (3 questions) + mandate form + Art. 13 notice + Art. 30 ROPA template + per-seam AVV checklist | counsel | weeks–months elapsed; cash |
 | 3 | Identity + mandate surfaces (verify route, provider webhook — the most security-critical route in the product — screens, mandate create/revoke, re-verification) | eng | 2–3wk after D1 |
 | 4 | Corpus activation + **first real send** (phase-0 tooling + counsel returns + readiness green) | owner | days |
 | 5 | **The 30-day fuse:** provable-send path — az-direct declares `onDeadlineExpiry: DRAFT_ART77` and invariant 4b refuses escalation on a provisional clock, so postal/manual proof + delivery-proof UI + Art. 77 artefact must land within ~30 days of phase 4 | eng + counsel | 3–4wk; commission in the same counsel brief as phase 2 |
@@ -79,16 +79,24 @@ controller's *reply* (ingest currently enqueues `bytes: []`), a second user, or 
 Rough total: **10–12 engineering weeks, mostly parallel, inside 3–4 months elapsed** — dominated by
 counsel latency and D1 procurement, which engineering cannot compress.
 
-## 5. Parallel session map (one git worktree per session — never share a working directory)
+## 5. Stage map (one session, sequential — branch `ops/operational`)
 
-| Session | Branch | Owns (exclusive) | Notes |
+Decision 2026-08-15: run this as a **single sequential session** rather than four parallel
+worktrees. The stage order is the old merge order, which was already built so dependencies flow
+forward — nothing later is blocked by something earlier being incomplete in the same tree.
+
+| Stage | What | Primary files | Effort |
 |---|---|---|---|
-| A — boot, CI, live 500 | `ops/A-boot-ci` | `.github/workflows/**`, `scripts/readiness.mjs`, `.env.example`, `apps/api/src/requests/requests.service.ts` (+ its test), API boot guards (`startup-safety`), grant-ops CLI, root `package-lock.json` (delete), `packages/db` lint config | merges **first** — everyone benefits from CI Postgres |
-| B — counsel-facing truth + template seal | `ops/B-counsel-docs` | `docs/**`, `CLAUDE.md` (OQ refs only), `PRE-SEND-CHECKLIST.md`, `templates/.signoff.json` (new — **no prose edits to templates**), signoff verifier in `tools/spec-audit`, counsel-packet regeneration, `docs/15` (new) | one-line OQ comment fix in `scripts/readiness.mjs:81` — coordinate with A at merge |
-| C — corpus importer + activation | `ops/C-corpus` | new CLI package (suggest `packages/corpus-cli`), additive Prisma migration if an attestation record needs a table | reads the `.signoff.json` schema from §6, not from B's branch |
-| D — provider seams + worker factory | `ops/D-providers` | `apps/worker/**`, `packages/core/src/providers/**` | rebase on A before touching `readiness.mjs`/`.env.example`; delete the `config.ts:90` throw **last, same commit as the factory** |
+| 1 — boot, CI, live 500 | `nextActionFor` 500 fix + drift-proof test, CI Postgres (unskips ~68 tests), non-dev boot allow-list, `.env.example` rewrite + bidirectional check, readiness rows + CI wiring, `grant-ops` CLI, lint/lockfile housekeeping | `.github/workflows/**`, `scripts/readiness.mjs`, `.env.example`, `apps/api/src/requests/requests.service.ts`, API startup-safety | 2–4d |
+| 2 — counsel-facing truth + seal | OQ-23..26 collision renumber, counsel-packet regeneration, `PRE-SEND-CHECKLIST.md` rewrite, `templates/.signoff.json` + verifier, `docs/15`, docs/01 pricing supersession | `docs/**`, `PRE-SEND-CHECKLIST.md`, `templates/.signoff.json`, `tools/spec-audit/**` | 2–3d |
+| 3 — corpus importer + activation | `corpus:import` / `:activate` / `:deactivate`, consuming the stage-2 seal | new `packages/corpus-cli`, additive migration if needed | 3–5d |
+| 4 — provider seams + factory | object store, QTSP defect, real Mailer, DIN 5008 renderer, factory, then delete the `config.ts:90` throw **last** | `apps/worker/**`, `packages/core/src/providers/**` | 3–4wk |
 
-Merge order into `audit/2026-08-13`: **A → B → C → D.**
+Commit at every stage boundary (and within stages where it reads well) so the work is resumable
+across context windows: a fresh session reads `git log` to find the last completed stage.
+
+**Stage 4 is longer than the other three combined.** Expect it to span several sessions; it
+subdivides cleanly along its own numbered items.
 
 ## 6. Cross-session interface: `templates/.signoff.json`
 
