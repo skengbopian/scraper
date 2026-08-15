@@ -68,6 +68,7 @@ for (const [track, name, args] of [
   ['LEGAL', 'playbook version seal', ['tools/spec-audit/version-check.mjs']],
   ['LEGAL', 'template seal (prose matches what was signed)', ['tools/spec-audit/signoff-check.mjs']],
   ['LEGAL', 'open-question register (one number, one question)', ['tools/spec-audit/oq-check.mjs']],
+  ['LEGAL', 'counsel packet §3/§4 describe the corpus', ['tools/spec-audit/counsel-packet.mjs']],
   // Not LEGAL: this one is about the operator's environment, not the legal pipeline. It is here so
   // `pnpm readiness` is a single command that answers "is this checkout deployable", rather than a
   // command an operator has to remember to run a second harness alongside.
