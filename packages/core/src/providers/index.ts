@@ -37,6 +37,21 @@ export interface DeliveryProof {
   readonly origin: 'CARRIER' | 'SIMULATED';
 }
 
+/**
+ * A recipient laid out as DIN 5008 address lines.
+ *
+ * A flat string cannot be posted. The pre-audit shape (`recipient: string`) went straight into the
+ * hybrid-mail vendor's single `address` field, which is how a letter ends up with its Postleitzahl
+ * on the wrong line — and an address a sorting machine reads wrong is indistinguishable, from the
+ * user's side, from a controller who ignored them.
+ */
+export interface PostalRecipient {
+  /** Two to six lines, the last being `PLZ Ort`. Already validated to fit the 85 mm address field. */
+  readonly lines: readonly string[];
+  /** ISO 3166-1 alpha-2. Germany-first (docs/07); a non-DE country prints its own line. */
+  readonly country: string;
+}
+
 export interface PostalProvider {
   send(letter: { text: string; recipient: string }, opts: { registered: boolean }): Promise<PostalSendResult>;
 }
