@@ -13,9 +13,27 @@
 > Two concrete corrections already applied: **M1 is now the provenance loop, not the Werbewiderspruch
 > loop**, and the bureau target list routes **Boniversum → infoscore** (merged Sep 2025).
 
-**Goal:** a small, safe, mostly-automated loop that proves German consumers will pay €5–10/mo, and that
-legally-precise automated requests get better results than generic ones — without building the
-expensive or risky modules yet. Team: 2–3 engineers + Claude Code, ~3 months.
+> **THE PRICING IN THIS FILE IS SUPERSEDED (2026-08-14/15 pivot).** Three statements below —
+> the Goal line, the M3 "Subscription + billing (Stripe EU)" deliverable, and the M3 success
+> criterion — price the product at €5–10/mo. Scraper launches decentralised
+> (`docs/14-decentralised-deployment.md`): software people run themselves, with no central service to
+> subscribe to. Whether money ever moves at all, including Verein dues, is **decision D4 in
+> `docs/15-entity-and-governance.md` and it is OPEN** — the recommendation is never, or donations
+> only.
+>
+> They are annotated in place, not deleted. This repo's convention is honest supersession: the
+> milestone plan is a record of what was intended and why, and a plan that quietly rewrites itself
+> stops being able to explain its own decisions. What matters practically is that **counsel must not
+> be instructed off these numbers** — D4 determines the RDG instruction scope, the §52 AO category if
+> an entity is ever formed, and the whole consumer-contract workstream. `STRIPE_SECRET_KEY` was
+> removed from `.env.example` on 2026-08-15; nothing in the tree reads it, and
+> `tools/spec-audit/env-check.mjs` now fails if it comes back.
+
+**Goal:** a small, safe, mostly-automated loop that proves German consumers will pay ~~€5–10/mo~~
+*(**superseded** — see the pricing note above; monetisation is decision D4, open, and the
+recommendation is donations only)*, and that legally-precise automated requests get better results
+than generic ones — without building the expensive or risky modules yet. Team: 2–3 engineers +
+Claude Code, ~3 months.
 
 ## In scope
 
@@ -71,7 +89,11 @@ The cheapest welfare in the product, per `docs/08-leverage-ladder.md`. Build ord
 
 ### M3 — Prove it & charge (weeks 10–13)
 - 30-day re-scan/re-check loop.
-- Subscription + billing (Stripe EU) at €5–10/mo; waitlist → paid conversion measured.
+- ~~Subscription + billing (Stripe EU) at €5–10/mo; waitlist → paid conversion measured.~~
+  **SUPERSEDED (2026-08-14/15).** There is no central service to subscribe to under the decentralised
+  posture, and whether money ever moves is decision D4 (`docs/15`), still open. **Do not build a
+  billing integration on the strength of this line.** The Stripe dependency was never added and
+  `STRIPE_SECRET_KEY` is gone from `.env.example`.
 - Minimal user-facing "your requests & results" view. Internal per-controller response-rate stats
   (private; the *public* scoreboard is deferred).
 
@@ -101,7 +123,9 @@ The cheapest welfare in the product, per `docs/08-leverage-ladder.md`. Build ord
   inbound edge, it requires a `HUMAN_OPS` actor, and a database trigger rejects the row otherwise.
 - **No statutory deadline is ever asserted from a non-provable send** (`CLAUDE.md` §6) — enforced by a
   DB `CHECK` constraint, not only in application code.
-- ≥50% verified-removal/response at the pilot; paying users at €5–10/mo.
+- ≥50% verified-removal/response at the pilot; ~~paying users at €5–10/mo~~ **superseded** — a
+  success criterion the product can no longer be measured against (decision D4, `docs/15`). The
+  removal/response half stands and is the one that mattered.
 - A human pre-send checklist (counsel-reviewed templates, ident + postal + QTSP accounts, DPIA) is green.
 
 ## The usability gate (`docs/09`) — launch-blocking, and NOT satisfied by M0–M3
