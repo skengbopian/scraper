@@ -12,14 +12,16 @@
     "probe:store": "node dist/providers/object-store/probe.js"
   },
   "dependencies": {
-    "@scraper/core": "workspace:*",
-    "pg-boss": "^10.3.2",
     "@prisma/client": "^5.20.0",
-    "@scraper/api": "workspace:*"
+    "@scraper/api": "workspace:*",
+    "@scraper/core": "workspace:*",
+    "nodemailer": "^9.0.5",
+    "pg-boss": "^10.3.2"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.1",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.0"
   }
 }

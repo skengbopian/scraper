@@ -185,6 +185,37 @@ if (!objectStore) {
   add('COMPLIANCE', FAIL, 'SCRAPER_OBJECT_STORE names a known store', `= ${objectStore} (expected fs | s3)`);
 }
 
+// ---------- EMAIL: the half that can be checked without sending mail ----------
+//
+// `dkimAligned` decides whether a legal request goes out or fails into the ops queue, and the
+// adapter derives it from DNS at send time. Readiness deliberately does NOT resolve DNS — a gate
+// that needs the network is a gate that is red on a train — so it checks the local half: the three
+// DKIM variables arrive together, the key file exists and parses, and `d=` matches the From domain.
+// Those are every misconfiguration that does not need a resolver to find.
+if (env.SCRAPER_MAILER === 'smtp') {
+  const problems = [];
+  for (const k of ['SMTP_HOST', 'MAILER_FROM']) if (!env[k]) problems.push(`${k} is unset`);
+  const dkim = ['MAILER_DKIM_DOMAIN', 'MAILER_DKIM_SELECTOR', 'MAILER_DKIM_PRIVATE_KEY_FILE'].filter((k) => env[k]);
+  if (dkim.length === 0) {
+    problems.push('no DKIM identity — every send would fail into the ops queue as unaligned');
+  } else if (dkim.length < 3) {
+    problems.push('DKIM is half-configured; it needs all three of MAILER_DKIM_DOMAIN, MAILER_DKIM_SELECTOR, MAILER_DKIM_PRIVATE_KEY_FILE');
+  } else {
+    const fromDomain = /@([^>\s]+)/.exec(env.MAILER_FROM ?? '')?.[1]?.toLowerCase();
+    if (fromDomain && fromDomain !== env.MAILER_DKIM_DOMAIN.toLowerCase()) {
+      problems.push(`MAILER_DKIM_DOMAIN (${env.MAILER_DKIM_DOMAIN}) is not the MAILER_FROM domain (${fromDomain}) — the signature would be valid and unaligned`);
+    }
+    try {
+      crypto.createPublicKey(fs.readFileSync(env.MAILER_DKIM_PRIVATE_KEY_FILE, 'utf8'));
+    } catch (e) {
+      problems.push(`MAILER_DKIM_PRIVATE_KEY_FILE: ${e.message.split('\n')[0]}`);
+    }
+  }
+  add('COMPLIANCE', problems.length === 0 ? PASS : FAIL, 'SMTP mailer configured and DKIM key usable', problems.join(' · '));
+  add('COMPLIANCE', HUMAN,
+    'DKIM/SPF/DMARC published and a test message shows dkim=pass, spf=pass, dmarc=pass in the raw headers (apps/worker/src/providers/mailer/README.md)');
+}
+
 // Persistence and durable time. These three mirror `assertApiStartupSafe()`
 // (apps/api/src/common/startup-safety.ts), which is NORMATIVE — it refuses the boot; this only
 // reports. `apps/api/test/startup-safety.test.ts` runs this script against the same environments as
