@@ -1,8 +1,11 @@
 import {
   apply,
   assertSubjectBelongsTo,
+  isSigned,
   PlaybookNotSendableError,
   renderRequest,
+  verifySignoff,
+  type SignoffManifest,
   type PartialErasureScope,
   type Playbook,
   type RequestSnapshot,
@@ -49,6 +52,14 @@ export interface DispatchableRequest {
 export interface DispatchDeps {
   readonly load: (requestId: string) => Promise<DispatchableRequest | null>;
   readonly readTemplate: (templateId: string) => Promise<string>;
+  /** `templates/.signoff.json`. Read per dispatch, not cached: a seal is a fact about the file NOW. */
+  readonly readSignoffManifest: () => Promise<SignoffManifest>;
+  /**
+   * May an unsigned letter be rendered? True ONLY in development/test — the runtime mirror of
+   * `assertStartupSafe`'s allow-list, and of `corpus:activate --allow-draft`. It is a dependency
+   * rather than a `NODE_ENV` read so the refusal is testable from both sides.
+   */
+  readonly allowUnsignedTemplates: boolean;
   readonly gateway: OutboundGateway;
   readonly applyTransition: (requestId: string, result: TransitionResult) => Promise<void>;
   readonly recordHumanQueueEntry: RecordHumanQueueEntry;
@@ -179,7 +190,55 @@ async function withTemplate(deps: DispatchDeps, row: DispatchableRequest): Promi
         `this is an operational fault, not a policy refusal.`,
     };
   }
+
+  const refusal = await signoffRefusal(deps, row.playbook.template, templateBody);
+  if (refusal !== null) return refusal;
+
   return prepareDispatch(row, templateBody, deps.now());
+}
+
+/**
+ * THE SEAL AT DISPATCH — the runtime mirror of "production refuses stub providers".
+ *
+ * `corpus:activate` already refuses to activate a playbook whose bound template is not SIGNED, and
+ * that is the gate that matters most. This is the second one, and it is not redundant: activation
+ * happens once and the file stays editable afterwards. A signature that is only checked at
+ * activation is a signature on a filename, which is the exact defect `templates/.signoff.json` was
+ * built to end — so the hash is re-checked against the bytes on disk on every dispatch.
+ *
+ * A refusal is a HUMAN_QUEUE entry, never a transition: the request has not left READY, so there is
+ * nothing sent and nothing to undo. It waits for counsel, which is the correct thing for it to be
+ * waiting for.
+ */
+async function signoffRefusal(deps: DispatchDeps, templateId: string, body: string): Promise<PreparedDispatch | null> {
+  if (deps.allowUnsignedTemplates) return null;
+
+  const name = `${templateId}.md`;
+  let manifest: SignoffManifest;
+  try {
+    manifest = await deps.readSignoffManifest();
+  } catch (e) {
+    // Fail CLOSED. An unreadable manifest is not permission to send unsigned prose.
+    return {
+      kind: 'HUMAN_QUEUE',
+      reason: `${HUMAN_QUEUE_REASON.TEMPLATE_NOT_SIGNED} (the manifest itself could not be read: ${e instanceof Error ? e.message : String(e)})`,
+    };
+  }
+
+  const entry = manifest[name];
+  if (!entry) {
+    return { kind: 'HUMAN_QUEUE', reason: `${HUMAN_QUEUE_REASON.TEMPLATE_NOT_SIGNED} (no entry for "${name}")` };
+  }
+  // Sliced to this one template: `verifySignoff` over the whole manifest would report every OTHER
+  // entry as an orphan, since only this template's file was read.
+  const problems = verifySignoff({ [name]: entry }, [{ name, body }]);
+  if (problems.length > 0) {
+    return { kind: 'HUMAN_QUEUE', reason: `${HUMAN_QUEUE_REASON.TEMPLATE_NOT_SIGNED} — ${problems.map((p) => p.message).join('; ')}` };
+  }
+  if (!isSigned(manifest, name)) {
+    return { kind: 'HUMAN_QUEUE', reason: `${HUMAN_QUEUE_REASON.TEMPLATE_NOT_SIGNED} (status is ${entry.status})` };
+  }
+  return null;
 }
 
 function gatewayRequest(row: DispatchableRequest, prepared: Extract<PreparedDispatch, { kind: 'SEND' }>): GatewaySendRequest {

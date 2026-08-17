@@ -2,13 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import PgBoss from 'pg-boss';
 import { PrismaClient } from '@prisma/client';
-import { routeObjectRef, type DocSandbox, type ObjectStore, type RawDocument, type SandboxParseResult, type TransitionResult } from '@scraper/core';
+import { routeObjectRef, type SignoffManifest, type TransitionResult } from '@scraper/core';
 import { PrismaRequestsRepository } from '@scraper/api/repository';
 import { loadWorkerConfig, type WorkerConfig } from './config.js';
 import { createWorkflowEngine } from './engine/factory.js';
 import { ControllerGateway } from './gateway/controller-gateway.js';
-import { createObjectStore } from './providers/object-store/resolve.js';
-import { SimulatedTimestamper, StubMailer, StubPostalProvider } from './providers/stub-providers.js';
+import { createProviders, type ResolvedProviders } from './providers/factory.js';
 import { PrismaWorkerRepository } from './repo/prisma-worker.repo.js';
 import { handleDeadlineExpiry, sweepExpiredDeadlines, type DeadlinePayload } from './workflows/deadline.js';
 import { dispatchReadyRequest, type DispatchDeps } from './workflows/dispatch.js';
@@ -35,36 +34,17 @@ export { handleDeadlineExpiry, dispatchReadyRequest, ingestResponse };
 
 const DISPATCH_BATCH = 25;
 
-/**
- * A doc sandbox that refuses rather than guesses.
- *
- * The real parser is `services/doc-sandbox` (ADR-007/021: isolated, structured-output only, one
- * document per context). Until the worker is wired to it over its transport, this stand-in returns
- * confidence 0, which invariant 5 turns into NEEDS_HUMAN for every document. A stub that returned a
- * plausible parse would be worse than no parser at all: it would let hostile input reach a validated
- * outcome (docs/06 C4).
- */
-class RefusingDocSandbox implements DocSandbox {
-  async parse(doc: RawDocument): Promise<SandboxParseResult> {
-    return {
-      structured: {},
-      confidence: 0,
-      text: `[doc-sandbox not wired: document ${doc.id} (${doc.mimeType}) was NOT parsed]`,
-    };
-  }
-}
-
 function buildDispatchDeps(
   config: WorkerConfig,
   repo: PrismaWorkerRepository,
   requests: PrismaRequestsRepository,
   engine: DispatchDeps['engine'],
-  objectStore: ObjectStore,
+  providers: ResolvedProviders,
 ): DispatchDeps {
   const gateway = new ControllerGateway({
-    mailer: new StubMailer(),
-    postal: new StubPostalProvider(),
-    timestamper: new SimulatedTimestamper(),
+    mailer: providers.mailer,
+    postal: providers.postal,
+    timestamper: providers.timestamper,
     appendEvidenceRecord: (record) => repo.appendEvidenceRecord(record),
     latestChainHash: (id) => repo.latestChainHash(id),
     hasOutboundEvidence: (id) => repo.hasOutboundEvidence(id),
@@ -74,7 +54,7 @@ function buildDispatchDeps(
     // nothing. The chain verified, the seal was green, and the letter we would have to produce at a
     // DPA existed nowhere. `put` throwing here is caught by the gateway BEFORE the channel call, so
     // a store that cannot keep the artefact stops the send instead of losing the evidence for it.
-    objectStorePut: (key, bytes) => objectStore.put(key, bytes),
+    objectStorePut: (key, bytes) => providers.objectStore.put(key, bytes),
     idFactory: () => `ev_${Math.random().toString(36).slice(2, 12)}`,
     now: () => new Date(),
   });
@@ -82,6 +62,12 @@ function buildDispatchDeps(
   return {
     load: (id) => repo.loadDispatchable(id),
     readTemplate: (templateId) => readFile(join(config.templatesDir, `${templateId}.md`), 'utf8'),
+    readSignoffManifest: async () =>
+      JSON.parse(await readFile(join(config.templatesDir, '.signoff.json'), 'utf8')) as SignoffManifest,
+    // The runtime mirror of the boot allow-list: an unsigned letter renders in development and test
+    // and nowhere else. `corpus:activate` gates activation the same way; this gates every dispatch,
+    // because a template stays editable after it is activated.
+    allowUnsignedTemplates: config.nodeEnv === 'development' || config.nodeEnv === 'test',
     gateway,
     applyTransition: (id, result: TransitionResult) => requests.applyTransition(id, result),
     recordHumanQueueEntry: (entry) => repo.recordHumanQueueEntry(entry),
@@ -91,11 +77,16 @@ function buildDispatchDeps(
   };
 }
 
-function buildIngestDeps(config: WorkerConfig, repo: PrismaWorkerRepository, requests: PrismaRequestsRepository): IngestDeps {
+function buildIngestDeps(
+  config: WorkerConfig,
+  repo: PrismaWorkerRepository,
+  requests: PrismaRequestsRepository,
+  providers: ResolvedProviders,
+): IngestDeps {
   return {
     load: (id) => repo.loadIngestible(id),
     applyTransition: (id, result: TransitionResult) => requests.applyTransition(id, result),
-    docSandbox: new RefusingDocSandbox(),
+    docSandbox: providers.docSandbox,
     outputSchemaFor: () => ({}),
     createControllerResponse: (row) => repo.createControllerResponse(row),
     saveProvenance: async (plan, req) => {
@@ -118,13 +109,13 @@ async function main(): Promise<void> {
   const db = new PrismaClient();
   const requests = new PrismaRequestsRepository(db);
   const repo = new PrismaWorkerRepository(db);
-  const objectStore = createObjectStore(process.env);
+  const providers = createProviders(process.env);
 
   // ADR-031: the engine is a config choice. pg-boss by default; the queue the worker CONSUMES from
   // is pg-boss regardless, since that is what the API's scheduler produces into.
   const handle = createWorkflowEngine({ engine: config.engine, databaseUrl: config.databaseUrl, redisUrl: config.redisUrl });
-  const dispatchDeps = buildDispatchDeps(config, repo, requests, handle.engine, objectStore);
-  const ingestDeps = buildIngestDeps(config, repo, requests);
+  const dispatchDeps = buildDispatchDeps(config, repo, requests, handle.engine, providers);
+  const ingestDeps = buildIngestDeps(config, repo, requests, providers);
   const deadlineDeps = {
     load: (id: string) => requests.load(id),
     applyTransition: (id: string, result: TransitionResult) => requests.applyTransition(id, result),
@@ -168,13 +159,13 @@ async function main(): Promise<void> {
     findDueControllerResponsePurges: (now, limit) => repo.findDueControllerResponsePurges(now, limit),
     findDueInboundDocumentPurges: (now, limit) => repo.findDueInboundDocumentPurges(now, limit),
     deleteObject: async (ref) => {
-      const routing = routeObjectRef(ref, objectStore);
+      const routing = routeObjectRef(ref, providers.objectStore);
       if (routing.action === 'SKIP') return;
       // TODO(safety): a refused purge should raise an ops-queue entry, not only halt this row.
       // There is no surface for "retention could not be honoured" yet; the sweep names it on every
       // pass until an operator acts.
       if (routing.action === 'REFUSE') throw new Error(routing.reason);
-      await objectStore.delete(ref);
+      await providers.objectStore.delete(ref);
     },
     tombstoneControllerResponseRaw: (id) => repo.tombstoneControllerResponseRaw(id),
     tombstoneInboundDocumentRaw: (id, at) => repo.tombstoneInboundDocumentRaw(id, at),
@@ -203,11 +194,11 @@ async function main(): Promise<void> {
   const timer = setInterval(() => void sweep().catch((e) => console.error('[sweep]', e)), 15_000);
   timer.unref?.();
 
-  console.log(
-    `worker up: engine=${handle.name} object-store=${objectStore.name} ` +
-      'queues=dispatch,deadline-expiry,ingest-response — ' +
-      'providers are stubs, so a registered send CANNOT start a statutory clock (ADR-037)',
-  );
+  // Every seam, named. The failure this replaces was invisible: the selectors were validated and
+  // then ignored, so an operator could read a correct environment and get a worker that sent
+  // nowhere. What resolved is now the first thing in the log.
+  console.log(`worker up: engine=${handle.name} queues=dispatch,deadline-expiry,ingest-response`);
+  for (const line of providers.describe()) console.log(`  · ${line}`);
 }
 
 const isMain = process.argv[1]?.endsWith('main.js') || process.argv[1]?.endsWith('main.ts');

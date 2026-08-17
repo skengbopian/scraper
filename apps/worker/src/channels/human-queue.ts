@@ -36,4 +36,8 @@ export const HUMAN_QUEUE_REASON = {
   NO_PROVABLE_CHANNEL:
     'a registered re-send was authorised but this playbook declares no postal+registered channel, ' +
     'so no provable send is reachable and the Art. 12(3) clock can never start (OQ-26).',
+  TEMPLATE_NOT_SIGNED:
+    'the letter this playbook renders is not counsel-signed in templates/.signoff.json, and this is ' +
+    'not a development posture. The seal binds a signature to PROSE, so this refusal survives a ' +
+    'template being edited after signature as well as one never signed at all.',
 } as const;

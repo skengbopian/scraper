@@ -93,10 +93,14 @@ add('LEGAL', licence ? PASS : isDeployPosture ? FAIL : WARN, 'a LICENSE file exi
   licence ? `= ${licence}` : 'none — distributing this repo is unlawful today, and distribution IS the launch model');
 
 // ---------- IDENTITY / EVIDENCE / CRYPTO (deploy posture only where env-shaped) ----------
-const providerSeams = ['SCRAPER_MAILER', 'SCRAPER_POSTAL', 'SCRAPER_TIMESTAMPER', 'SCRAPER_IDENTITY', 'SCRAPER_DOC_SANDBOX'];
+// Mirrors `REQUIRED_REAL_PROVIDERS` in apps/worker/src/config.ts. SCRAPER_IDENTITY is absent from
+// both: the worker has no identity consumer, and a row that fails over a variable nothing reads
+// teaches an operator that these checks are ceremony. `simulated` counts as real for the
+// timestamper alone — owner decision D6's degraded mode, which cannot start a clock by construction.
+const providerSeams = ['SCRAPER_MAILER', 'SCRAPER_POSTAL', 'SCRAPER_TIMESTAMPER', 'SCRAPER_DOC_SANDBOX'];
 for (const seam of providerSeams) {
   const v = env[seam] ?? '(unset)';
-  const real = v !== '(unset)' && v !== 'stub' && v !== 'simulated';
+  const real = v !== '(unset)' && v !== 'stub' && (v !== 'simulated' || seam === 'SCRAPER_TIMESTAMPER');
   add('IDENTITY', isDeployPosture ? (real ? PASS : FAIL) : WARN, `${seam} names a real adapter`, `= ${v}`);
 }
 add('IDENTITY', env.SCRAPER_DEV_FIXTURES === '1' ? (isDeployPosture ? FAIL : WARN) : PASS,

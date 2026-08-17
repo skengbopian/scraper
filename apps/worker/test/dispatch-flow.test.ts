@@ -111,6 +111,11 @@ function harness(
     deps: {
       load: async () => current.row,
       readTemplate: async () => TEMPLATE,
+      // These suites are about the send path, not the seal, so they run in the dev posture the
+      // seal itself allows. `describe('the template seal at dispatch')` below exercises the other
+      // side, where an unsigned letter is refused.
+      readSignoffManifest: async () => ({}),
+      allowUnsignedTemplates: true,
       gateway,
       applyTransition: async (id, result) => void transitions.push({ id, result }),
       recordHumanQueueEntry: async (e) => void queued.push({ requestId: e.requestId, reason: e.reason }),

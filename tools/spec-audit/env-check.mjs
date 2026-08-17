@@ -42,10 +42,13 @@ const isTestFile = (rel) => /(^|\/)test(s)?\//.test(rel) || /\.(test|spec)\.[cm]
  * name is never written out in full, which today is exactly one case.
  */
 const INDIRECT_READS = {
+  // SCRAPER_IDENTITY was here until the factory landed. It is gone from both lists deliberately:
+  // the worker has no identity consumer, so demanding it made the process refuse to boot over a
+  // variable it would then ignore. This check is what noticed — the entry outlived its read by one
+  // commit, and the harness said so.
   SCRAPER_MAILER: 'apps/worker/src/config.ts REQUIRED_REAL_PROVIDERS + scripts/readiness.mjs providerSeams',
   SCRAPER_POSTAL: 'apps/worker/src/config.ts REQUIRED_REAL_PROVIDERS + scripts/readiness.mjs providerSeams',
   SCRAPER_TIMESTAMPER: 'apps/worker/src/config.ts REQUIRED_REAL_PROVIDERS + scripts/readiness.mjs providerSeams',
-  SCRAPER_IDENTITY: 'apps/worker/src/config.ts REQUIRED_REAL_PROVIDERS + scripts/readiness.mjs providerSeams',
   SCRAPER_DOC_SANDBOX: 'apps/worker/src/config.ts REQUIRED_REAL_PROVIDERS + scripts/readiness.mjs providerSeams',
   RAW_RESPONSE_RETENTION_DAYS: 'apps/worker/src/config.ts positiveInt(env, ...)',
   GATEWAY_MAX_SENDS_PER_CONTROLLER_PER_HOUR: 'apps/worker/src/config.ts positiveInt(env, ...)',

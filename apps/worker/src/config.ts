@@ -9,10 +9,11 @@ import { ENGINE_NAMES, type EngineName } from './engine/factory.js';
  * "stub" is not enough, because an UNSET selector also falls back to a stub — so production requires
  * every seam to be explicitly configured, a positive check rather than a deny-list.
  *
- * One guard is new here and belongs to this wave. `SCRAPER_TIMESTAMPER` must be a real QTSP in
- * production, because a simulated anchor is the thing that would otherwise turn a stubbed hybrid-mail
- * receipt into an Art. 12(3) deadline. `provableSendEvidenceIdOf()` already refuses it at runtime —
- * this makes the misconfiguration impossible to boot with, rather than merely harmless.
+ * The list has since lost one entry and gained one, and both changes are documented where they are
+ * made: `SCRAPER_IDENTITY` left because the worker has no identity consumer, and
+ * `SCRAPER_OBJECT_STORE` arrived because an evidence reference to nothing is not evidence.
+ * `SCRAPER_TIMESTAMPER=simulated` is now permitted, because a simulated anchor cannot start a clock
+ * by construction and refusing it made the shipped default unbootable.
  */
 export class WorkerConfigError extends Error {
   constructor(message: string) {
@@ -45,19 +46,46 @@ function positiveInt(env: NodeJS.ProcessEnv, key: string, fallback: number): num
   return value;
 }
 
-/** Seams that must name a real adapter before the worker may run in production. */
+/**
+ * Seams that must be explicitly configured before the worker may run in production.
+ *
+ * `SCRAPER_IDENTITY` IS NOT HERE, and its absence is the honest answer to a question this list had
+ * been getting wrong since wave 5: the worker has no identity consumer. Nothing in `apps/worker`
+ * constructs an `IdentityProvider` or could use one — verification happens in the API, before a
+ * request may be created at all (`IdentityVerifiedGuard`), and the subject reaching dispatch is
+ * already derived from a verified record. Demanding it here made the worker refuse to boot over a
+ * variable it would then ignore, which teaches an operator that these checks are ceremony. The seam
+ * belongs to the API and moves there with the production identity route (PLAN phase 3, owner
+ * decision D1). Its absence from this list is not a relaxation: the gate that matters is in the API
+ * and is untouched.
+ */
 const REQUIRED_REAL_PROVIDERS = [
   'SCRAPER_MAILER',
   'SCRAPER_POSTAL',
   'SCRAPER_TIMESTAMPER',
-  'SCRAPER_IDENTITY',
   'SCRAPER_DOC_SANDBOX',
-  // The sixth seam. Neither of its values (`fs`, `s3`) is a stub — a filesystem store is the honest
-  // posture-A answer — so this entry is here for the UNSET case: without a store the worker writes
-  // an evidence reference to nothing, and PLAN §2 puts "object store actually holding the rendered
-  // copy the evidence chain hashes" inside the first-real-send gate.
+  // Neither of its values (`fs`, `s3`) is a stub — a filesystem store is the honest posture-A
+  // answer — so this entry is here for the UNSET case: without a store the worker writes an evidence
+  // reference to nothing, and PLAN §2 puts "object store actually holding the rendered copy the
+  // evidence chain hashes" inside the first-real-send gate.
   'SCRAPER_OBJECT_STORE',
 ] as const;
+
+/**
+ * Seams where `simulated` is a real, shipped posture rather than a stub.
+ *
+ * Only the timestamper, and only because of what a simulated anchor CANNOT do. Owner decision D6
+ * makes the degraded no-QTSP mode the shipped default: a node with no qualified account sends,
+ * evidences and chases — it simply cannot start an Art. 12(3) clock, because
+ * `provableSendEvidenceIdOf()` refuses a `SIMULATED` anchor structurally, in the type system, with
+ * no runtime flag to get wrong.
+ *
+ * Refusing it here made D6's default unbootable in deploy posture, and the alternative was worse
+ * than the disease: an operator with no QTSP account would have had to name the real adapter with no
+ * token, turning "no statutory clock" into `CREDENTIALS_MISSING` on every dispatch — no sends at
+ * all, discovered one failed letter at a time. The boot log says which posture resolved.
+ */
+const SIMULATED_IS_A_POSTURE: readonly string[] = ['SCRAPER_TIMESTAMPER'];
 
 export function assertStartupSafe(env: NodeJS.ProcessEnv): void {
   // CLAUDE.md §3 / ADR-006: all inference on personal data runs in an EU region. This is a
@@ -75,7 +103,9 @@ export function assertStartupSafe(env: NodeJS.ProcessEnv): void {
   // deny-list trap as audit H1's KEK resolver).
   if (env.NODE_ENV === 'development' || env.NODE_ENV === 'test') return;
 
-  const unsafe = REQUIRED_REAL_PROVIDERS.filter((key) => !env[key] || env[key] === 'stub' || env[key] === 'simulated');
+  const unsafe = REQUIRED_REAL_PROVIDERS.filter(
+    (key) => !env[key] || env[key] === 'stub' || (env[key] === 'simulated' && !SIMULATED_IS_A_POSTURE.includes(key)),
+  );
   if (unsafe.length > 0) {
     throw new WorkerConfigError(
       `refusing to start: stub or unset providers in production (${unsafe.join(', ')}). ` +
@@ -87,16 +117,6 @@ export function assertStartupSafe(env: NodeJS.ProcessEnv): void {
   if (env.SCRAPER_DEV_FIXTURES === '1') {
     throw new WorkerConfigError('refusing to start: SCRAPER_DEV_FIXTURES=1 in production');
   }
-
-  // AUDIT M2: the five selectors above are validated, but until a provider factory dereferences
-  // them, `main.ts` HARDWIRES stub providers regardless — so passing the check by setting the env
-  // vars would still start a worker whose sends go nowhere while claiming real ones were selected.
-  // Refuse outright until the wiring exists; delete this throw when the factory lands.
-  throw new WorkerConfigError(
-    'refusing to start: real provider adapters exist (providers/real-providers.ts) but are not yet ' +
-      'wired into dispatch — this build hardwires stubs (main.ts). A deployment would accept ' +
-      `${REQUIRED_REAL_PROVIDERS.join(', ')} while ignoring them.`,
-  );
 }
 
 export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
