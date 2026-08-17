@@ -8,6 +8,7 @@ import {
   type DeliveryProof,
   type EvidenceRecord,
   type Mailer,
+  type PostalLetter,
   type PostalProvider,
   type RequestSnapshot,
   type TimestampAnchor,
@@ -20,6 +21,17 @@ import { eventFor } from '../src/channels/types.js';
 import { handleDeadlineExpiry } from '../src/workflows/deadline.js';
 import { INGESTIBLE_STATES } from '../src/workflows/ingest.js';
 import { StubPostalProvider, SimulatedTimestamper, StubMailer } from '../src/providers/stub-providers.js';
+import { parsePostalRecipient } from '../src/providers/letter/recipient.js';
+
+/**
+ * A minimal `PostalLetter`. These hazards are about what a provider may CLAIM about a send, not
+ * about the page, so the PDF is a stand-in — but it is bytes, because a postal letter is bytes.
+ */
+const letter = (text: string): PostalLetter => ({
+  text,
+  pdf: new TextEncoder().encode(`%PDF-1.7 ${text}`),
+  recipient: parsePostalRecipient('AZ Direct GmbH, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh'),
+});
 
 /**
  * The four hazards port wave 5 exists to close (docs/port-plan-from-A.md; ADR-037).
@@ -117,7 +129,7 @@ describe('hazard 1: an email send never starts the statutory clock', () => {
 
 describe('hazard 2: a simulated proof cannot start a legal clock', () => {
   it('the stub postal provider marks its receipt SIMULATED', async () => {
-    const result = await new StubPostalProvider().send({ text: 't', recipient: 'r' }, { registered: true });
+    const result = await new StubPostalProvider().send(letter('t'), { registered: true });
     expect(result.proof).not.toBeNull();
     expect(result.proof?.origin).toBe('SIMULATED');
   });
@@ -174,7 +186,7 @@ describe('hazard 2: a simulated proof cannot start a legal clock', () => {
     const postal: PostalProvider = new StubPostalProvider();
     const timestamper = new SimulatedTimestamper();
     const outcome = await sendPostalLetter(
-      postal, { text: 'letter', recipient: 'Musterstr. 1' }, { registered: true },
+      postal, letter('letter'), { registered: true },
       (proof) => postalProofRecord(timestamper, proof), NOW,
     );
     expect(outcome.kind).toBe('ACCEPTED_NON_PROVABLE');

@@ -52,8 +52,19 @@ export interface PostalRecipient {
   readonly country: string;
 }
 
+export interface PostalLetter {
+  /**
+   * The print-ready artefact. THIS is what the carrier receives, and what the evidence chain hashes
+   * for a postal send — the Markdown is our internal representation of it.
+   */
+  readonly pdf: Uint8Array;
+  /** The same letter as text, for the human queue and for an operator posting it by hand. */
+  readonly text: string;
+  readonly recipient: PostalRecipient;
+}
+
 export interface PostalProvider {
-  send(letter: { text: string; recipient: string }, opts: { registered: boolean }): Promise<PostalSendResult>;
+  send(letter: PostalLetter, opts: { registered: boolean }): Promise<PostalSendResult>;
 }
 
 export interface MailerResult {

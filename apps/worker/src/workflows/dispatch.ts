@@ -194,6 +194,16 @@ function gatewayRequest(row: DispatchableRequest, prepared: Extract<PreparedDisp
     recipient: prepared.plan.recipient,
     subject: prepared.subject,
     body: prepared.body,
+    // Derived from the verified identity, never typed in (CLAUDE.md §1). `primaryAddress` is the
+    // current address on the Identity record; the historical ones are lawful to CITE inside an
+    // Art. 15 but are not where an undeliverable letter should be returned to.
+    sender: {
+      name: row.subject.legalName,
+      addressLines: [
+        row.subject.primaryAddress.street,
+        `${row.subject.primaryAddress.postalCode} ${row.subject.primaryAddress.city}`,
+      ],
+    },
   };
 }
 

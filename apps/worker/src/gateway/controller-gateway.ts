@@ -10,6 +10,8 @@ import {
 import { sendLegalRequestEmail } from '../channels/email.js';
 import { sendPostalLetter } from '../channels/postal.js';
 import type { SendOutcome } from '../channels/types.js';
+import { renderDin5008Letter, splitBetreff, type LetterSender } from '../providers/letter/din5008.js';
+import { parsePostalRecipient, UnparseableRecipientError } from '../providers/letter/recipient.js';
 
 /**
  * The Controller Gateway (docs/02): the single chokepoint every outbound request passes through.
@@ -43,6 +45,14 @@ export interface GatewaySendRequest {
   readonly subject: string;
   /** The rendered, counsel-approved letter. The gateway never composes text. */
   readonly body: string;
+  /**
+   * Who the letter is FROM — derived from the verified identity by dispatch, never free text.
+   *
+   * It exists for the Rücksendeangabe, the one line in the address window that makes an
+   * undeliverable letter come back to the sender instead of being destroyed. On posture A the
+   * sender is the data subject themselves (docs/14 §5.2).
+   */
+  readonly sender: LetterSender;
 }
 
 export interface ControllerGatewayDeps {
@@ -65,7 +75,7 @@ export interface ControllerGatewayDeps {
   readonly countOutboundForControllerSince: (controllerId: string, since: Date) => Promise<number>;
   /** CLAUDE.md C1: sends per controller per hour beyond this are an anomaly signal, not throughput. */
   readonly maxSendsPerControllerPerHour: number;
-  readonly objectStorePut: (key: string, bytes: string) => Promise<string>;
+  readonly objectStorePut: (key: string, bytes: string | Uint8Array) => Promise<string>;
   readonly idFactory: () => string;
   readonly now: () => Date;
 }
@@ -108,23 +118,65 @@ export class ControllerGateway implements OutboundGateway {
 
     const sentAt = this.deps.now();
 
+    // (a3) Postal only: lay the letter out BEFORE anything is evidenced or sent.
+    //
+    // Both failures here are refusals, not faults, and both must happen before the wire. An address
+    // that cannot be laid out in a DIN 5008 window is a letter that comes back or never arrives —
+    // and from the user's side that is indistinguishable from a controller who ignored them, which
+    // is a burned month and a false non-compliance statistic.
+    let letter: { pdf: Uint8Array; text: string; recipient: ReturnType<typeof parsePostalRecipient> } | null = null;
+    if (req.channel === 'postal') {
+      try {
+        const recipient = parsePostalRecipient(req.recipient);
+        // The template carries its own `Betreff:` line; DIN 5008 puts the subject at a fixed
+        // position with no label, so it is lifted rather than printed twice. The technical subject
+        // (`Datenschutzanfrage <id>`) is the email subject and the reply handle — not the letter's.
+        const split = splitBetreff(req.body);
+        letter = {
+          recipient,
+          text: req.body,
+          pdf: await renderDin5008Letter({
+            sender: req.sender,
+            recipient,
+            subject: split.subject ?? req.subject,
+            body: split.body,
+            date: sentAt,
+          }),
+        };
+      } catch (e) {
+        const why = e instanceof UnparseableRecipientError ? e.message : `the letter could not be rendered: ${e instanceof Error ? e.message : String(e)}`;
+        return { kind: 'HUMAN_QUEUE', reason: why };
+      }
+    }
+
     // (b) Capture the rendered copy, anchored. See the header: this anchor evidences OUR send time
     // and can never authorise a deadline.
+    //
+    // WHAT IS HASHED IS WHAT THE CHANNEL RECEIVED. For postal that is the PDF, because the PDF is
+    // the document the controller holds; hashing the Markdown would leave the chain describing an
+    // internal representation nobody outside this process has ever seen. For email the text IS the
+    // message body, so nothing changes there. One rule, no channel special-case: OUTBOUND_COPY is
+    // the artefact we handed over.
     try {
-      await this.appendAnchored(req.requestId, 'OUTBOUND_COPY', req.body, `outbound-copy-${sentAt.getTime()}.md`);
+      await this.appendAnchored(
+        req.requestId,
+        'OUTBOUND_COPY',
+        letter?.pdf ?? req.body,
+        `outbound-copy-${sentAt.getTime()}.${letter ? 'pdf' : 'md'}`,
+      );
     } catch (e) {
       // Nothing has touched the wire yet, so this is safe to fail without human review.
       return { kind: 'FAILED', reason: `evidence capture failed before send: ${e instanceof Error ? e.message : String(e)}` };
     }
 
     // (c) The channel. Each adapter's return type is narrowed to what it can honestly claim.
-    if (req.channel === 'email') {
+    if (req.channel === 'email' || letter === null) {
       return sendLegalRequestEmail(this.deps.mailer, { to: req.recipient, subject: req.subject, text: req.body }, sentAt);
     }
 
     return sendPostalLetter(
       this.deps.postal,
-      { text: req.body, recipient: req.recipient },
+      letter,
       { registered: req.registered },
       // The receipt's own storageRef names the tracking ref, which is what
       // provableSendEvidenceIdOf()'s PROOF_MISMATCH check binds: an implementation cannot anchor the
@@ -143,7 +195,7 @@ export class ControllerGateway implements OutboundGateway {
   private async appendAnchored(
     requestId: string,
     kind: 'OUTBOUND_COPY' | 'POSTAL_PROOF',
-    content: string,
+    content: string | Uint8Array,
     filename: string,
   ): Promise<EvidenceRecord> {
     const storageRef = await this.deps.objectStorePut(`evidence/${requestId}/${filename}`, content);

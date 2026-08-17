@@ -1,4 +1,4 @@
-import type { Mailer, MailerResult, PostalProvider, PostalSendResult, TimestampAnchor, Timestamper } from '@scraper/core';
+import type { Mailer, MailerResult, PostalLetter, PostalProvider, PostalSendResult, TimestampAnchor, Timestamper } from '@scraper/core';
 
 /**
  * Dev stubs. Nothing here touches a network, and — the part that matters — nothing here can start a
@@ -40,7 +40,7 @@ export class StubMailer implements Mailer {
 }
 
 export class StubPostalProvider implements PostalProvider {
-  async send(_letter: { text: string; recipient: string }, opts: { registered: boolean }): Promise<PostalSendResult> {
+  async send(_letter: PostalLetter, opts: { registered: boolean }): Promise<PostalSendResult> {
     seq += 1;
     return {
       providerId: `stub-postal-${seq}`,

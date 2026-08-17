@@ -3,6 +3,7 @@ import {
   deriveSubject,
   type EvidenceRecord,
   type Playbook,
+  type PostalLetter,
   type PostalProvider,
   type RequestSnapshot,
   type TimestampAnchor,
@@ -13,6 +14,10 @@ import {
 import { ControllerGateway } from '../src/gateway/controller-gateway.js';
 import { StubMailer, StubPostalProvider, SimulatedTimestamper } from '../src/providers/stub-providers.js';
 import { dispatchReadyRequest, prepareDispatch, type DispatchableRequest, type DispatchDeps } from '../src/workflows/dispatch.js';
+import type { LetterSender } from '../src/providers/letter/din5008.js';
+
+/** Only ever derived from the verified identity in real dispatch — see `gatewayRequest()`. */
+const SENDER: LetterSender = { name: 'Erika Musterfrau', addressLines: ['Musterstraße 1', '10115 Berlin'] };
 
 /**
  * The dispatch workflow end to end against fakes: READY → SENT → the channel → the right clock.
@@ -151,7 +156,7 @@ describe('email dispatch', () => {
     // A replayed job on a request that is somehow READY again — the guard is at the wire, not the state.
     const outcome = await h.deps.gateway.send({
       requestId: 'req_1', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
-      channel: 'email', registered: false, recipient: 'x@y.de', subject: 's', body: 'b',
+      channel: 'email', registered: false, recipient: 'x@y.de', subject: 's', body: 'b', sender: SENDER,
     });
     expect(outcome.kind).toBe('FAILED');
     if (outcome.kind === 'FAILED') expect(outcome.reason).toMatch(/already exists/);
@@ -162,7 +167,7 @@ describe('registered dispatch', () => {
   it('with stub providers it degrades to a provisional clock and NEVER a statutory one', async () => {
     const pb = playbook({
       slug: 'test.postal', channel: { primary: 'postal', registered: { primary: true } },
-      recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+      recipient: { postal: 'AZ Direct GmbH, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh' },
     });
     const h = harness(row(pb, { forceRegistered: true }));
     await dispatchReadyRequest(h.deps, 'req_1');
@@ -179,7 +184,7 @@ describe('registered dispatch', () => {
       },
     };
     class CarrierPostal extends StubPostalProvider {
-      override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+      override async send(letter: PostalLetter, opts: { registered: boolean }) {
         const base = await super.send(letter, opts);
         // `deliveredAt: NOW`, not the stub's wall-clock `new Date()`. The machine refuses a receipt
         // that claims a delivery in the future (F3a), and against a frozen test clock the wall clock
@@ -191,7 +196,7 @@ describe('registered dispatch', () => {
     }
     const pb = playbook({
       slug: 'test.postal', channel: { primary: 'postal', registered: { primary: true } },
-      recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+      recipient: { postal: 'AZ Direct GmbH, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh' },
     });
     const r = row(pb, { forceRegistered: true });
     const h = harness(r, qualified);
@@ -228,7 +233,7 @@ describe('registered dispatch', () => {
       },
     };
     class CarrierPostal extends StubPostalProvider {
-      override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+      override async send(letter: PostalLetter, opts: { registered: boolean }) {
         const base = await super.send(letter, opts);
         // `deliveredAt: NOW`, not the stub's wall-clock `new Date()`. The machine refuses a receipt
         // that claims a delivery in the future (F3a), and against a frozen test clock the wall clock
@@ -241,7 +246,7 @@ describe('registered dispatch', () => {
     const pb = playbook({
       slug: 'test.chase',
       channel: { primary: 'email', fallback: 'postal', registered: { primary: false, fallback: true } },
-      recipient: { email: 'datenschutz@example.de', postal: 'AZ Direct GmbH, Gütersloh' },
+      recipient: { email: 'datenschutz@example.de', postal: 'AZ Direct GmbH, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh' },
       escalation: { onDeadlineExpiry: 'DRAFT_ART77', onRefusal: 'DRAFT_ART77' },
     });
     const first = row(pb);
@@ -269,9 +274,13 @@ describe('registered dispatch', () => {
     // Within the SAME attempt, a replayed wire call is still refused — that guard must survive.
     const replay = await h.deps.gateway.send({
       requestId: 'req_1', userId: 'u1', controllerId: 'c1', requestType: 'OBJECTION_ART21',
-      channel: 'postal', registered: true, recipient: 'x', subject: 's', body: 'b',
+      // Deliberately an unpostable recipient: the at-most-once wire guard runs BEFORE the letter is
+      // laid out, so this must still come back FAILED for the duplicate reason and never for the
+      // address. If that order ever inverts, this test says so.
+      channel: 'postal', registered: true, recipient: 'x', subject: 's', body: 'b', sender: SENDER,
     });
     expect(replay.kind).toBe('FAILED');
+    if (replay.kind === 'FAILED') expect(replay.reason).toMatch(/already exists/);
   });
 });
 
@@ -364,7 +373,7 @@ describe('prepareDispatch is pure', () => {
 // clock was unreachable for every real registered send in production.
 // ---------------------------------------------------------------------------------------------
 class LodgingPostal extends StubPostalProvider {
-  override async send(letter: { text: string; recipient: string }, opts: { registered: boolean }) {
+  override async send(letter: PostalLetter, opts: { registered: boolean }) {
     const base = await super.send(letter, opts);
     return { ...base, proof: null };
   }
@@ -374,7 +383,7 @@ describe('registered lodgement (the honest carrier)', () => {
   const POSTAL = playbook({
     slug: 'test.lodged',
     channel: { primary: 'postal', registered: { primary: true } },
-    recipient: { postal: 'AZ Direct GmbH, Gütersloh' },
+    recipient: { postal: 'AZ Direct GmbH, Carl-Bertelsmann-Str. 161S, 33311 Gütersloh' },
   });
 
   it('a lodged registered send parks in AWAITING_DELIVERY_PROOF with NO clock', async () => {

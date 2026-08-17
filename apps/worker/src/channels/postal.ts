@@ -3,6 +3,7 @@ import {
   UnprovableSendError,
   type DeliveryProof,
   type EvidenceRecord,
+  type PostalLetter,
   type PostalProvider,
 } from '@scraper/core';
 import type { PostalSendOutcome } from './types.js';
@@ -35,7 +36,7 @@ export type AnchorPostalProof = (proof: DeliveryProof) => Promise<EvidenceRecord
  */
 export async function sendPostalLetter(
   postal: PostalProvider,
-  letter: { text: string; recipient: string },
+  letter: PostalLetter,
   opts: { registered: boolean },
   anchorProof: AnchorPostalProof,
   now: Date,

@@ -1,4 +1,4 @@
-import type { IdentityProvider, PostalProvider, PostalSendResult, TimestampAnchor, Timestamper, VerifiedIdentity } from '@scraper/core';
+import type { IdentityProvider, PostalLetter, PostalProvider, PostalSendResult, TimestampAnchor, Timestamper, VerifiedIdentity } from '@scraper/core';
 
 /**
  * Real provider adapters (docs/10 §4 picks): LetterXpress (postal, Einwurf-Einschreiben `r1`),
@@ -30,7 +30,7 @@ function env(name: string): string | undefined {
 export class LetterXpressPostalProvider implements PostalProvider {
   private readonly base = env('LETTERXPRESS_BASE') ?? 'https://sandbox.letterxpress.de/v3';
 
-  async send(letter: { text: string; recipient: string }, opts: { registered: boolean }): Promise<PostalSendResult> {
+  async send(letter: PostalLetter, opts: { registered: boolean }): Promise<PostalSendResult> {
     const user = env('LETTERXPRESS_USER');
     const key = env('LETTERXPRESS_APIKEY');
     if (!user || !key) throw new CredentialsMissingError('LetterXpress', ['LETTERXPRESS_USER', 'LETTERXPRESS_APIKEY']);
@@ -40,10 +40,15 @@ export class LetterXpressPostalProvider implements PostalProvider {
       body: JSON.stringify({
         auth: { username: user, apikey: key, mode: env('LETTERXPRESS_MODE') ?? 'sandbox' },
         letter: {
-          base64_file: Buffer.from(letter.text, 'utf8').toString('base64'),
-          address: letter.recipient,
+          // `base64_file` is a PDF field. This used to encode the rendered MARKDOWN into it, which
+          // at best the API rejects and at worst puts asterisks, hyphens and a raw `Betreff:` label
+          // onto paper and posts them to a data controller as a legal request.
+          base64_file: Buffer.from(letter.pdf).toString('base64'),
+          // Newline-separated, because the address block is lines — the comma-joined string that
+          // used to go here put the Postleitzahl wherever the playbook's commas happened to fall.
+          address: letter.recipient.lines.join('\n'),
           dispatch: opts.registered ? { shipping: 'r1' } : { shipping: 'standard' },
-          specification: { color: '1', mode: 'simplex', ship: 'national' },
+          specification: { color: '1', mode: 'simplex', ship: letter.recipient.country === 'DE' ? 'national' : 'international' },
         },
       }),
     });

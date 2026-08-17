@@ -2,13 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
-      "runtimeExecutable": "pnpm",
+      "name": "api",
+      "runtimeExecutable": "sh",
       "runtimeArgs": [
-        "run",
-        "dev"
+        "-c",
+        "NODE_ENV=development SCRAPER_DEV_FIXTURES=1 SCRAPER_REPOSITORY=prisma SCRAPER_SCHEDULER=pgboss SCRAPER_OBJECT_STORE=fs OBJECT_STORE_FS_ROOT=./.data/objects DATABASE_URL=postgresql://scraper:scraper@localhost:5433/scraper3_dev PORT=3900 node apps/api/dist/main.js"
       ],
-      "port": 3000
+      "port": 3900
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "API_URL=http://localhost:3900 pnpm --filter @scraper/web-next dev"
+      ],
+      "port": 3901
     }
   ]
 }
