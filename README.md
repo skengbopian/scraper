@@ -18,6 +18,49 @@ captures tamper-evident proof, and escalates on statutory deadlines.
 > distribution unlawful today** — is in
 > [`docs/15-entity-and-governance.md`](docs/15-entity-and-governance.md).
 
+## Where things stand (2026-08-27) — read this first if you're new
+
+This section is a status map for engineers joining the project, not a replacement for the docs
+below. Everything below the "Repo layout" section is context that's still true; this is what to
+know before you start reading it.
+
+**Engineering state.** The core loop (dev-fixture identity → census/CC0 import → request state
+machine → playbook engine → escalation) has been built and ported through several waves — see
+`git log --oneline` for "port wave 1" through "port wave 5b", covering DB invariants, the Next.js
+UI, the auth policy, and the leverage-ladder playbooks. Most recently, the outbound send path
+landed: a provider factory + boot refusal (worker), a postal adapter that hashes the PDF it sends
+and refuses unpostable addresses (postal), DIN 5008 letter rendering (letter), an SMTP adapter with
+a real DKIM-alignment check (mailer), and a fix that closed a gap where a sandbox QTSP token could
+reach a real statutory deadline (qtsp). Active branch is `ops/operational`; `master` and
+`audit/2026-08-13` are both strict ancestors of it, so there's nothing to reconcile between them.
+
+**Two open planning threads, both dated 2026-08-26, neither yet acted on in code:**
+- [`PLAN-INDEPENDENT.md`](PLAN-INDEPENDENT.md) — a proposed pivot to a zero-vendor, zero-entity,
+  posture-A architecture (self-hosted, near-zero paid counsel), from a 12-agent research/design/verify
+  pass. The legal-accuracy pass on it has **not** been independently re-checked yet. Leaves open
+  decisions D10–D14 and OQ-32..45 — read those before treating any claim in it as settled.
+- [`SCRAPER4-DECISION.md`](SCRAPER4-DECISION.md) — a *separate*, smaller proposal (a standalone tool
+  to automate a personal data-broker opt-out campaign) was reviewed by an 8-agent pass and **killed**:
+  the recommendation is to run that campaign manually (1–2 afternoons, no new code) instead of
+  building it. This doesn't affect the platform build above — it only feeds verification stamps and
+  precedent text (§5 of that doc) back into this repo once the manual campaign has run.
+
+**Known blockers before any public release or production launch:**
+- **No `LICENSE` file exists yet.** `docs/15-entity-and-governance.md` calls this out explicitly as
+  making distribution unlawful today. Don't make this repo public or ship a build until that's
+  resolved.
+- Entity, funding, and governance are still open — same doc.
+- Usability is a launch gate, not an afterthought (`CLAUDE.md`, `docs/09-pivot-modules.md`). A plain
+  UI is acceptable for now; the guided visual flows required before onboarding real users are not
+  done yet.
+- [`ARCHITECTURE-DECISIONS.md`](ARCHITECTURE-DECISIONS.md) §3 lists decisions a coding agent must
+  **not** resolve unilaterally — read it before touching the state machine, the evidence chain, or
+  the identity gate.
+
+**Where to actually start:** the "How to use this repo with Claude Code" section a few paragraphs
+down is still the right onboarding path. Read `CLAUDE.md` first regardless of what else you skip —
+it holds the non-negotiable guardrails, in particular around identity binding and third-party data.
+
 ## What Phase 0 is (and is not)
 
 > **Scope is governed by [`docs/09-pivot-modules.md`](docs/09-pivot-modules.md).** Research killed the
